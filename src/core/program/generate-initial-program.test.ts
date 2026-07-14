@@ -165,6 +165,30 @@ describe("generateInitialProgram — la prioridad aumenta la presencia", () => {
       MIN_WEEKLY_SETS.DORSAL,
     );
   });
+
+  it("con 4 prioridades y tiempo suficiente, los grupos no prioritarios reciben trabajo directo (no se cierra la sesión antes de tiempo)", () => {
+    // Regresión: priorizar hombros/espalda/pecho superior no debe dejar a
+    // bíceps o espalda alta con 0 series si queda tiempo en la sesión.
+    const p = generateInitialProgram(
+      baseInput({
+        priorityMuscles: [
+          "DELT_LATERAL",
+          "DELT_POSTERIOR",
+          "DORSAL",
+          "PECHO_SUPERIOR",
+        ],
+      }),
+    );
+    expect(directOf(p, "BICEPS")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.BICEPS,
+    );
+    expect(directOf(p, "ESPALDA_ALTA")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.ESPALDA_ALTA,
+    );
+    expect(directOf(p, "CUADRICEPS")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.CUADRICEPS,
+    );
+  });
 });
 
 describe("generateInitialProgram — restricciones prevalecen sobre prioridad", () => {

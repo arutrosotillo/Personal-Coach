@@ -41,12 +41,18 @@ export interface InitialNutritionEstimateTrace {
   tdee: number;
   tdeeUncertaintyPct: number;
   tdeeRange: { low: number; high: number };
-  weeklyRatePct: number;
-  dailyAdjustmentKcal: number; // >0 déficit, <0 superávit
+  weeklyRatePct: number; // ritmo pedido por el usuario
+  rawAdjustmentKcal: number; // déficit/superávit antes de acotar
+  maxDeficitKcal: number;
+  dailyAdjustmentKcal: number; // tras acotar al 25 % del TDEE (>0 déficit, <0 superávit)
   boundedByMaxDeficit: boolean;
+  preFloorKcalTarget: number; // target antes de aplicar el suelo
   floorKcal: number;
   clampedToFloor: boolean;
+  appliedAdjustmentKcal: number; // ajuste REAL tras suelo (tdee − target)
+  effectiveWeeklyRatePct: number; // ritmo real derivado del ajuste aplicado
   kcalTarget: number;
+  macrosLimitedByLowKcal: boolean;
   proteinReferenceWeightKg: number;
   proteinGPerKg: number;
   fatGPerKg: number;
@@ -167,12 +173,30 @@ export function estimateInitialTargets(
     Math.round(bmr * CFG.minKcalBmrFactor),
     CFG.minKcalAbsolute[input.sex],
   );
-  let kcalTarget = round25(tdee - dailyAdjustmentKcal);
+  const preFloorKcalTarget = round25(tdee - dailyAdjustmentKcal);
+  let kcalTarget = preFloorKcalTarget;
   const clampedToFloor = kcalTarget < floorKcal;
   if (clampedToFloor) {
     kcalTarget = round25(floorKcal + CFG.kcalRounding / 2);
     notes.push(
       "Objetivo ajustado al suelo de seguridad: el ritmo pedido exigía menos calorías de las recomendables.",
+    );
+  }
+  // Ajuste y ritmo REALES tras el suelo (pueden diferir de lo pedido).
+  const appliedAdjustmentKcal = tdee - kcalTarget;
+  const effectiveWeeklyRatePct =
+    Math.round(
+      (-(appliedAdjustmentKcal * 7) /
+        (input.weightKg * CFG.kcalPerKgBodyweight)) *
+        100 *
+        100,
+    ) / 100;
+  if (
+    (boundedByMaxDeficit || clampedToFloor) &&
+    Math.abs(appliedAdjustmentKcal - rawAdjustment) > CFG.kcalRounding
+  ) {
+    notes.push(
+      `Ritmo real aplicado ${effectiveWeeklyRatePct.toLocaleString("es-ES")} %/semana (más suave que el pedido por seguridad).`,
     );
   }
 
@@ -190,15 +214,36 @@ export function estimateInitialTargets(
 
   const proteinGPerKg = CFG.proteinGPerKg[input.goalType];
   const fatGPerKg = CFG.fatGPerKg[input.goalType];
-  const proteinG = Math.round(proteinGPerKg * proteinReferenceWeightKg);
-  const fatG = Math.max(
+  const proteinFloorG = Math.round(1.8 * proteinReferenceWeightKg);
+  const fatFloorG = Math.max(
+    Math.round(CFG.minFatGPerKg * input.weightKg),
+    CFG.minFatGAbsolute,
+  );
+
+  // Cascada para respetar el mínimo de carbohidratos: bajar grasa → proteína.
+  let proteinG = Math.round(proteinGPerKg * proteinReferenceWeightKg);
+  let fatG = Math.max(
     Math.round(fatGPerKg * input.weightKg),
     CFG.minFatGAbsolute,
   );
-  const carbsG = Math.max(
-    Math.round((kcalTarget - proteinG * 4 - fatG * 9) / 4),
-    0,
-  );
+  const carbsFrom = () =>
+    Math.round((kcalTarget - proteinG * 4 - fatG * 9) / 4);
+  let carbsG = carbsFrom();
+  if (carbsG < CFG.minCarbsG && fatG > fatFloorG) {
+    fatG = fatFloorG;
+    carbsG = carbsFrom();
+  }
+  if (carbsG < CFG.minCarbsG && proteinG > proteinFloorG) {
+    proteinG = proteinFloorG;
+    carbsG = carbsFrom();
+  }
+  const macrosLimitedByLowKcal = carbsG < CFG.minCarbsG;
+  if (macrosLimitedByLowKcal) {
+    notes.push(
+      "Con estas calorías no caben los mínimos de macronutrientes: el objetivo es muy bajo. Considera un ritmo más suave o pierde grasa más despacio.",
+    );
+  }
+  carbsG = Math.max(carbsG, 0);
 
   const trace: InitialNutritionEstimateTrace = {
     bmrFormula,
@@ -211,11 +256,17 @@ export function estimateInitialTargets(
     tdeeUncertaintyPct: CFG.tdeeUncertaintyPct,
     tdeeRange,
     weeklyRatePct,
+    rawAdjustmentKcal: rawAdjustment,
+    maxDeficitKcal: maxDeficit,
     dailyAdjustmentKcal,
     boundedByMaxDeficit,
+    preFloorKcalTarget,
     floorKcal,
     clampedToFloor,
+    appliedAdjustmentKcal,
+    effectiveWeeklyRatePct,
     kcalTarget,
+    macrosLimitedByLowKcal,
     proteinReferenceWeightKg,
     proteinGPerKg,
     fatGPerKg,
@@ -232,7 +283,8 @@ export function estimateInitialTargets(
     tdee,
     tdeeRange,
     weeklyRatePct,
-    dailyDeficitKcal: dailyAdjustmentKcal,
+    // Ajuste REAL aplicado tras el suelo (lo que verá el usuario).
+    dailyDeficitKcal: appliedAdjustmentKcal,
     kcalTarget,
     proteinG,
     fatG,
@@ -244,9 +296,9 @@ export function estimateInitialTargets(
       tdee: `Gasto estimado ~${fmtEs(tdee)} kcal/día (rango ${fmtEs(tdeeRange.low)}–${fmtEs(tdeeRange.high)}). Es un punto de partida: tus datos reales de peso e ingesta lo corregirán en 2–4 semanas.`,
       kcal: clampedToFloor
         ? `Objetivo ajustado al suelo de seguridad (${fmtEs(kcalTarget)} kcal): el ritmo pedido exigía menos calorías de las recomendables.`
-        : dailyAdjustmentKcal === 0
+        : appliedAdjustmentKcal === 0
           ? `Objetivo ${fmtEs(kcalTarget)} kcal/día: igual al mantenimiento estimado (peso estable).`
-          : `Objetivo ${fmtEs(kcalTarget)} kcal/día: gasto estimado ${fmtEs(tdee)} con un ${dailyAdjustmentKcal > 0 ? "déficit" : "superávit"} de ${fmtEs(Math.abs(dailyAdjustmentKcal))} kcal para un ritmo de ${weeklyRatePct.toLocaleString("es-ES")} % de tu peso por semana.`,
+          : `Objetivo ${fmtEs(kcalTarget)} kcal/día: gasto estimado ${fmtEs(tdee)} con un ${appliedAdjustmentKcal > 0 ? "déficit" : "superávit"} de ${fmtEs(Math.abs(appliedAdjustmentKcal))} kcal para un ritmo de ${effectiveWeeklyRatePct.toLocaleString("es-ES")} % de tu peso por semana.`,
       protein: `${proteinG} g de proteína = ${proteinGPerKg} g/kg: el rango con mejor evidencia para conservar músculo con tu objetivo.`,
       fat: `${fatG} g de grasa (≥ ${CFG.minFatGPerKg} g/kg): mínimo necesario para función hormonal y absorción de vitaminas.`,
       carbs: `${carbsG} g de carbohidratos: todas las calorías restantes; alimentan tus entrenamientos.`,

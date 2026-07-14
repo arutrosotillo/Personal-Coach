@@ -943,9 +943,9 @@ function ReviewStep({
             </dd>
             <dt>Ajuste por objetivo</dt>
             <dd className="text-right">
-              {estimate.trace.dailyAdjustmentKcal === 0
+              {estimate.trace.appliedAdjustmentKcal === 0
                 ? "—"
-                : `${estimate.trace.dailyAdjustmentKcal > 0 ? "−" : "+"}${nf(Math.abs(estimate.trace.dailyAdjustmentKcal))} kcal`}
+                : `${estimate.trace.appliedAdjustmentKcal > 0 ? "−" : "+"}${nf(Math.abs(estimate.trace.appliedAdjustmentKcal))} kcal`}
             </dd>
             <dt>Suelo de seguridad</dt>
             <dd className="text-right">{nf(estimate.trace.floorKcal)} kcal</dd>

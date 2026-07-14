@@ -1,4 +1,4 @@
-# Nutrition Engine — especificación v1.0
+# Nutrition Engine — especificación (estimación inicial v2.0, motor semanal F4)
 
 Motor puro determinista (`src/core/engines/nutrition/`, F4; la **estimación inicial** ya se usa en el onboarding de F1 vía `src/core/nutrition/initial-estimate.ts`). Unidad mínima de decisión: la semana. Redondeos: kcal a múltiplos de 25, macros a gramos enteros.
 

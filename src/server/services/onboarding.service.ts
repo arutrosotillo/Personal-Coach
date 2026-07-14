@@ -221,6 +221,13 @@ export async function completeOnboarding(
         }),
         output: toJson({
           splitType: program.splitType,
+          splitLabel: program.name,
+          daysPerWeek: program.daysPerWeek,
+          minutesPerSession: program.minutesPerSession,
+          perDayMinutes: program.days.map((d) => d.estimatedMinutes),
+          equipment: data.equipment,
+          contraindications: data.contraindications,
+          excludedExerciseNames: data.excludedExerciseNames,
           volumeByGroup: program.volumeByGroup,
           priorityMuscles: program.priorityMuscles,
           warnings: program.warnings,

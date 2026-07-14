@@ -188,17 +188,20 @@ export function generateInitialProgram(
     const exercises: GeneratedExercise[] = [];
     const usedInDay = new Set<string>();
     const setsForGroupToday: Record<string, number> = {};
+    // Grupos que ya no admiten más trabajo HOY (tope alcanzado o sin ejercicio
+    // elegible); se excluyen de los candidatos sin cerrar la sesión entera.
+    const blockedToday = new Set<MuscleGroupCode>();
     let minutes = SESSION_OVERHEAD_MIN;
 
     // Se rellena el día añadiendo ejercicios uno a uno, siempre al grupo más
     // necesitado (prioridad primero), hasta que no cabe nada más (tiempo,
     // topes por grupo o falta de ejercicios disponibles).
     // Backstop de iteraciones muy por encima de cualquier día real.
-    for (let guard = 0; guard < 40; guard++) {
-      // Candidatos: en el menú, necesitados, con margen de series y con un
-      // ejercicio elegible que no se haya usado hoy.
+    for (let guard = 0; guard < 60; guard++) {
+      // Candidatos: en el menú, necesitados, no bloqueados hoy, con margen de
+      // series y con un ejercicio elegible que no se haya usado hoy.
       const candidates = menu.groups
-        .filter((g) => isNeedy(g))
+        .filter((g) => isNeedy(g) && !blockedToday.has(g))
         .filter((g) => (setsForGroupToday[g] ?? 0) < groupDayCap(g))
         .map((g) => ({
           group: g,
@@ -247,16 +250,22 @@ export function generateInitialProgram(
       );
       sets = Math.min(sets, groupDayCap(group) - usedForGroup);
 
-      // Presupuesto de tiempo: recortar o abandonar si la sesión se pasa.
+      // Si a este grupo ya no le caben las series mínimas por su tope diario,
+      // se bloquea HOY y se sigue con otros grupos (no se cierra la sesión).
+      if (sets < SETS_PER_EXERCISE.min) {
+        blockedToday.add(group);
+        continue;
+      }
+
+      // Presupuesto de tiempo: recortar; si no cabe ni el mínimo, la sesión
+      // está llena y se cierra el día.
       if (minutes + sets * cost > input.minutesPerSession) {
         const affordable = Math.floor(
           (input.minutesPerSession - minutes) / cost,
         );
+        if (affordable < SETS_PER_EXERCISE.min) break;
         sets = Math.min(sets, affordable);
       }
-      // No se añaden ejercicios de una sola serie: si no caben al menos las
-      // mínimas, la sesión está llena.
-      if (sets < SETS_PER_EXERCISE.min) break;
 
       exercises.push({
         exerciseId: pick.exercise.id,

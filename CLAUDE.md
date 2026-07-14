@@ -50,7 +50,7 @@ app/, components/  →  server/actions/  →  server/services/  →  core/  +  s
 
 ## Decisiones registradas (no re-litigar sin causa técnica real)
 
-1. Plan aprobado: `docs/IMPLEMENTATION_PLAN.md` (fases 0–7). Estado actual: F0+F1 completadas.
+1. Plan aprobado: `docs/IMPLEMENTATION_PLAN.md` (fases 0–7). Estado actual: F0+F1 + parche de Fase 1 (prioridades sin defaults, estrategia de objetivo, TDEE aditivo, generador v2 equilibrado, bloque "por qué"). Fase 2A en curso.
 2. **Tablas de Coach AI pospuestas a la migración de Fase 6** (no tocan entidades centrales; ver docs/DATA_MODEL.md). `PersonalEvent` SÍ existe desde F1 (lo consumen los motores).
 3. Los motores deterministas son la ÚNICA fuente de números (kcal, cargas, volumen…). Coach AI (F6) solo interpreta.
 4. Suelos de seguridad: kcal ≥ max(BMR×0.9, 1500 H / 1200 M) — inviolable.

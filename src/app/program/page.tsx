@@ -1,8 +1,10 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ProgramRationaleCard } from "@/components/training/program-rationale-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProgramRationale } from "@/server/repositories/program.repo";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +13,7 @@ export default async function ProgramPage() {
   const overview = await getProfileOverview();
   const program = overview?.program;
   const mesocycle = program?.mesocycles[0];
+  const rationale = program ? await getProgramRationale(program.id) : null;
 
   if (!overview || !program || !mesocycle) {
     return (
@@ -42,7 +45,11 @@ export default async function ProgramPage() {
         )
       </p>
 
-      {program.description ? (
+      {rationale ? (
+        <div className="mb-4">
+          <ProgramRationaleCard rationale={rationale} />
+        </div>
+      ) : program.description ? (
         <Card className="mb-4">
           <CardContent className="text-muted-foreground pt-4 text-sm">
             {program.description}
@@ -84,12 +91,6 @@ export default async function ProgramPage() {
           </Card>
         ))}
       </div>
-
-      <p className="text-muted-foreground mt-6 text-xs">
-        Plan inicial generado con reglas explícitas a partir de tus datos. La
-        ejecución de sesiones y la progresión automática de cargas llegan en la
-        Fase 2–3.
-      </p>
     </AppShell>
   );
 }

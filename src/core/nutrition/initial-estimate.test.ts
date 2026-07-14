@@ -168,4 +168,52 @@ describe("estimateInitialTargets — suelos y coherencia", () => {
     expect(r.proteinG).toBe(Math.round(2.2 * 83.5));
     expect(r.carbsG).toBeGreaterThan(0);
   });
+
+  it("respeta el mínimo de carbohidratos bajando primero grasa y luego proteína", () => {
+    // Perfil pequeño en déficit fuerte: sin fallback los carbos caerían bajo 100 g.
+    const r = estimateInitialTargets({
+      ...REF,
+      sex: "FEMALE",
+      weightKg: 55,
+      heightCm: 160,
+      goalType: "FAT_LOSS",
+      weeklyRatePct: -0.75,
+    });
+    // O bien alcanza el mínimo de carbohidratos, o avisa de que no caben.
+    expect(r.carbsG >= 100 || r.trace.macrosLimitedByLowKcal).toBe(true);
+    // La suma de macros nunca supera el target (coherencia).
+    expect(r.proteinG * 4 + r.fatG * 9 + r.carbsG * 4).toBeLessThanOrEqual(
+      r.kcalTarget + 10,
+    );
+  });
+
+  it("cuando el déficit se acota, muestra el ritmo REAL, no el pedido", () => {
+    const r = estimateInitialTargets({
+      ...REF,
+      weightKg: 120,
+      goalType: "FAT_LOSS",
+      weeklyRatePct: -1.0,
+    });
+    if (r.trace.boundedByMaxDeficit || r.trace.clampedToFloor) {
+      expect(Math.abs(r.trace.effectiveWeeklyRatePct)).toBeLessThanOrEqual(
+        Math.abs(r.trace.weeklyRatePct) + 0.01,
+      );
+      // El ajuste aplicado coincide con tdee − target.
+      expect(r.trace.appliedAdjustmentKcal).toBe(
+        r.trace.tdee - r.trace.kcalTarget,
+      );
+    }
+  });
+
+  it("la traza guarda los valores pre-tope para auditoría", () => {
+    const r = estimateInitialTargets({
+      ...REF,
+      weightKg: 120,
+      goalType: "FAT_LOSS",
+      weeklyRatePct: -1.0,
+    });
+    expect(r.trace.rawAdjustmentKcal).toBeGreaterThan(0);
+    expect(r.trace.maxDeficitKcal).toBeGreaterThan(0);
+    expect(typeof r.trace.preFloorKcalTarget).toBe("number");
+  });
 });
