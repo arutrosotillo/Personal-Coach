@@ -70,7 +70,10 @@ export const onboardingSchema = z.object({
   // Paso 5 — Prioridades musculares
   priorityMuscles: z
     .array(MuscleGroupCode)
-    .max(6, "Máximo 6 grupos prioritarios: priorizarlo todo es no priorizar nada")
+    .max(
+      6,
+      "Máximo 6 grupos prioritarios: priorizarlo todo es no priorizar nada",
+    )
     .default([]),
 
   // Paso 6 — Actividad y nutrición

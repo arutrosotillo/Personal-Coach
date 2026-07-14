@@ -49,4 +49,6 @@ export async function getProfileOverview() {
   return { profile, goal, nutritionTarget, program, preferences };
 }
 
-export type ProfileOverview = NonNullable<Awaited<ReturnType<typeof getProfileOverview>>>;
+export type ProfileOverview = NonNullable<
+  Awaited<ReturnType<typeof getProfileOverview>>
+>;

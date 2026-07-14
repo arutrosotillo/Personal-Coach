@@ -17,7 +17,8 @@ process.env.DATABASE_URL = testDb.url;
 // Imports dinámicos tras fijar el entorno.
 const { prisma } = await import("@/server/db");
 const { runSeed } = await import("../../prisma/seed/run-seed");
-const { completeOnboarding } = await import("@/server/services/onboarding.service");
+const { completeOnboarding } =
+  await import("@/server/services/onboarding.service");
 
 const VALID: OnboardingData = onboardingSchema.parse({
   sex: "MALE",
@@ -61,20 +62,27 @@ describe("seed", () => {
 
 describe("completeOnboarding", () => {
   it("crea perfil, objetivo, medición, target, preferencias, programa y trazabilidad en una transacción", async () => {
-    const result = await completeOnboarding(VALID, new Date("2026-07-14T10:00:00Z"));
+    const result = await completeOnboarding(
+      VALID,
+      new Date("2026-07-14T10:00:00Z"),
+    );
 
     const profile = await prisma.userProfile.findUniqueOrThrow({
       where: { id: result.profileId },
     });
     expect(profile.heightCm).toBe(178);
 
-    const goal = await prisma.goal.findUniqueOrThrow({ where: { id: result.goalId } });
+    const goal = await prisma.goal.findUniqueOrThrow({
+      where: { id: result.goalId },
+    });
     expect(goal.status).toBe("ACTIVE");
     expect(goal.type).toBe("FAT_LOSS");
     expect(goal.weeklyRatePct).toBe(-0.5);
 
     const measurement = await prisma.bodyMeasurement.findUniqueOrThrow({
-      where: { profileId_localDate: { profileId: profile.id, localDate: "2026-07-14" } },
+      where: {
+        profileId_localDate: { profileId: profile.id, localDate: "2026-07-14" },
+      },
     });
     expect(measurement.weightKg).toBe(84);
     expect(measurement.waistCm).toBe(88);
@@ -92,7 +100,9 @@ describe("completeOnboarding", () => {
     const program = await prisma.trainingProgram.findUniqueOrThrow({
       where: { id: result.programId },
       include: {
-        mesocycles: { include: { templates: { include: { exercises: true } } } },
+        mesocycles: {
+          include: { templates: { include: { exercises: true } } },
+        },
       },
     });
     expect(program.isActive).toBe(true);
@@ -102,7 +112,9 @@ describe("completeOnboarding", () => {
     expect(templates.every((t) => t.exercises.length > 0)).toBe(true);
 
     // Restricciones respetadas también tras persistir
-    const variantIds = templates.flatMap((t) => t.exercises.map((e) => e.exerciseVariantId));
+    const variantIds = templates.flatMap((t) =>
+      t.exercises.map((e) => e.exerciseVariantId),
+    );
     const variants = await prisma.exerciseVariant.findMany({
       where: { id: { in: variantIds } },
       include: { exercise: true },
@@ -121,7 +133,9 @@ describe("completeOnboarding", () => {
     expect(recommendation.scopeId).toBe(program.id);
     expect(recommendation.decision.engine).toBe("program-generator");
     expect(recommendation.decision.explanation.length).toBeGreaterThan(50);
-    const snapshot = recommendation.decision.inputSnapshot as { onboarding?: { weightKg?: number } };
+    const snapshot = recommendation.decision.inputSnapshot as {
+      onboarding?: { weightKg?: number };
+    };
     expect(snapshot.onboarding?.weightKg).toBe(84);
   });
 
@@ -133,16 +147,22 @@ describe("completeOnboarding", () => {
 
     expect(await prisma.userProfile.count()).toBe(1);
 
-    const activeGoals = await prisma.goal.findMany({ where: { status: "ACTIVE" } });
+    const activeGoals = await prisma.goal.findMany({
+      where: { status: "ACTIVE" },
+    });
     expect(activeGoals).toHaveLength(1);
     expect(activeGoals[0].type).toBe("MAINTENANCE");
     expect(await prisma.goal.count({ where: { status: "ABANDONED" } })).toBe(1);
 
-    const activePrograms = await prisma.trainingProgram.findMany({ where: { isActive: true } });
+    const activePrograms = await prisma.trainingProgram.findMany({
+      where: { isActive: true },
+    });
     expect(activePrograms).toHaveLength(1);
     expect(activePrograms[0].id).toBe(second.programId);
     expect(activePrograms[0].daysPerWeek).toBe(3);
-    expect(await prisma.trainingProgram.count({ where: { isActive: false } })).toBe(1);
+    expect(
+      await prisma.trainingProgram.count({ where: { isActive: false } }),
+    ).toBe(1);
 
     // Mismo día → la medición se actualiza (upsert), no se duplica.
     expect(await prisma.bodyMeasurement.count()).toBe(1);
@@ -160,7 +180,10 @@ describe("completeOnboarding", () => {
       equipment: ["DUMBBELL", "BODYWEIGHT"],
       goalType: "RECOMP",
     });
-    const result = await completeOnboarding(minimal, new Date("2026-07-15T08:00:00Z"));
+    const result = await completeOnboarding(
+      minimal,
+      new Date("2026-07-15T08:00:00Z"),
+    );
     expect(result.programId).toBeTruthy();
     const target = await prisma.nutritionTarget.findFirstOrThrow({
       where: { effectiveFrom: "2026-07-15" },

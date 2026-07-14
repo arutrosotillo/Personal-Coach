@@ -23,7 +23,10 @@ const DEFAULT_TIMEZONE = "Europe/Madrid";
  * abandona el objetivo activo anterior y desactiva el programa anterior.
  * Nunca crea un segundo perfil.
  */
-export async function completeOnboarding(data: OnboardingData, now: Date = new Date()) {
+export async function completeOnboarding(
+  data: OnboardingData,
+  now: Date = new Date(),
+) {
   const localDate = toLocalDate(now, DEFAULT_TIMEZONE);
 
   // 1. Cálculos puros (fuera de la transacción)
@@ -54,7 +57,9 @@ export async function completeOnboarding(data: OnboardingData, now: Date = new D
 
   // 2. Escritura transaccional
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
+    const existing = await tx.userProfile.findFirst({
+      orderBy: { createdAt: "asc" },
+    });
 
     const profileFields = {
       sex: data.sex,
@@ -68,7 +73,10 @@ export async function completeOnboarding(data: OnboardingData, now: Date = new D
     };
 
     const profile = existing
-      ? await tx.userProfile.update({ where: { id: existing.id }, data: profileFields })
+      ? await tx.userProfile.update({
+          where: { id: existing.id },
+          data: profileFields,
+        })
       : await tx.userProfile.create({ data: profileFields });
 
     // Re-ejecución: cerrar objetivo activo y desactivar programas anteriores.
@@ -105,7 +113,12 @@ export async function completeOnboarding(data: OnboardingData, now: Date = new D
 
     // Target nutricional inicial — upsert por (profileId, effectiveFrom).
     await tx.nutritionTarget.upsert({
-      where: { profileId_effectiveFrom: { profileId: profile.id, effectiveFrom: localDate } },
+      where: {
+        profileId_effectiveFrom: {
+          profileId: profile.id,
+          effectiveFrom: localDate,
+        },
+      },
       create: {
         profileId: profile.id,
         effectiveFrom: localDate,

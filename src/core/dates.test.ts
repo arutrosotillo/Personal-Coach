@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { addDays, ageInYears, diffDays, isLocalDate, isoWeekOf, toLocalDate } from "@/core/dates";
+import {
+  addDays,
+  ageInYears,
+  diffDays,
+  isLocalDate,
+  isoWeekOf,
+  toLocalDate,
+} from "@/core/dates";
 
 const MADRID = "Europe/Madrid";
 const LA = "America/Los_Angeles";
@@ -13,15 +20,23 @@ describe("toLocalDate — el día del usuario depende de su timezone", () => {
   });
 
   it("medianoche local: 22:00 UTC en invierno (UTC+1) aún es el mismo día; 23:30 ya es el siguiente", () => {
-    expect(toLocalDate(new Date("2026-01-10T22:00:00Z"), MADRID)).toBe("2026-01-10");
-    expect(toLocalDate(new Date("2026-01-10T23:30:00Z"), MADRID)).toBe("2026-01-11");
+    expect(toLocalDate(new Date("2026-01-10T22:00:00Z"), MADRID)).toBe(
+      "2026-01-10",
+    );
+    expect(toLocalDate(new Date("2026-01-10T23:30:00Z"), MADRID)).toBe(
+      "2026-01-11",
+    );
   });
 
   it("cambio de hora de marzo (DST): el día local se calcula bien en la transición", () => {
     // 29-mar-2026 a las 01:30 UTC = 03:30 en Madrid (ya en horario de verano)
-    expect(toLocalDate(new Date("2026-03-29T01:30:00Z"), MADRID)).toBe("2026-03-29");
+    expect(toLocalDate(new Date("2026-03-29T01:30:00Z"), MADRID)).toBe(
+      "2026-03-29",
+    );
     // 25-oct-2026 a las 00:30 UTC = 02:30 en Madrid (vuelta a invierno, hora repetida)
-    expect(toLocalDate(new Date("2026-10-25T00:30:00Z"), MADRID)).toBe("2026-10-25");
+    expect(toLocalDate(new Date("2026-10-25T00:30:00Z"), MADRID)).toBe(
+      "2026-10-25",
+    );
   });
 });
 
@@ -29,12 +44,16 @@ describe("isLocalDate", () => {
   it.each(["2026-07-14", "2024-02-29"])("acepta %s", (d) => {
     expect(isLocalDate(d)).toBe(true);
   });
-  it.each(["2026-13-01", "2026-02-30", "2025-02-29", "14/07/2026", "2026-7-4", ""])(
-    "rechaza %s",
-    (d) => {
-      expect(isLocalDate(d)).toBe(false);
-    },
-  );
+  it.each([
+    "2026-13-01",
+    "2026-02-30",
+    "2025-02-29",
+    "14/07/2026",
+    "2026-7-4",
+    "",
+  ])("rechaza %s", (d) => {
+    expect(isLocalDate(d)).toBe(false);
+  });
 });
 
 describe("aritmética de fechas de calendario", () => {
@@ -74,7 +93,9 @@ describe("isoWeekOf", () => {
   it("los 7 días de una semana comparten isoWeek (incluida la semana con cambio de hora)", () => {
     // Semana del 23 al 29 de marzo de 2026 (DST el domingo 29)
     const days = Array.from({ length: 7 }, (_, i) => addDays("2026-03-23", i));
-    const weeks = new Set(days.map((d) => `${isoWeekOf(d).isoYear}-${isoWeekOf(d).isoWeek}`));
+    const weeks = new Set(
+      days.map((d) => `${isoWeekOf(d).isoYear}-${isoWeekOf(d).isoWeek}`),
+    );
     expect(weeks.size).toBe(1);
   });
 });

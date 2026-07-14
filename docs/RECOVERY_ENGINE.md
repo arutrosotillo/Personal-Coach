@@ -22,8 +22,8 @@ Motor puro determinista e independiente (`src/core/engines/recovery/`, F3). Prod
 ```ts
 type RecoveryAssessment = {
   status: "GOOD" | "WATCH" | "POOR" | "INSUFFICIENT_DATA";
-  signals: RecoverySignal[];       // { kind, muscleGroup?, value, window, explanation }
-  affectedScopes: string[];        // códigos de grupo muscular o "GLOBAL"
+  signals: RecoverySignal[]; // { kind, muscleGroup?, value, window, explanation }
+  affectedScopes: string[]; // códigos de grupo muscular o "GLOBAL"
   confidence: "LOW" | "MEDIUM" | "HIGH";
 };
 ```
@@ -31,6 +31,7 @@ type RecoveryAssessment = {
 Tipos de señal (`kind`): `PERFORMANCE_DROP`, `HIGH_FATIGUE`, `JOINT_PAIN`, `POOR_SLEEP`, `LOW_MOTIVATION`, `HIGH_STRESS`, `SESSION_DURATION_ANOMALY`, `PERSONAL_EVENT_CONTEXT`, `REPEATED_STALLING`.
 
 Determinación de `status` (semanal):
+
 - `INSUFFICIENT_DATA`: <3 muestras en todas las señales subjetivas y sin señales objetivas.
 - `POOR`: ≥2 señales activas sostenidas 2 semanas (p. ej. fatiga MM ≥4 + sueño ≤2.5) o dolor articular en ≥2 articulaciones.
 - `WATCH`: 1 señal activa sostenida, o ≥2 señales activas 1 semana.

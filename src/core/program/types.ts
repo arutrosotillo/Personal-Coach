@@ -26,7 +26,11 @@ export interface CatalogExercise {
   name: string;
   movementPattern: MovementPattern;
   systemicFatigue: number;
-  contributions: Array<{ group: MuscleGroupCode; role: MuscleRole; factor: number }>;
+  contributions: Array<{
+    group: MuscleGroupCode;
+    role: MuscleRole;
+    factor: number;
+  }>;
   variants: CatalogVariant[];
 }
 

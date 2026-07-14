@@ -50,7 +50,12 @@ function round25(kcal: number): number {
   return Math.round(kcal / CFG.kcalRounding) * CFG.kcalRounding;
 }
 
-export function mifflinStJeor(sex: Sex, weightKg: number, heightCm: number, ageYears: number): number {
+export function mifflinStJeor(
+  sex: Sex,
+  weightKg: number,
+  heightCm: number,
+  ageYears: number,
+): number {
   const base = 10 * weightKg + 6.25 * heightCm - 5 * ageYears;
   return Math.round(sex === "MALE" ? base + 5 : base - 161);
 }
@@ -60,16 +65,27 @@ export function stepsFactor(dailySteps: number): number {
   return row ? row.factor : 1.2;
 }
 
-export function estimateInitialTargets(input: InitialEstimateInput): InitialEstimate {
-  const bmr = mifflinStJeor(input.sex, input.weightKg, input.heightCm, input.ageYears);
+export function estimateInitialTargets(
+  input: InitialEstimateInput,
+): InitialEstimate {
+  const bmr = mifflinStJeor(
+    input.sex,
+    input.weightKg,
+    input.heightCm,
+    input.ageYears,
+  );
 
   const activityFactor = Math.min(
-    stepsFactor(input.dailySteps) + CFG.workActivityAdjustment[input.workActivity],
+    stepsFactor(input.dailySteps) +
+      CFG.workActivityAdjustment[input.workActivity],
     CFG.maxActivityFactor,
   );
 
-  const kcalPerSession = CFG.strengthKcalPerKgPerMin * input.weightKg * input.minutesPerSession;
-  const trainingKcalPerDay = Math.round((kcalPerSession * input.trainingSessionsPerWeek) / 7);
+  const kcalPerSession =
+    CFG.strengthKcalPerKgPerMin * input.weightKg * input.minutesPerSession;
+  const trainingKcalPerDay = Math.round(
+    (kcalPerSession * input.trainingSessionsPerWeek) / 7,
+  );
 
   const tdee = round25(bmr * activityFactor + trainingKcalPerDay);
   const tdeeRange = {
@@ -78,11 +94,17 @@ export function estimateInitialTargets(input: InitialEstimateInput): InitialEsti
   };
 
   const rateCfg = CFG.weeklyRatePct[input.goalType];
-  const weeklyRatePct = clamp(input.weeklyRatePct ?? rateCfg.default, rateCfg.min, rateCfg.max);
+  const weeklyRatePct = clamp(
+    input.weeklyRatePct ?? rateCfg.default,
+    rateCfg.min,
+    rateCfg.max,
+  );
 
   // Déficit diario derivado del ritmo (negativo si superávit). El "+ 0" evita -0.
   const dailyDeficitKcal =
-    Math.round((input.weightKg * (-weeklyRatePct / 100) * CFG.kcalPerKgBodyweight) / 7) + 0;
+    Math.round(
+      (input.weightKg * (-weeklyRatePct / 100) * CFG.kcalPerKgBodyweight) / 7,
+    ) + 0;
 
   const floorKcal = Math.max(
     Math.round(bmr * CFG.minKcalBmrFactor),
@@ -95,12 +117,17 @@ export function estimateInitialTargets(input: InitialEstimateInput): InitialEsti
   const clampedToFloor = kcalTarget < floorKcal;
   if (clampedToFloor) kcalTarget = round25(floorKcal + CFG.kcalRounding / 2);
 
-  const proteinG = Math.round(CFG.proteinGPerKg[input.goalType] * input.weightKg);
+  const proteinG = Math.round(
+    CFG.proteinGPerKg[input.goalType] * input.weightKg,
+  );
   const fatG = Math.max(
     Math.round(CFG.fatGPerKg[input.goalType] * input.weightKg),
     CFG.minFatGAbsolute,
   );
-  const carbsG = Math.max(Math.round((kcalTarget - proteinG * 4 - fatG * 9) / 4), 0);
+  const carbsG = Math.max(
+    Math.round((kcalTarget - proteinG * 4 - fatG * 9) / 4),
+    0,
+  );
 
   const fmtEs = (n: number) => n.toLocaleString("es-ES");
 

@@ -59,16 +59,16 @@ El servidor corre en la máquina del usuario, así que "sin Internet" funciona p
 
 ## Decisiones registradas (ADR abreviado)
 
-| # | Decisión | Motivo |
-|---|---|---|
-| 1 | Server Actions para mutaciones; route handlers solo para binarios (fotos, export) | Un usuario, sin API pública; tipado end-to-end sin boilerplate |
-| 2 | RSC + revalidate en casi toda la app; TanStack Query solo en ejecución de entrenamiento (F2) | Un solo sistema de caché salvo donde el optimismo es imprescindible |
-| 3 | Prisma 7: `prisma.config.ts` + client generado en `src/generated/prisma` (excluido de git) | Convención actual de Prisma 7; el generator `prisma-client` ya no escribe en node_modules |
-| 4 | **Tablas de IA pospuestas a la migración de F6** | No tocan entidades centrales (solo `AIMessage→AIConversation` entre sí y `profileId` como referencia); crear 6 tablas vacías hoy sería complejidad especulativa. Revisado y decidido en F1 |
-| 5 | `PersonalEvent` sí se crea en F1 | Lo consumen los motores deterministas (anomalías D0, espera R4b) desde F3–F4 |
-| 6 | Playwright con DB separada (`data/e2e.db`) y perfil móvil Pixel 7 | E2E reproducible sin tocar datos reales; la app es mobile-first |
-| 7 | Dark mode único en v1 | Uso en gimnasio; dos temas duplican QA visual sin beneficio para un usuario |
-| 8 | Package `personal-coach` (el directorio `Personal-Coach` no es nombre npm válido) | Restricción de npm sobre mayúsculas |
+| #   | Decisión                                                                                     | Motivo                                                                                                                                                                                     |
+| --- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Server Actions para mutaciones; route handlers solo para binarios (fotos, export)            | Un usuario, sin API pública; tipado end-to-end sin boilerplate                                                                                                                             |
+| 2   | RSC + revalidate en casi toda la app; TanStack Query solo en ejecución de entrenamiento (F2) | Un solo sistema de caché salvo donde el optimismo es imprescindible                                                                                                                        |
+| 3   | Prisma 7: `prisma.config.ts` + client generado en `src/generated/prisma` (excluido de git)   | Convención actual de Prisma 7; el generator `prisma-client` ya no escribe en node_modules                                                                                                  |
+| 4   | **Tablas de IA pospuestas a la migración de F6**                                             | No tocan entidades centrales (solo `AIMessage→AIConversation` entre sí y `profileId` como referencia); crear 6 tablas vacías hoy sería complejidad especulativa. Revisado y decidido en F1 |
+| 5   | `PersonalEvent` sí se crea en F1                                                             | Lo consumen los motores deterministas (anomalías D0, espera R4b) desde F3–F4                                                                                                               |
+| 6   | Playwright con DB separada (`data/e2e.db`) y perfil móvil Pixel 7                            | E2E reproducible sin tocar datos reales; la app es mobile-first                                                                                                                            |
+| 7   | Dark mode único en v1                                                                        | Uso en gimnasio; dos temas duplican QA visual sin beneficio para un usuario                                                                                                                |
+| 8   | Package `personal-coach` (el directorio `Personal-Coach` no es nombre npm válido)            | Restricción de npm sobre mayúsculas                                                                                                                                                        |
 
 ## Estructura de carpetas (estado F1; las marcadas ⏳ llegan en fases posteriores)
 

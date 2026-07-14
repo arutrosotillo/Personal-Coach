@@ -16,7 +16,12 @@ export type UnitSystem = z.infer<typeof UnitSystem>;
 export const WorkActivity = z.enum(["SEDENTARY", "LIGHT", "MODERATE", "HIGH"]);
 export type WorkActivity = z.infer<typeof WorkActivity>;
 
-export const GoalType = z.enum(["FAT_LOSS", "RECOMP", "LEAN_GAIN", "MAINTENANCE"]);
+export const GoalType = z.enum([
+  "FAT_LOSS",
+  "RECOMP",
+  "LEAN_GAIN",
+  "MAINTENANCE",
+]);
 export type GoalType = z.infer<typeof GoalType>;
 
 export const GoalStatus = z.enum(["ACTIVE", "COMPLETED", "ABANDONED"]);
@@ -108,7 +113,12 @@ export const Contraindication = z.enum([
 ]);
 export type Contraindication = z.infer<typeof Contraindication>;
 
-export const MesocycleStatus = z.enum(["PLANNED", "ACTIVE", "COMPLETED", "ABORTED"]);
+export const MesocycleStatus = z.enum([
+  "PLANNED",
+  "ACTIVE",
+  "COMPLETED",
+  "ABORTED",
+]);
 export type MesocycleStatus = z.infer<typeof MesocycleStatus>;
 
 export const WeekKind = z.enum(["ACCUMULATION", "DELOAD"]);

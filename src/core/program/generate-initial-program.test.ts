@@ -67,7 +67,9 @@ describe("generateInitialProgram — división por días", () => {
   });
 
   it("rechaza días fuera de rango", () => {
-    expect(() => generateInitialProgram(baseInput({ daysPerWeek: 7 }))).toThrow(/2–6/);
+    expect(() => generateInitialProgram(baseInput({ daysPerWeek: 7 }))).toThrow(
+      /2–6/,
+    );
   });
 });
 
@@ -89,15 +91,21 @@ describe("generateInitialProgram — restricciones duras", () => {
 
   it("excluye ejercicios prohibidos por el usuario", () => {
     const program = generateInitialProgram(
-      baseInput({ excludedExerciseNames: ["Press inclinado", "Sentadilla trasera"] }),
+      baseInput({
+        excludedExerciseNames: ["Press inclinado", "Sentadilla trasera"],
+      }),
     );
-    const names = program.days.flatMap((d) => d.exercises.map((e) => e.exerciseName));
+    const names = program.days.flatMap((d) =>
+      d.exercises.map((e) => e.exerciseName),
+    );
     expect(names).not.toContain("Press inclinado");
     expect(names).not.toContain("Sentadilla trasera");
   });
 
   it("evita variantes contraindicadas para molestias declaradas (rodilla)", () => {
-    const program = generateInitialProgram(baseInput({ contraindications: ["KNEE"] }));
+    const program = generateInitialProgram(
+      baseInput({ contraindications: ["KNEE"] }),
+    );
     const catalog = testCatalog();
     for (const day of program.days) {
       for (const ex of day.exercises) {
@@ -121,7 +129,9 @@ describe("generateInitialProgram — prioridades estéticas", () => {
     expect(sets.PECHO_SUPERIOR ?? 0).toBeGreaterThanOrEqual(6);
     // Piernas presentes en ≥2 sesiones
     const legDays = program.days.filter((d) =>
-      d.exercises.some((e) => ["CUADRICEPS", "ISQUIOS", "GLUTEO"].includes(e.muscleGroup)),
+      d.exercises.some((e) =>
+        ["CUADRICEPS", "ISQUIOS", "GLUTEO"].includes(e.muscleGroup),
+      ),
     );
     expect(legDays.length).toBeGreaterThanOrEqual(2);
     expect(sets.CUADRICEPS ?? 0).toBeGreaterThanOrEqual(4);
@@ -154,7 +164,9 @@ describe("generateInitialProgram — presupuesto de tiempo", () => {
   });
 
   it("protege del recorte a los grupos priorizados por el usuario", () => {
-    const withoutPriority = generateInitialProgram(baseInput({ minutesPerSession: 40 }));
+    const withoutPriority = generateInitialProgram(
+      baseInput({ minutesPerSession: 40 }),
+    );
     const withPriority = generateInitialProgram(
       baseInput({ minutesPerSession: 40, priorityMuscles: ["BICEPS"] }),
     );
@@ -162,10 +174,14 @@ describe("generateInitialProgram — presupuesto de tiempo", () => {
       p.days.reduce(
         (sum, d) =>
           sum +
-          d.exercises.filter((e) => e.muscleGroup === "BICEPS").reduce((s, e) => s + e.sets, 0),
+          d.exercises
+            .filter((e) => e.muscleGroup === "BICEPS")
+            .reduce((s, e) => s + e.sets, 0),
         0,
       );
-    expect(bicepsSets(withPriority)).toBeGreaterThanOrEqual(bicepsSets(withoutPriority));
+    expect(bicepsSets(withPriority)).toBeGreaterThanOrEqual(
+      bicepsSets(withoutPriority),
+    );
     expect(bicepsSets(withPriority)).toBeGreaterThan(0);
   });
 });

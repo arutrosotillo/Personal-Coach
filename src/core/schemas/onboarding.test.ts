@@ -53,15 +53,24 @@ describe("onboardingSchema — datos inválidos rechazados con mensaje útil", (
     [{ birthDate: "10/03/1992" }, /Fecha inválida/],
     [{ weeklyRatePct: -3 }, /1 %/],
   ])("rechaza %j", (override, message) => {
-    const result = onboardingSchema.safeParse({ ...VALID_MINIMAL, ...override });
+    const result = onboardingSchema.safeParse({
+      ...VALID_MINIMAL,
+      ...override,
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues.map((i) => i.message).join(" | ")).toMatch(message);
+      expect(result.error.issues.map((i) => i.message).join(" | ")).toMatch(
+        message,
+      );
     }
   });
 
   it("rechaza NaN y valores no numéricos en campos numéricos", () => {
-    expect(onboardingSchema.safeParse({ ...VALID_MINIMAL, weightKg: NaN }).success).toBe(false);
-    expect(onboardingSchema.safeParse({ ...VALID_MINIMAL, weightKg: "84" }).success).toBe(false);
+    expect(
+      onboardingSchema.safeParse({ ...VALID_MINIMAL, weightKg: NaN }).success,
+    ).toBe(false);
+    expect(
+      onboardingSchema.safeParse({ ...VALID_MINIMAL, weightKg: "84" }).success,
+    ).toBe(false);
   });
 });

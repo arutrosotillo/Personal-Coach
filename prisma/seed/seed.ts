@@ -8,7 +8,9 @@ import { runSeed, SEED_VERSION } from "./run-seed";
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL no está definida");
-  const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url }) });
+  const prisma = new PrismaClient({
+    adapter: new PrismaBetterSqlite3({ url }),
+  });
 
   try {
     const counts = await runSeed(prisma);

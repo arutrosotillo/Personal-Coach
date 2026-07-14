@@ -23,21 +23,21 @@ La app compite con una libreta. **Registrar una serie debe costar <3 segundos, c
 
 ## Pantallas (13)
 
-| # | Pantalla | Fase | Resumen |
-|---|---|---|---|
-| 1 | Onboarding | **F1** | Wizard de 8 pasos cortos; opcionales omitibles; revisión final antes de crear |
-| 2 | Dashboard | **F1** (base) | Héroe contextual, estado del objetivo, programa; se enriquece en F2–F5 |
-| 3 | Entrenamiento de hoy | F2 | Vista previa de la sesión con recomendaciones |
-| 4 | Ejecución de entrenamiento | F2 | LA pantalla: filas por serie pre-rellenadas, steppers grandes, completar = 1 tap + temporizador |
-| 5 | Historial | F2 | Sesiones y por-ejercicio con e1RM |
-| 6 | Programa semanal | **F1** (lectura) / F2 (edición) | Días, sesiones, volumen semanal por grupo |
-| 7 | Biblioteca de ejercicios | F2 | Catálogo con filtros, ficha, historial |
-| 8 | Nutrición diaria | F4 | Totales + plantillas + restantes del día |
-| 9 | Check-in semanal | F4 | Wizard: datos → revisión → sensaciones → recomendaciones |
-| 10 | Progreso corporal | F4–F5 | Peso+EMA, cintura, fotos con guía y comparador |
-| 11 | Recomendaciones | F5 | Tarjetas con acción, porqué, evidencia, aceptar/editar/rechazar |
-| 12 | Configuración y exportación | **F1** (base) / F7 (export) | Perfil, objetivo, datos |
-| 13 | Chat del coach | F6 | Coach AI (ver AI_COACH.md) |
+| #   | Pantalla                    | Fase                            | Resumen                                                                                         |
+| --- | --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 1   | Onboarding                  | **F1**                          | Wizard de 8 pasos cortos; opcionales omitibles; revisión final antes de crear                   |
+| 2   | Dashboard                   | **F1** (base)                   | Héroe contextual, estado del objetivo, programa; se enriquece en F2–F5                          |
+| 3   | Entrenamiento de hoy        | F2                              | Vista previa de la sesión con recomendaciones                                                   |
+| 4   | Ejecución de entrenamiento  | F2                              | LA pantalla: filas por serie pre-rellenadas, steppers grandes, completar = 1 tap + temporizador |
+| 5   | Historial                   | F2                              | Sesiones y por-ejercicio con e1RM                                                               |
+| 6   | Programa semanal            | **F1** (lectura) / F2 (edición) | Días, sesiones, volumen semanal por grupo                                                       |
+| 7   | Biblioteca de ejercicios    | F2                              | Catálogo con filtros, ficha, historial                                                          |
+| 8   | Nutrición diaria            | F4                              | Totales + plantillas + restantes del día                                                        |
+| 9   | Check-in semanal            | F4                              | Wizard: datos → revisión → sensaciones → recomendaciones                                        |
+| 10  | Progreso corporal           | F4–F5                           | Peso+EMA, cintura, fotos con guía y comparador                                                  |
+| 11  | Recomendaciones             | F5                              | Tarjetas con acción, porqué, evidencia, aceptar/editar/rechazar                                 |
+| 12  | Configuración y exportación | **F1** (base) / F7 (export)     | Perfil, objetivo, datos                                                                         |
+| 13  | Chat del coach              | F6                              | Coach AI (ver AI_COACH.md)                                                                      |
 
 ## Navegación
 

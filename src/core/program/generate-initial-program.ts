@@ -43,7 +43,9 @@ interface ResolvedSlot {
   sets: number;
 }
 
-export function generateInitialProgram(input: GeneratorInput): GeneratedProgram {
+export function generateInitialProgram(
+  input: GeneratorInput,
+): GeneratedProgram {
   const warnings: string[] = [];
   const split = splitForDays(input.daysPerWeek);
 
@@ -53,7 +55,9 @@ export function generateInitialProgram(input: GeneratorInput): GeneratedProgram 
 
   const equipmentSet = new Set(input.equipment);
   const userContras = new Set(input.contraindications);
-  const excluded = new Set(input.excludedExerciseNames.map((n) => n.toLowerCase()));
+  const excluded = new Set(
+    input.excludedExerciseNames.map((n) => n.toLowerCase()),
+  );
   const usedExerciseIds = new Set<string>();
 
   const days: GeneratedDay[] = split.days.map((day, dayIndex) => {
@@ -76,7 +80,12 @@ export function generateInitialProgram(input: GeneratorInput): GeneratedProgram 
       }
       usedToday.add(pick.exercise.id);
       usedExerciseIds.add(pick.exercise.id);
-      resolved.push({ slot, exercise: pick.exercise, variant: pick.variant, sets: slot.sets });
+      resolved.push({
+        slot,
+        exercise: pick.exercise,
+        variant: pick.variant,
+        sets: slot.sets,
+      });
     }
 
     // Presupuesto de tiempo: recortar Tier C → aislamiento Tier B; nunca Tier A.
@@ -105,7 +114,12 @@ export function generateInitialProgram(input: GeneratorInput): GeneratedProgram 
 
   const weeklySetsByGroup = countWeeklySets(days, input.catalog);
 
-  const priorityLabels = ["DELT_LATERAL", "DELT_POSTERIOR", "DORSAL", "PECHO_SUPERIOR"]
+  const priorityLabels = [
+    "DELT_LATERAL",
+    "DELT_POSTERIOR",
+    "DORSAL",
+    "PECHO_SUPERIOR",
+  ]
     .concat(input.priorityMuscles.filter((g) => DEFAULT_TIERS[g] !== "A"))
     .map((g) => labelOf(g as MuscleGroupCode));
 
@@ -139,7 +153,8 @@ function pickExercise(
     usedExerciseIds: Set<string>;
   },
 ): { exercise: CatalogExercise; variant: CatalogVariant } | null {
-  const isCompoundPattern = (e: CatalogExercise) => COMPOUND_PATTERNS.has(e.movementPattern);
+  const isCompoundPattern = (e: CatalogExercise) =>
+    COMPOUND_PATTERNS.has(e.movementPattern);
   const kindMatches = (e: CatalogExercise) =>
     slot.kind === "COMPOUND" ? isCompoundPattern(e) : !isCompoundPattern(e);
 
@@ -147,11 +162,16 @@ function pickExercise(
     .filter((e) => !ctx.excluded.has(e.name.toLowerCase()))
     .filter((e) => !ctx.usedToday.has(e.id))
     .filter((e) =>
-      e.contributions.some((c) => c.group === slot.group && c.role === "PRIMARY"),
+      e.contributions.some(
+        (c) => c.group === slot.group && c.role === "PRIMARY",
+      ),
     )
     .filter(kindMatches)
     .map((e) => ({ exercise: e, variant: pickVariant(e, ctx) }))
-    .filter((p): p is { exercise: CatalogExercise; variant: CatalogVariant } => p.variant !== null);
+    .filter(
+      (p): p is { exercise: CatalogExercise; variant: CatalogVariant } =>
+        p.variant !== null,
+    );
 
   if (candidates.length === 0) return null;
 
@@ -188,15 +208,20 @@ function pickVariant(
 }
 
 function slotCost(resolved: ResolvedSlot): number {
-  if (resolved.slot.kind === "ISOLATION") return resolved.sets * SLOT_COST_MIN.ISOLATION;
+  if (resolved.slot.kind === "ISOLATION")
+    return resolved.sets * SLOT_COST_MIN.ISOLATION;
   return (
     resolved.sets *
-    (resolved.exercise.systemicFatigue >= 3 ? SLOT_COST_MIN.COMPOUND_HEAVY : SLOT_COST_MIN.COMPOUND)
+    (resolved.exercise.systemicFatigue >= 3
+      ? SLOT_COST_MIN.COMPOUND_HEAVY
+      : SLOT_COST_MIN.COMPOUND)
   );
 }
 
 function estimateMinutes(resolved: ResolvedSlot[]): number {
-  return SESSION_OVERHEAD_MIN + resolved.reduce((sum, r) => sum + slotCost(r), 0);
+  return (
+    SESSION_OVERHEAD_MIN + resolved.reduce((sum, r) => sum + slotCost(r), 0)
+  );
 }
 
 function trimToBudget(
@@ -221,7 +246,12 @@ function trimToBudget(
   // 2. Reducir aislamientos Tier B a mínimo 2 series (desde el final).
   for (let i = resolved.length - 1; i >= 0 && overBudget(); i--) {
     const r = resolved[i];
-    while (tierOf(r) === "B" && r.slot.kind === "ISOLATION" && r.sets > 2 && overBudget()) {
+    while (
+      tierOf(r) === "B" &&
+      r.slot.kind === "ISOLATION" &&
+      r.sets > 2 &&
+      overBudget()
+    ) {
       r.sets -= 1;
       trimmed = true;
     }
@@ -259,8 +289,11 @@ function countWeeklySets(
       if (!exercise) continue;
       for (const contribution of exercise.contributions) {
         totals[contribution.group] =
-          Math.round(((totals[contribution.group] ?? 0) + ex.sets * contribution.factor) * 100) /
-          100;
+          Math.round(
+            ((totals[contribution.group] ?? 0) +
+              ex.sets * contribution.factor) *
+              100,
+          ) / 100;
       }
     }
   }

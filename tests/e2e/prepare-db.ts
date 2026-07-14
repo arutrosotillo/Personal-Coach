@@ -18,5 +18,9 @@ for (const suffix of ["", "-journal", "-wal", "-shm"]) {
 }
 
 const env = { ...process.env, DATABASE_URL: "file:./data/e2e.db" };
-execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], { cwd: root, env, stdio: "inherit" });
+execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {
+  cwd: root,
+  env,
+  stdio: "inherit",
+});
 execFileSync("pnpm", ["db:seed"], { cwd: root, env, stdio: "inherit" });

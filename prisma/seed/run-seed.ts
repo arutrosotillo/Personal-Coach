@@ -31,7 +31,9 @@ export async function runSeed(prisma: PrismaClient): Promise<SeedCounts> {
       update: { nameEs: group.nameEs, region: group.region, tier: group.tier },
     });
   }
-  const groupsByCode = new Map((await prisma.muscleGroup.findMany()).map((g) => [g.code, g.id]));
+  const groupsByCode = new Map(
+    (await prisma.muscleGroup.findMany()).map((g) => [g.code, g.id]),
+  );
 
   // 2. Ejercicios + contribuciones + variantes
   for (const exercise of EXERCISES) {
@@ -53,11 +55,16 @@ export async function runSeed(prisma: PrismaClient): Promise<SeedCounts> {
     for (const contribution of exercise.contributions) {
       const muscleGroupId = groupsByCode.get(contribution.group);
       if (!muscleGroupId) {
-        throw new Error(`Grupo desconocido en el catálogo: ${contribution.group}`);
+        throw new Error(
+          `Grupo desconocido en el catálogo: ${contribution.group}`,
+        );
       }
       await prisma.exerciseMuscleContribution.upsert({
         where: {
-          exerciseId_muscleGroupId: { exerciseId: dbExercise.id, muscleGroupId },
+          exerciseId_muscleGroupId: {
+            exerciseId: dbExercise.id,
+            muscleGroupId,
+          },
         },
         create: {
           exerciseId: dbExercise.id,

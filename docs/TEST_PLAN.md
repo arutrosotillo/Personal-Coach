@@ -11,11 +11,13 @@ Principio: los motores son funciones puras `(inputs) → { valor, explicación, 
 ## Cobertura por fase
 
 ### F1 (actual)
+
 - Unit: schemas Zod del onboarding (válidos/inválidos, límites), `core/dates.ts` (medianoche, DST Europe/Madrid, timezone del perfil), generador de programa inicial (división correcta por días 2–6, respeto de equipamiento, exclusiones y molestias, sesgo Tier A presente, piernas no ignoradas, presupuesto de tiempo, determinismo: mismo input → mismo output).
 - Integración: seed idempotente (2 ejecuciones → mismos conteos, sin duplicados); onboarding transaccional (crea perfil+objetivo+preferencias+programa de una vez; input inválido → 0 escrituras; re-ejecutar onboarding no crea segundo perfil activo; datos incompletos válidos aceptados).
 - E2E: usuario nuevo → onboarding completo → dashboard con objetivo y programa → recarga → persiste.
 
 ### F3–F5 (comprometido)
+
 - Los 12 casos canónicos de progresión (TRAINING_ENGINE.md §2) y T1–T11 de ajuste calórico (NUTRITION_ENGINE.md §5) como suites de aceptación TDD.
 - **10 perfiles sintéticos** deterministas (PRNG mulberry32, seed fija 20260714): principiante con progreso rápido · avanzado estancado · retención + whoosh · baja adherencia (verifica que NO recorta y la explicación menciona adherencia) · pérdida demasiado rápida (sube kcal + aviso) · fuerza↑ peso↓ (sin falsas alarmas) · mala recuperación (deload por fatiga antes que por rendimiento) · dolor articular repetido (congela progresión) · pocos pesajes (confianza degradada / INSUFFICIENT_DATA) · cambia-ejercicios (jamás compara historiales entre variantes).
 - **Property-based (fast-check)**: |ΔkcaI| ≤ paso máximo · target ≥ suelo calórico SIEMPRE (la propiedad más importante de la suite) · cooldown respetado · carga recomendada alcanzable con los incrementos reales · media móvil acotada por min/max · explicación no vacía + inputs serializables y re-ejecutables (trazabilidad).

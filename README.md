@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Personal Coach
 
-## Getting Started
+Aplicación **personal** (un único usuario, sin login, sin nube) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Local-first: todos los datos viven en tu ordenador.
 
-First, run the development server:
+Estado: **Fase 1** — onboarding, catálogo de ejercicios y programa inicial funcionando. Fases siguientes en `docs/IMPLEMENTATION_PLAN.md`.
+
+## Requisitos
+
+- Node.js ≥ 20 (probado con 24)
+- pnpm ≥ 10
+
+## Puesta en marcha
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp .env.example .env        # DATABASE_URL apunta a data/app.db
+pnpm db:deploy              # aplica las migraciones (crea data/app.db)
+pnpm db:seed                # catálogo: 16 grupos, 42 ejercicios (idempotente)
+pnpm dev                    # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Producción local:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm build
+pnpm start                  # http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Uso desde el móvil (misma red Wi-Fi)
 
-## Learn More
+1. Arranca escuchando en la red local: `pnpm start -- -H 0.0.0.0`
+2. Averigua la IP del ordenador: `ipconfig getifaddr en0` (macOS)
+3. En el móvil abre `http://<esa-ip>:3000`
 
-To learn more about Next.js, take a look at the following resources:
+Fuera de tu red local no funciona (decisión del MVP; ver `docs/ARCHITECTURE.md` — offline).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tus datos
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Todo se guarda en **`data/app.db`** (SQLite). Las fotos de progreso (Fase 4) irán a `data/photos/`.
+- `data/` y `exports/` están excluidos de git: **nunca** se suben datos personales.
+- Copia de seguridad manual: copia la carpeta `data/` con la app cerrada.
+- Empezar de cero: borra `data/app.db` y repite `pnpm db:deploy && pnpm db:seed`.
 
-## Deploy on Vercel
+## Comandos
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Comando                                  | Qué hace                                         |
+| ---------------------------------------- | ------------------------------------------------ |
+| `pnpm dev` / `pnpm build` / `pnpm start` | desarrollo / build / producción                  |
+| `pnpm check`                             | lint + typecheck + tests + build (gate completo) |
+| `pnpm test` / `pnpm test:watch`          | Vitest (unit + integración)                      |
+| `pnpm test:e2e`                          | Playwright (usa `data/e2e.db`, nunca tus datos)  |
+| `pnpm db:migrate`                        | nueva migración en desarrollo                    |
+| `pnpm db:deploy`                         | aplicar migraciones                              |
+| `pnpm db:seed`                           | seed idempotente del catálogo                    |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Documentación
+
+La especificación completa del producto, motores y fases vive en [`docs/`](docs/): producto, arquitectura, modelo de datos, motores de entrenamiento/nutrición/recuperación, plan de tests, plan de implementación, Coach AI (fase 6) y filosofía del coach.

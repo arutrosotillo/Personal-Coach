@@ -65,7 +65,9 @@ export function isoWeekOf(localDate: string): {
   thursday.setUTCDate(date.getUTCDate() + 4 - dayOfWeek);
   const isoYear = thursday.getUTCFullYear();
   const yearStart = new Date(Date.UTC(isoYear, 0, 1));
-  const isoWeek = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  const isoWeek = Math.ceil(
+    ((thursday.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7,
+  );
   const monday = new Date(date);
   monday.setUTCDate(date.getUTCDate() - (dayOfWeek - 1));
   return { isoYear, isoWeek, weekStartDate: monday.toISOString().slice(0, 10) };

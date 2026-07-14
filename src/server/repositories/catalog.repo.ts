@@ -37,7 +37,9 @@ export async function loadCatalog(): Promise<CatalogExercise[]> {
       repRangeMin: v.repRangeMin,
       repRangeMax: v.repRangeMax,
       defaultRestSeconds: v.defaultRestSeconds,
-      contraindications: Contraindication.array().parse(v.contraindications ?? []),
+      contraindications: Contraindication.array().parse(
+        v.contraindications ?? [],
+      ),
       isDefault: v.isDefault,
     })),
   }));

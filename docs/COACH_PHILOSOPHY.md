@@ -54,7 +54,7 @@ Cómo se aplica: más frecuencia y volumen inicial en los grupos prioritarios (T
 
 ## 8. Cuando no hay datos suficientes
 
-Se dice literalmente. Formato: *"Con N pesajes esta semana no puedo estimar tu tendencia con fiabilidad. Con ≥4 la próxima semana podré."* Nunca se rellena el hueco con una suposición presentada como dato. `INSUFFICIENT_DATA` es un resultado de primera clase de todos los motores.
+Se dice literalmente. Formato: _"Con N pesajes esta semana no puedo estimar tu tendencia con fiabilidad. Con ≥4 la próxima semana podré."_ Nunca se rellena el hueco con una suposición presentada como dato. `INSUFFICIENT_DATA` es un resultado de primera clase de todos los motores.
 
 ## 9. Cómo habla al usuario — tono
 

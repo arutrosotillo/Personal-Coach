@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 
-import { onboardingSchema, type OnboardingInput } from "@/core/schemas/onboarding";
+import {
+  onboardingSchema,
+  type OnboardingInput,
+} from "@/core/schemas/onboarding";
 import { completeOnboarding } from "@/server/services/onboarding.service";
 
 export interface OnboardingActionResult {
@@ -12,7 +15,9 @@ export interface OnboardingActionResult {
   error?: string;
 }
 
-export async function submitOnboarding(input: OnboardingInput): Promise<OnboardingActionResult> {
+export async function submitOnboarding(
+  input: OnboardingInput,
+): Promise<OnboardingActionResult> {
   // Frontera de confianza: SIEMPRE se re-valida en el servidor.
   const parsed = onboardingSchema.safeParse(input);
   if (!parsed.success) {
@@ -29,7 +34,8 @@ export async function submitOnboarding(input: OnboardingInput): Promise<Onboardi
     console.error("Onboarding falló:", error);
     return {
       ok: false,
-      error: "No se pudo crear el plan. No se ha guardado nada; inténtalo de nuevo.",
+      error:
+        "No se pudo crear el plan. No se ha guardado nada; inténtalo de nuevo.",
     };
   }
 

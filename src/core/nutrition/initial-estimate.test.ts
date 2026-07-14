@@ -25,7 +25,9 @@ describe("mifflinStJeor", () => {
     expect(mifflinStJeor("MALE", 84, 178, 34)).toBe(1788);
   });
   it("mujer resta 166 kcal respecto al hombre", () => {
-    expect(mifflinStJeor("MALE", 60, 165, 30) - mifflinStJeor("FEMALE", 60, 165, 30)).toBe(166);
+    expect(
+      mifflinStJeor("MALE", 60, 165, 30) - mifflinStJeor("FEMALE", 60, 165, 30),
+    ).toBe(166);
   });
 });
 

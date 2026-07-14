@@ -170,7 +170,11 @@ export interface SplitDefinition {
 export function splitForDays(daysPerWeek: number): SplitDefinition {
   switch (daysPerWeek) {
     case 2:
-      return { type: "FULL_BODY_2", label: "Full body 2 días", days: [FULL_BODY_A, FULL_BODY_B] };
+      return {
+        type: "FULL_BODY_2",
+        label: "Full body 2 días",
+        days: [FULL_BODY_A, FULL_BODY_B],
+      };
     case 3:
       return {
         type: "FULL_BODY_3",
