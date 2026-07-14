@@ -36,30 +36,31 @@ const LEGS: MuscleGroupCode[] = [
 
 const UPPER: MuscleGroupCode[] = [...PUSH, ...PULL];
 const LOWER: MuscleGroupCode[] = LEGS;
+// Full body de 3 días equilibrado: los grupos grandes (cuádriceps, isquios,
+// pecho, dorsal, deltoide lateral) aparecen ≥2×; carga repartida ~6 grupos/día.
 const FULL_A: MuscleGroupCode[] = [
   "CUADRICEPS",
+  "PECHO_MEDIO_INFERIOR",
+  "DORSAL",
+  "DELT_LATERAL",
+  "BICEPS",
+  "GEMELO",
+];
+const FULL_B: MuscleGroupCode[] = [
+  "ISQUIOS",
+  "GLUTEO",
   "PECHO_SUPERIOR",
+  "ESPALDA_ALTA",
+  "DELT_POSTERIOR",
+  "TRICEPS",
+];
+const FULL_C: MuscleGroupCode[] = [
+  "CUADRICEPS",
+  "PECHO_MEDIO_INFERIOR",
   "DORSAL",
   "DELT_LATERAL",
   "ISQUIOS",
   "TRICEPS",
-];
-const FULL_B: MuscleGroupCode[] = [
-  "ISQUIOS",
-  "ESPALDA_ALTA",
-  "PECHO_MEDIO_INFERIOR",
-  "DELT_POSTERIOR",
-  "GLUTEO",
-  "BICEPS",
-  "GEMELO",
-];
-const FULL_C: MuscleGroupCode[] = [
-  "CUADRICEPS",
-  "DORSAL",
-  "DELT_LATERAL",
-  "DELT_POSTERIOR",
-  "PECHO_SUPERIOR",
-  "CORE",
 ];
 
 export interface SplitDayMenu {

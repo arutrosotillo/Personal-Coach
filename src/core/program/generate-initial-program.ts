@@ -168,7 +168,9 @@ export function generateInitialProgram(
   const fractionalSets: Record<MuscleGroupCode, number> = Object.fromEntries(
     ALL_GROUPS.map((g) => [g, 0]),
   ) as Record<MuscleGroupCode, number>;
-  const daysTrainingGroup: Record<
+  // Frecuencia = días con trabajo DIRECTO del grupo (no cuenta el estímulo
+  // indirecto, que ya se refleja en fractionalSets).
+  const directDaysTrainingGroup: Record<
     MuscleGroupCode,
     Set<number>
   > = Object.fromEntries(
@@ -286,13 +288,11 @@ export function generateInitialProgram(
       usedInProgram.add(pick.exercise.id);
       setsForGroupToday[group] = usedForGroup + sets;
       directSets[group] += sets;
-      daysTrainingGroup[group].add(dayIndex);
+      directDaysTrainingGroup[group].add(dayIndex);
 
       for (const contribution of pick.exercise.contributions) {
         remaining[contribution.group] -= sets * contribution.factor;
         fractionalSets[contribution.group] += sets * contribution.factor;
-        if (contribution.factor > 0)
-          daysTrainingGroup[contribution.group].add(dayIndex);
       }
     }
 
@@ -317,7 +317,7 @@ export function generateInitialProgram(
     group,
     directSets: directSets[group],
     fractionalSets: round1(fractionalSets[group]),
-    frequency: daysTrainingGroup[group].size,
+    frequency: directDaysTrainingGroup[group].size,
     isPriority: priority.has(group),
     targetSets: targets[group],
   }));

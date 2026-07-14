@@ -321,6 +321,40 @@ export const EXERCISES: ExerciseSeed[] = [
       },
     ],
   },
+  {
+    // Segundo patrón para deltoide lateral (además de la elevación), para dar
+    // variedad y no depender de un único ejercicio.
+    name: "Remo al mentón con agarre ancho",
+    movementPattern: "VERTICAL_PULL",
+    systemicFatigue: 1,
+    instructions:
+      "Agarre ancho; sube los codos hacia los lados hasta la altura de los hombros, sin encoger el cuello.",
+    contributions: [
+      c("DELT_LATERAL", "PRIMARY", 1.0),
+      c("TRAPECIO_SUPERIOR", "SECONDARY", 0.5),
+    ],
+    variants: [
+      {
+        name: "Polea",
+        equipment: "CABLE",
+        loadStepKg: 2.5,
+        repRangeMin: 12,
+        repRangeMax: 20,
+        defaultRestSeconds: 75,
+        contraindications: ["SHOULDER"],
+        isDefault: true,
+      },
+      {
+        name: "Mancuernas",
+        equipment: "DUMBBELL",
+        loadStepKg: 2,
+        repRangeMin: 12,
+        repRangeMax: 20,
+        defaultRestSeconds: 75,
+        contraindications: ["SHOULDER"],
+      },
+    ],
+  },
 
   // ============ DELTOIDE POSTERIOR ============
   {
@@ -969,6 +1003,17 @@ export const EXERCISES: ExerciseSeed[] = [
         contraindications: ["KNEE"],
         isDefault: true,
       },
+      {
+        // Recorrido parcial con pies altos: opción de cuádriceps más amable
+        // con la rodilla (menos flexión profunda).
+        name: "Prensa recorrido parcial (amable con rodilla)",
+        equipment: "MACHINE",
+        loadStepKg: 5,
+        repRangeMin: 12,
+        repRangeMax: 20,
+        defaultRestSeconds: 120,
+        contraindications: [],
+      },
     ],
   },
   {
@@ -998,7 +1043,7 @@ export const EXERCISES: ExerciseSeed[] = [
       "Pie trasero elevado. Baja vertical; empuja con el talón delantero.",
     contributions: [
       c("CUADRICEPS", "PRIMARY", 1.0),
-      c("GLUTEO", "PRIMARY", 1.0),
+      c("GLUTEO", "SECONDARY", 0.75),
     ],
     variants: [
       {
@@ -1189,6 +1234,8 @@ export const EXERCISES: ExerciseSeed[] = [
     movementPattern: "ISOLATION",
     systemicFatigue: 1,
     instructions: "Rodilla a 90°: trabaja el sóleo. Rango completo con pausas.",
+    // El gemelo sentado carga poco la articulación del tobillo: opción amable
+    // para quien declara molestias de tobillo (evita quedarse sin gemelo).
     contributions: [c("GEMELO", "PRIMARY", 1.0)],
     variants: [
       {
@@ -1198,7 +1245,7 @@ export const EXERCISES: ExerciseSeed[] = [
         repRangeMin: 10,
         repRangeMax: 15,
         defaultRestSeconds: 75,
-        contraindications: ["ANKLE"],
+        contraindications: [],
         isDefault: true,
       },
     ],
