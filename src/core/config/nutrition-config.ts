@@ -5,24 +5,21 @@ import type { GoalType } from "@/core/enums";
  * Ningún número de nutrición debe estar hardcodeado fuera de este archivo.
  */
 export const NUTRITION_CONFIG = {
-  /** Factor base de actividad según pasos/día (límites inferiores de tramo). */
-  stepsFactorTable: [
-    { minSteps: 12_000, factor: 1.7 },
-    { minSteps: 10_000, factor: 1.6 },
-    { minSteps: 8_000, factor: 1.5 },
-    { minSteps: 6_000, factor: 1.4 },
-    { minSteps: 4_000, factor: 1.3 },
-    { minSteps: 0, factor: 1.2 },
-  ],
-  /** Ajuste por actividad laboral (esfuerzo no capturado por pasos). */
-  workActivityAdjustment: {
-    SEDENTARY: 0.0,
-    LIGHT: 0.05,
-    MODERATE: 0.1,
-    HIGH: 0.15,
+  // ── Modelo TDEE aditivo (evita el doble conteo pasos/trabajo/ejercicio) ──
+  // TDEE = BMR × factorNEAT(trabajo) + kcalPasos + kcalEntrenamiento.
+  // Cada componente cubre una fuente distinta de gasto:
+  //  · factorNEAT(trabajo): vida diaria y esfuerzo del trabajo SIN los pasos ni el gimnasio.
+  //  · kcalPasos: locomoción medida por el podómetro/wearable.
+  //  · kcalEntrenamiento: coste neto de las sesiones de fuerza.
+  /** Factor NEAT base según actividad laboral (sin pasos ni entrenamiento). */
+  workNeatFactor: {
+    SEDENTARY: 1.15,
+    LIGHT: 1.2,
+    MODERATE: 1.3,
+    HIGH: 1.4,
   },
-  /** Tope del factor combinado pasos + trabajo. */
-  maxActivityFactor: 1.85,
+  /** kcal por paso y por kg de peso (locomoción neta; ~0,04 kcal/paso a 80 kg). */
+  kcalPerStepPerKg: 0.0005,
   /** Coste neto de una sesión de fuerza: kcal por kg de peso y minuto. */
   strengthKcalPerKgPerMin: 0.05,
   /** Incertidumbre comunicada de la estimación inicial (±). */
@@ -56,6 +53,8 @@ export const NUTRITION_CONFIG = {
   minFatGPerKg: 0.6,
   minFatGAbsolute: 45,
   minCarbsG: 100,
+  /** Umbrales de % graso a partir de los cuales usar peso objetivo para la proteína. */
+  highBodyFatPctForProteinRef: { MALE: 30, FEMALE: 40 },
   /** Redondeo de objetivos calóricos. */
   kcalRounding: 25,
 } as const;

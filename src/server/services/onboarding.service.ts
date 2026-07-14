@@ -51,6 +51,9 @@ export async function completeOnboarding(
     minutesPerSession: data.minutesPerSession,
     goalType,
     weeklyRatePct: data.weeklyRatePct,
+    bodyFatPct: data.bodyFatPct,
+    bodyFatMeasured: data.bodyFatMeasured,
+    targetWeightKg: data.targetWeightKg,
   });
 
   const catalog = await loadCatalog();

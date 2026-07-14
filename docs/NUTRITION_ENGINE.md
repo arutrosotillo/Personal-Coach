@@ -2,22 +2,30 @@
 
 Motor puro determinista (`src/core/engines/nutrition/`, F4; la **estimación inicial** ya se usa en el onboarding de F1 vía `src/core/nutrition/initial-estimate.ts`). Unidad mínima de decisión: la semana. Redondeos: kcal a múltiplos de 25, macros a gramos enteros.
 
-## 1. Estimación inicial de gasto (TDEE)
+## 1. Estimación inicial de gasto (TDEE) — modelo aditivo v2.0
 
-**BMR — Mifflin-St Jeor** (mejor validación en población general):
+Implementación: `src/core/nutrition/initial-estimate.ts`, versión 2.0.0. Devuelve además una traza tipada `InitialNutritionEstimateTrace` que la UI muestra en el bloque expandible "Cómo se ha calculado".
+
+**BMR — Mifflin-St Jeor por defecto** (mejor validación en población general):
 
 - Hombre: `10·peso + 6.25·altura − 5·edad + 5`
 - Mujer: `10·peso + 6.25·altura − 5·edad − 161`
 
-**Factor de actividad compuesto**:
+**Katch-McArdle SOLO con % graso medido de forma fiable** (DEXA/plicómetro, marcado como `bodyFatMeasured`): `370 + 21.6·MLG`. Un % graso estimado (visual o báscula doméstica) NO activa Katch-McArdle — se usa Mifflin y se anota en la traza. Evita amplificar el error con un dato poco fiable.
 
-- Base por pasos/día: <4k → 1.20 · 4–6k → 1.30 · 6–8k → 1.40 · 8–10k → 1.50 · 10–12k → 1.60 · ≥12k → 1.70.
-- - ajuste laboral (esfuerzo no capturado por pasos): sedentario +0.00 · ligero +0.05 · moderado +0.10 · alto +0.15. Tope combinado 1.85.
-- Entrenamiento aparte (no en el factor): `0.05 kcal · kg · min` por sesión de fuerza, repartido /7.
+**Modelo TDEE ADITIVO** (evita el doble conteo entre pasos, trabajo y ejercicio; cada componente cubre una fuente distinta):
 
-`TDEE = BMR × min(F_pasos + F_trabajo, 1.85) + nSesiones × kcalSesión / 7`
+```
+TDEE = BMR × factorNEAT(trabajo) + kcalPasos + kcalEntrenamiento
+```
 
-Ejemplo verificado: 84 kg/178 cm/34 años/8.500 pasos/sedentario/4×60 min → BMR 1.788, factor 1.50, entreno 144/día → **TDEE ≈ 2.825**. Se muestra SIEMPRE con rango ±12 % y el aviso de que es un punto de partida que el bucle semanal corregirá.
+- `factorNEAT(trabajo)`: vida diaria + esfuerzo del trabajo SIN los pasos ni el gimnasio. Sedentario 1.15 · ligero 1.20 · moderado 1.30 · alto 1.40. (Antes se usaba un factor por pasos de hasta 1.7 y ADEMÁS se sumaba el entrenamiento: eso duplicaba parte del gasto — corregido.)
+- `kcalPasos = pasos × 0.0005 × peso` (locomoción neta medida por el podómetro; ~0,04 kcal/paso a 80 kg).
+- `kcalEntrenamiento = 0.05 · peso · minutos · sesiones / 7` (coste neto de la fuerza).
+
+Ejemplo (perfil de auditoría 83,5 kg/178 cm/34 años/10.000 pasos/sedentario/4×60 min): BMR 1.783 → base 1.783×1,15 = 2.050 · pasos 418 · entreno 143 → **TDEE 2.600** (rango ±12 %: 2.288–2.912). El modelo anterior daba ~3.000 para el mismo perfil por doble conteo. Se muestra SIEMPRE como estimación con rango; se calibra con datos reales en 2–4 semanas.
+
+**Separación explícita** en la traza: `TDEE estimado` → `ajuste por objetivo` → `target calórico`. El ajuste (déficit/superávit) se acota al 25 % del TDEE y el target nunca baja del suelo de seguridad (§2).
 
 ## 2. Objetivo semanal
 

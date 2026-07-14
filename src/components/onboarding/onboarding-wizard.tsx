@@ -367,6 +367,33 @@ export function OnboardingWizard({
                 </p>
                 {error("waistCm")}
               </div>
+              <div>
+                <Label htmlFor="bodyFatPct" className="mb-2 block">
+                  % de grasa corporal{" "}
+                  <span className="text-muted-foreground">— opcional</span>
+                </Label>
+                <Input
+                  id="bodyFatPct"
+                  placeholder="15"
+                  {...numberField("bodyFatPct", { step: "0.5" })}
+                />
+                <label className="mt-2 flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4"
+                    checked={values.bodyFatMeasured ?? false}
+                    onChange={(e) =>
+                      form.setValue("bodyFatMeasured", e.target.checked)
+                    }
+                  />
+                  <span className="text-muted-foreground">
+                    Medido de forma fiable (DEXA o plicómetro). Si es una
+                    estimación visual o de báscula, déjalo sin marcar: se usará
+                    Mifflin-St Jeor.
+                  </span>
+                </label>
+                {error("bodyFatPct")}
+              </div>
             </>
           )}
 
@@ -885,6 +912,62 @@ function ReviewStep({
             {estimate.explanations.kcal}
           </p>
         ) : null}
+        <details className="mt-3 text-xs">
+          <summary className="text-primary min-h-8 cursor-pointer select-none">
+            Cómo se ha calculado
+          </summary>
+          <dl className="tnum text-muted-foreground mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+            <dt>Fórmula BMR</dt>
+            <dd className="text-right">
+              {estimate.trace.bmrFormula === "MIFFLIN_ST_JEOR"
+                ? "Mifflin-St Jeor"
+                : "Katch-McArdle"}
+            </dd>
+            <dt>Metabolismo basal (BMR)</dt>
+            <dd className="text-right">{nf(estimate.trace.bmr)} kcal</dd>
+            <dt>× factor de actividad ({nf(estimate.trace.workNeatFactor)})</dt>
+            <dd className="text-right">
+              {nf(estimate.trace.maintenanceBase)} kcal
+            </dd>
+            <dt>+ pasos ({nf(data.dailySteps)}/día)</dt>
+            <dd className="text-right">+{nf(estimate.trace.stepsKcal)} kcal</dd>
+            <dt>
+              + entrenamiento ({data.daysPerWeek}×{data.minutesPerSession} min)
+            </dt>
+            <dd className="text-right">
+              +{nf(estimate.trace.trainingKcal)} kcal
+            </dd>
+            <dt className="text-foreground font-medium">Gasto total (TDEE)</dt>
+            <dd className="text-foreground text-right font-medium">
+              {nf(estimate.trace.tdee)} kcal
+            </dd>
+            <dt>Ajuste por objetivo</dt>
+            <dd className="text-right">
+              {estimate.trace.dailyAdjustmentKcal === 0
+                ? "—"
+                : `${estimate.trace.dailyAdjustmentKcal > 0 ? "−" : "+"}${nf(Math.abs(estimate.trace.dailyAdjustmentKcal))} kcal`}
+            </dd>
+            <dt>Suelo de seguridad</dt>
+            <dd className="text-right">{nf(estimate.trace.floorKcal)} kcal</dd>
+            <dt className="text-foreground font-medium">Objetivo</dt>
+            <dd className="text-foreground text-right font-medium">
+              {nf(estimate.trace.kcalTarget)} kcal
+            </dd>
+            <dt>Proteína ({nf(estimate.trace.proteinGPerKg)} g/kg)</dt>
+            <dd className="text-right">{estimate.trace.proteinG} g</dd>
+            <dt>Grasa</dt>
+            <dd className="text-right">{estimate.trace.fatG} g</dd>
+            <dt>Carbohidratos</dt>
+            <dd className="text-right">{estimate.trace.carbsG} g</dd>
+          </dl>
+          {estimate.trace.notes.length > 0 ? (
+            <ul className="text-muted-foreground mt-2 list-disc space-y-1 pl-4">
+              {estimate.trace.notes.map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
       </section>
 
       <section className="border-border bg-card rounded-lg border p-4">

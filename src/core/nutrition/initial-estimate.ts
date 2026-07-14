@@ -3,11 +3,14 @@ import type { GoalType, Sex, WorkActivity } from "@/core/enums";
 
 /**
  * Estimación inicial de gasto y objetivo nutricional (docs/NUTRITION_ENGINE.md §1–3).
- * Función pura: se usa en el onboarding (F1) y como semilla del motor dinámico (F4).
- * El resultado es un punto de partida con incertidumbre explícita, no una verdad.
+ * Función pura. El resultado es un PUNTO DE PARTIDA con incertidumbre explícita,
+ * no una prescripción: se calibrará con datos reales en 2–4 semanas (motor de F4).
+ *
+ * Modelo TDEE aditivo para evitar el doble conteo entre pasos, actividad laboral
+ * y entrenamiento: TDEE = BMR × factorNEAT(trabajo) + kcalPasos + kcalEntreno.
  */
 
-export const NUTRITION_ESTIMATE_VERSION = "1.0.0";
+export const NUTRITION_ESTIMATE_VERSION = "2.0.0";
 
 export interface InitialEstimateInput {
   sex: Sex;
@@ -21,12 +24,40 @@ export interface InitialEstimateInput {
   goalType: GoalType;
   /** % peso/semana; si no se indica, default del objetivo. */
   weeklyRatePct?: number;
+  /** % graso; solo se usa para Katch-McArdle/proteína si está MEDIDO de forma fiable. */
+  bodyFatPct?: number;
+  bodyFatMeasured?: boolean;
+  targetWeightKg?: number;
+}
+
+/** Traza completa y tipada del cálculo, para el bloque "Cómo se ha calculado". */
+export interface InitialNutritionEstimateTrace {
+  bmrFormula: "MIFFLIN_ST_JEOR" | "KATCH_MCARDLE";
+  bmr: number;
+  workNeatFactor: number;
+  maintenanceBase: number; // BMR × factorNEAT (vida diaria + trabajo)
+  stepsKcal: number;
+  trainingKcal: number;
+  tdee: number;
+  tdeeUncertaintyPct: number;
+  tdeeRange: { low: number; high: number };
+  weeklyRatePct: number;
+  dailyAdjustmentKcal: number; // >0 déficit, <0 superávit
+  boundedByMaxDeficit: boolean;
+  floorKcal: number;
+  clampedToFloor: boolean;
+  kcalTarget: number;
+  proteinReferenceWeightKg: number;
+  proteinGPerKg: number;
+  fatGPerKg: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  notes: string[];
 }
 
 export interface InitialEstimate {
   bmr: number;
-  activityFactor: number;
-  trainingKcalPerDay: number;
   tdee: number;
   tdeeRange: { low: number; high: number };
   weeklyRatePct: number;
@@ -37,6 +68,7 @@ export interface InitialEstimate {
   carbsG: number;
   floorKcal: number;
   clampedToFloor: boolean;
+  trace: InitialNutritionEstimateTrace;
   explanations: {
     tdee: string;
     kcal: string;
@@ -60,68 +92,107 @@ export function mifflinStJeor(
   return Math.round(sex === "MALE" ? base + 5 : base - 161);
 }
 
-export function stepsFactor(dailySteps: number): number {
-  const row = CFG.stepsFactorTable.find((r) => dailySteps >= r.minSteps);
-  return row ? row.factor : 1.2;
+/** Katch-McArdle: requiere % graso medido de forma fiable. */
+export function katchMcArdle(weightKg: number, bodyFatPct: number): number {
+  const leanMassKg = weightKg * (1 - bodyFatPct / 100);
+  return Math.round(370 + 21.6 * leanMassKg);
 }
 
 export function estimateInitialTargets(
   input: InitialEstimateInput,
 ): InitialEstimate {
-  const bmr = mifflinStJeor(
+  const notes: string[] = [];
+
+  // ── BMR ── Mifflin-St Jeor por defecto. Katch-McArdle solo con % graso MEDIDO.
+  let bmrFormula: InitialNutritionEstimateTrace["bmrFormula"] =
+    "MIFFLIN_ST_JEOR";
+  let bmr = mifflinStJeor(
     input.sex,
     input.weightKg,
     input.heightCm,
     input.ageYears,
   );
+  if (input.bodyFatMeasured && typeof input.bodyFatPct === "number") {
+    bmrFormula = "KATCH_MCARDLE";
+    bmr = katchMcArdle(input.weightKg, input.bodyFatPct);
+    notes.push(
+      `Katch-McArdle aplicado con % graso medido (${input.bodyFatPct} %).`,
+    );
+  } else if (typeof input.bodyFatPct === "number") {
+    notes.push(
+      "Se usa Mifflin-St Jeor: el % graso indicado es una estimación, no una medición fiable (báscula/visual no bastan).",
+    );
+  }
 
-  const activityFactor = Math.min(
-    stepsFactor(input.dailySteps) +
-      CFG.workActivityAdjustment[input.workActivity],
-    CFG.maxActivityFactor,
+  // ── TDEE aditivo (sin doble conteo) ──
+  const workNeatFactor = CFG.workNeatFactor[input.workActivity];
+  const maintenanceBase = bmr * workNeatFactor;
+  const stepsKcal = Math.round(
+    input.dailySteps * CFG.kcalPerStepPerKg * input.weightKg,
   );
-
   const kcalPerSession =
     CFG.strengthKcalPerKgPerMin * input.weightKg * input.minutesPerSession;
-  const trainingKcalPerDay = Math.round(
+  const trainingKcal = Math.round(
     (kcalPerSession * input.trainingSessionsPerWeek) / 7,
   );
-
-  const tdee = round25(bmr * activityFactor + trainingKcalPerDay);
+  const tdee = round25(maintenanceBase + stepsKcal + trainingKcal);
   const tdeeRange = {
     low: round25(tdee * (1 - CFG.tdeeUncertaintyPct)),
     high: round25(tdee * (1 + CFG.tdeeUncertaintyPct)),
   };
 
+  // ── Ajuste según objetivo (separado del TDEE) ──
   const rateCfg = CFG.weeklyRatePct[input.goalType];
   const weeklyRatePct = clamp(
     input.weeklyRatePct ?? rateCfg.default,
     rateCfg.min,
     rateCfg.max,
   );
-
-  // Déficit diario derivado del ritmo (negativo si superávit). El "+ 0" evita -0.
-  const dailyDeficitKcal =
+  // Déficit (>0) o superávit (<0) diario derivado del ritmo. "+0" evita -0.
+  const rawAdjustment =
     Math.round(
       (input.weightKg * (-weeklyRatePct / 100) * CFG.kcalPerKgBodyweight) / 7,
     ) + 0;
+  const maxDeficit = Math.round(tdee * CFG.maxDeficitPctOfTdee);
+  const boundedByMaxDeficit = rawAdjustment > maxDeficit;
+  const dailyAdjustmentKcal = boundedByMaxDeficit ? maxDeficit : rawAdjustment;
+  if (boundedByMaxDeficit) {
+    notes.push(
+      `Déficit acotado al ${Math.round(CFG.maxDeficitPctOfTdee * 100)} % del gasto por seguridad.`,
+    );
+  }
 
+  // ── Suelo de seguridad ──
   const floorKcal = Math.max(
     Math.round(bmr * CFG.minKcalBmrFactor),
     CFG.minKcalAbsolute[input.sex],
   );
-  const maxDeficit = Math.round(tdee * CFG.maxDeficitPctOfTdee);
-  const boundedDeficit = Math.min(dailyDeficitKcal, maxDeficit);
-
-  let kcalTarget = round25(tdee - boundedDeficit);
+  let kcalTarget = round25(tdee - dailyAdjustmentKcal);
   const clampedToFloor = kcalTarget < floorKcal;
-  if (clampedToFloor) kcalTarget = round25(floorKcal + CFG.kcalRounding / 2);
+  if (clampedToFloor) {
+    kcalTarget = round25(floorKcal + CFG.kcalRounding / 2);
+    notes.push(
+      "Objetivo ajustado al suelo de seguridad: el ritmo pedido exigía menos calorías de las recomendables.",
+    );
+  }
 
-  const proteinG = Math.round(
-    CFG.proteinGPerKg[input.goalType] * input.weightKg,
-  );
+  // ── Macros ──
+  // Peso de referencia para proteína: objetivo/estimación magra si el % graso
+  // MEDIDO es alto; si no, el peso actual.
+  const highBf = CFG.highBodyFatPctForProteinRef[input.sex];
+  const proteinReferenceWeightKg =
+    input.bodyFatMeasured &&
+    typeof input.bodyFatPct === "number" &&
+    input.bodyFatPct > highBf
+      ? (input.targetWeightKg ??
+        Math.round(input.weightKg * (1 - input.bodyFatPct / 100) * 1.3))
+      : input.weightKg;
+
+  const proteinGPerKg = CFG.proteinGPerKg[input.goalType];
+  const fatGPerKg = CFG.fatGPerKg[input.goalType];
+  const proteinG = Math.round(proteinGPerKg * proteinReferenceWeightKg);
   const fatG = Math.max(
-    Math.round(CFG.fatGPerKg[input.goalType] * input.weightKg),
+    Math.round(fatGPerKg * input.weightKg),
     CFG.minFatGAbsolute,
   );
   const carbsG = Math.max(
@@ -129,28 +200,54 @@ export function estimateInitialTargets(
     0,
   );
 
+  const trace: InitialNutritionEstimateTrace = {
+    bmrFormula,
+    bmr,
+    workNeatFactor,
+    maintenanceBase: Math.round(maintenanceBase),
+    stepsKcal,
+    trainingKcal,
+    tdee,
+    tdeeUncertaintyPct: CFG.tdeeUncertaintyPct,
+    tdeeRange,
+    weeklyRatePct,
+    dailyAdjustmentKcal,
+    boundedByMaxDeficit,
+    floorKcal,
+    clampedToFloor,
+    kcalTarget,
+    proteinReferenceWeightKg,
+    proteinGPerKg,
+    fatGPerKg,
+    proteinG,
+    fatG,
+    carbsG,
+    notes,
+  };
+
   const fmtEs = (n: number) => n.toLocaleString("es-ES");
 
   return {
     bmr,
-    activityFactor,
-    trainingKcalPerDay,
     tdee,
     tdeeRange,
     weeklyRatePct,
-    dailyDeficitKcal: boundedDeficit,
+    dailyDeficitKcal: dailyAdjustmentKcal,
     kcalTarget,
     proteinG,
     fatG,
     carbsG,
     floorKcal,
     clampedToFloor,
+    trace,
     explanations: {
       tdee: `Gasto estimado ~${fmtEs(tdee)} kcal/día (rango ${fmtEs(tdeeRange.low)}–${fmtEs(tdeeRange.high)}). Es un punto de partida: tus datos reales de peso e ingesta lo corregirán en 2–4 semanas.`,
       kcal: clampedToFloor
         ? `Objetivo ajustado al suelo de seguridad (${fmtEs(kcalTarget)} kcal): el ritmo pedido exigía menos calorías de las recomendables.`
-        : `Objetivo ${fmtEs(kcalTarget)} kcal/día: gasto estimado ${fmtEs(tdee)} con un ajuste de ${boundedDeficit >= 0 ? "−" : "+"}${fmtEs(Math.abs(boundedDeficit))} kcal para un ritmo de ${weeklyRatePct.toLocaleString("es-ES")} % de tu peso por semana.`,
-      protein: `${proteinG} g de proteína = ${CFG.proteinGPerKg[input.goalType]} g/kg: el rango con mejor evidencia para conservar músculo con tu objetivo.`,
+        : dailyAdjustmentKcal === 0
+          ? `Objetivo ${fmtEs(kcalTarget)} kcal/día: igual al mantenimiento estimado (peso estable).`
+          : `Objetivo ${fmtEs(kcalTarget)} kcal/día: gasto estimado ${fmtEs(tdee)} con un ${dailyAdjustmentKcal > 0 ? "déficit" : "superávit"} de ${fmtEs(Math.abs(dailyAdjustmentKcal))} kcal para un ritmo de ${weeklyRatePct.toLocaleString("es-ES")} % de tu peso por semana.`,
+      protein: `${proteinG} g de proteína = ${proteinGPerKg} g/kg: el rango con mejor evidencia para conservar músculo con tu objetivo.`,
       fat: `${fatG} g de grasa (≥ ${CFG.minFatGPerKg} g/kg): mínimo necesario para función hormonal y absorción de vitaminas.`,
       carbs: `${carbsG} g de carbohidratos: todas las calorías restantes; alimentan tus entrenamientos.`,
     },

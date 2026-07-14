@@ -93,9 +93,9 @@ describe("completeOnboarding", () => {
       orderBy: { effectiveFrom: "desc" },
     });
     expect(target.source).toBe("ONBOARDING");
-    // 84 kg / 178 cm / 34 años / 8500 pasos / 4×75 min:
-    // BMR 1788 × 1.5 + 180 = 2862 → TDEE 2850 − déficit 462 → round25 = 2400
-    expect(target.kcal).toBe(2400);
+    // 84 kg / 178 cm / 34 años / 8500 pasos / sedentario / 4×75 min (modelo aditivo):
+    // BMR 1788 × 1,15 + pasos 357 + entreno 180 → TDEE 2600 − déficit 462 → 2150
+    expect(target.kcal).toBe(2150);
     expect(target.proteinG).toBe(185);
 
     const program = await prisma.trainingProgram.findUniqueOrThrow({
