@@ -35,14 +35,14 @@ test("onboarding completo crea el plan y persiste tras recargar", async ({
   ).toBeVisible();
   await page.getByRole("button", { name: "Continuar" }).click();
 
-  // Paso 4 — Objetivo (FAT_LOSS por defecto; elegimos ritmo estándar)
+  // Paso 4 — Objetivo (estrategia de pérdida de grasa por defecto; ritmo estándar)
   await expect(
     page.getByRole("heading", { name: "Tu objetivo" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Estándar" }).click();
   await page.getByRole("button", { name: "Continuar" }).click();
 
-  // Paso 5 — Prioridades (opcional)
+  // Paso 5 — Prioridades: elegimos priorizar bíceps (1 de 6)
   await expect(
     page.getByRole("heading", { name: "Prioridades musculares" }),
   ).toBeVisible();
@@ -63,12 +63,15 @@ test("onboarding completo crea el plan y persiste tras recargar", async ({
   await page.getByRole("button", { name: "Rodilla" }).click();
   await page.getByRole("button", { name: "Continuar" }).click();
 
-  // Paso 8 — Revisión: muestra qué se creará
+  // Paso 8 — Revisión: estrategia, pesos, ritmo y traza
   await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible();
   await expect(page.getByText(/kcal\/día/).first()).toBeVisible();
   await expect(
-    page.getByText(/Torso\/Pierna \+ especialización/),
+    page.getByText("Perder grasa manteniendo músculo"),
   ).toBeVisible();
+  await expect(page.getByText(/Push\/Pull\/Pierna/)).toBeVisible();
+  // La traza "Cómo se ha calculado" está disponible
+  await expect(page.getByText("Cómo se ha calculado")).toBeVisible();
   await page
     .getByRole("button", { name: /Confirmar y crear mi plan/i })
     .click();
@@ -77,17 +80,24 @@ test("onboarding completo crea el plan y persiste tras recargar", async ({
   await expect(page.getByRole("heading", { name: "Hoy" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText("Perder grasa")).toBeVisible();
+  await expect(
+    page.getByText("Perder grasa manteniendo músculo"),
+  ).toBeVisible();
   await expect(page.getByText(/g proteína/)).toBeVisible();
   await expect(page.getByText(/5 días\/semana/)).toBeVisible();
 
   // Persistencia tras recarga
   await page.reload();
   await expect(page.getByRole("heading", { name: "Hoy" })).toBeVisible();
-  await expect(page.getByText("Perder grasa")).toBeVisible();
+  await expect(
+    page.getByText("Perder grasa manteniendo músculo"),
+  ).toBeVisible();
 
-  // El programa respeta la restricción y está completo
+  // El programa muestra el bloque "Por qué" y respeta la restricción
   await page.goto("/program");
+  await expect(
+    page.getByRole("heading", { name: "Por qué este programa" }),
+  ).toBeVisible();
   await expect(page.getByText(/Día 1 —/)).toBeVisible();
   await expect(page.getByText("Sentadilla trasera")).toHaveCount(0); // contraindicada por rodilla
 });
