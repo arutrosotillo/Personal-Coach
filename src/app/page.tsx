@@ -1,65 +1,136 @@
-import Image from "next/image";
+import Link from "next/link";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+import { AppShell } from "@/components/layout/app-shell";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getProfileOverview } from "@/server/repositories/profile.repo";
+
+export const dynamic = "force-dynamic";
+
+const GOAL_LABELS: Record<string, string> = {
+  FAT_LOSS: "Perder grasa",
+  RECOMP: "Recomposición",
+  LEAN_GAIN: "Ganancia controlada",
+  MAINTENANCE: "Mantenimiento",
+};
+
+export default async function DashboardPage() {
+  const overview = await getProfileOverview();
+
+  if (!overview) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center gap-6 pt-16 text-center">
+          <div>
+            <h1 className="text-3xl font-semibold">Personal Coach</h1>
+            <p className="text-muted-foreground mt-2">
+              Entrenamiento, nutrición y seguimiento corporal. Todo local, todo
+              tuyo.
+            </p>
+          </div>
+          <Button
+            render={<Link href="/onboarding" />}
+            size="lg"
+            className="min-h-12 w-full max-w-xs"
+          >
+            Empezar — crear mi plan
+          </Button>
+          <p className="text-muted-foreground text-xs">
+            ~4 minutos. Tus datos no salen de tu ordenador.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </AppShell>
+    );
+  }
+
+  const { goal, nutritionTarget, program } = overview;
+  const mesocycle = program?.mesocycles[0];
+
+  return (
+    <AppShell>
+      <h1 className="mb-4 text-2xl font-semibold">Hoy</h1>
+      <div className="space-y-4">
+        {goal ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Objetivo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">
+                {GOAL_LABELS[goal.type] ?? goal.type}
+              </p>
+              <p className="tnum text-muted-foreground text-sm">
+                Ritmo {goal.weeklyRatePct.toLocaleString("es-ES")} % del
+                peso/semana
+                {goal.targetWeightKg
+                  ? ` · objetivo ~${goal.targetWeightKg} kg`
+                  : ""}
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {nutritionTarget ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Nutrición diaria</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="tnum text-3xl font-semibold">
+                {nutritionTarget.kcal.toLocaleString("es-ES")}{" "}
+                <span className="text-muted-foreground text-base font-normal">
+                  kcal
+                </span>
+              </p>
+              <p className="tnum text-muted-foreground mt-1 text-sm">
+                {nutritionTarget.proteinG} g proteína · {nutritionTarget.fatG} g
+                grasa · {nutritionTarget.carbsG} g carbohidratos
+              </p>
+              {nutritionTarget.notes ? (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {nutritionTarget.notes}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {program ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Tu programa</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="font-medium">{program.name}</p>
+              <p className="text-muted-foreground text-sm">
+                {program.daysPerWeek} días/semana ·{" "}
+                {mesocycle?.templates.map((t) => t.name).join(" · ")}
+              </p>
+              <Button
+                render={<Link href="/program" />}
+                variant="secondary"
+                className="mt-3 min-h-11 w-full"
+              >
+                Ver programa completo
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle className="text-muted-foreground flex items-center gap-2 text-base">
+              Próximamente <Badge variant="outline">Fase 2</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-muted-foreground text-sm">
+            Registro de entrenamientos con recomendaciones de carga, check-in
+            diario de peso y calorías, e historial. Esta versión deja creado tu
+            plan inicial; el registro llega en la siguiente fase.
+          </CardContent>
+        </Card>
+      </div>
+    </AppShell>
   );
 }
