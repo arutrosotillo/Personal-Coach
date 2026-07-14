@@ -1,17 +1,16 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { getProfileOverview } from "@/server/repositories/profile.repo";
-import { prisma } from "@/server/db";
+import {
+  getLatestMeasurement,
+  getProfileOverview,
+} from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProgressPage() {
   const overview = await getProfileOverview();
   const lastMeasurement = overview
-    ? await prisma.bodyMeasurement.findFirst({
-        where: { profileId: overview.profile.id },
-        orderBy: { localDate: "desc" },
-      })
+    ? await getLatestMeasurement(overview.profile.id)
     : null;
 
   return (

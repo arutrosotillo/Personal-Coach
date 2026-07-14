@@ -9,6 +9,14 @@ export async function getProfile() {
   return prisma.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
 }
 
+/** Última medición corporal registrada (para el resumen de progreso). */
+export async function getLatestMeasurement(profileId: string) {
+  return prisma.bodyMeasurement.findFirst({
+    where: { profileId },
+    orderBy: { localDate: "desc" },
+  });
+}
+
 export async function getProfileOverview() {
   const profile = await getProfile();
   if (!profile) return null;

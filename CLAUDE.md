@@ -33,7 +33,7 @@ app/, components/  →  server/actions/  →  server/services/  →  core/  +  s
 - `src/core/` — **dominio puro determinista**. Prohibido importar next/react/prisma/fs y usar `Date.now()`/`Math.random()`: la fecha entra siempre como parámetro. Los motores son funciones `(input, config) → output` con explicación y `reasonCode`.
 - `src/server/` — I/O: Prisma (solo en `db.ts` + repositorios), services (orquestan motor + persistencia), actions (`"use server"`: validar Zod → service → revalidate).
 - `src/ai/` — (Fase 6, no existe aún) capa Coach AI, solo servidor. `core` JAMÁS importa de `ai`.
-- UI sin lógica de dominio.
+- UI sin lógica de dominio. Mutaciones vía server actions → services. Lecturas de Server Components: pueden llamar a `repositories`, pero nunca importan `db.ts`/`prisma` ni escriben queries a mano.
 
 ## Convenciones duraderas
 

@@ -8,6 +8,16 @@ import {
 import type { CatalogExercise } from "@/core/program/types";
 import { prisma } from "@/server/db";
 
+/** Nombres de los ejercicios activos (para autocompletado en el onboarding). */
+export async function listExerciseNames(): Promise<string[]> {
+  const exercises = await prisma.exercise.findMany({
+    where: { isActive: true, deletedAt: null },
+    select: { name: true },
+    orderBy: { name: "asc" },
+  });
+  return exercises.map((e) => e.name);
+}
+
 /** Carga el catálogo activo en la vista que consumen los módulos de core. */
 export async function loadCatalog(): Promise<CatalogExercise[]> {
   const exercises = await prisma.exercise.findMany({

@@ -1,14 +1,19 @@
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
-import { prisma } from "@/server/db";
+import { toLocalDate } from "@/core/dates";
+import { listExerciseNames } from "@/server/repositories/catalog.repo";
 
 export const dynamic = "force-dynamic";
 
-export default async function OnboardingPage() {
-  const exercises = await prisma.exercise.findMany({
-    where: { isActive: true, deletedAt: null },
-    select: { name: true },
-    orderBy: { name: "asc" },
-  });
+const DEFAULT_TIMEZONE = "Europe/Madrid";
 
-  return <OnboardingWizard exerciseNames={exercises.map((e) => e.name)} />;
+export default async function OnboardingPage() {
+  const exerciseNames = await listExerciseNames();
+  const todayLocalDate = toLocalDate(new Date(), DEFAULT_TIMEZONE);
+
+  return (
+    <OnboardingWizard
+      exerciseNames={exerciseNames}
+      todayLocalDate={todayLocalDate}
+    />
+  );
 }

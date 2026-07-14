@@ -155,8 +155,11 @@ const STEPS: StepDef[] = [
 
 export function OnboardingWizard({
   exerciseNames,
+  todayLocalDate,
 }: {
   exerciseNames: string[];
+  /** Fecha local del servidor (misma timezone con la que se guardará). */
+  todayLocalDate: string;
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -668,7 +671,9 @@ export function OnboardingWizard({
             </>
           )}
 
-          {step === 7 && <ReviewStep values={values} />}
+          {step === 7 && (
+            <ReviewStep values={values} todayLocalDate={todayLocalDate} />
+          )}
         </div>
 
         {/* Acciones */}
@@ -704,7 +709,13 @@ export function OnboardingWizard({
 }
 
 /** Paso final: muestra exactamente qué se creará antes de confirmar. */
-function ReviewStep({ values }: { values: OnboardingInput }) {
+function ReviewStep({
+  values,
+  todayLocalDate,
+}: {
+  values: OnboardingInput;
+  todayLocalDate: string;
+}) {
   const parsed = onboardingSchema.safeParse(values);
   if (!parsed.success) {
     return (
@@ -715,7 +726,8 @@ function ReviewStep({ values }: { values: OnboardingInput }) {
     );
   }
   const data = parsed.data;
-  const today = new Date().toISOString().slice(0, 10);
+  // Misma fecha local que usará el servidor al guardar (no UTC del navegador).
+  const today = todayLocalDate;
   const estimate = estimateInitialTargets({
     sex: data.sex,
     ageYears: ageInYears(data.birthDate, today),

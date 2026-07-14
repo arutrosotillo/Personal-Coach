@@ -22,7 +22,7 @@ Explícitamente evitado: microservicios, Redux, GraphQL, event sourcing, buses d
 └──────────────────────────────────────────────────────────┘
 ```
 
-Reglas: `core` no importa de ninguna otra capa (ni next, ni react, ni prisma, ni fs); `services` importa `core` + `repositories`; `actions` importa `services` + `core/schemas`; la UI importa `actions` y tipos de `core`, nunca repositorios ni `db.ts`. En Fase 6 se añade `src/ai/` (solo servidor): puede leer tipos/salidas de `core`, pero `core` jamás importa de `ai`.
+Reglas: `core` no importa de ninguna otra capa (ni next, ni react, ni prisma, ni fs); `services` importa `core` + `repositories`; `actions` importa `services` + `core/schemas`. Las **mutaciones** de la UI van siempre por server actions → services (nunca la UI escribe en la DB). Las **lecturas** de los Server Components pueden llamar a funciones de `repositories` directamente (patrón idiomático de RSC; evita una capa de servicio ceremonial sin lógica); lo que la UI **nunca** hace es importar `db.ts`/`prisma` ni construir queries a mano. En Fase 6 se añade `src/ai/` (solo servidor): puede leer tipos/salidas de `core`, pero `core` jamás importa de `ai`.
 
 ## Motores puros deterministas
 

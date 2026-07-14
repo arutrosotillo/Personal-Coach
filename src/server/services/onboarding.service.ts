@@ -9,10 +9,19 @@ import {
   PROGRAM_GENERATOR_VERSION,
 } from "@/core/program/generate-initial-program";
 import type { OnboardingData } from "@/core/schemas/onboarding";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
 import { loadCatalog } from "@/server/repositories/catalog.repo";
 
 const DEFAULT_TIMEZONE = "Europe/Madrid";
+
+/**
+ * Serializa un valor a JSON válido para columnas Prisma `Json`. El round-trip
+ * elimina claves `undefined` (que `InputJsonValue` no admite) de forma segura.
+ */
+function toJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+}
 
 /**
  * Completa el onboarding de forma TRANSACCIONAL: perfil, objetivo, medición
@@ -153,8 +162,8 @@ export async function completeOnboarding(
     for (const [key, value] of preferences) {
       await tx.userPreference.upsert({
         where: { key },
-        create: { key, value: value as never },
-        update: { value: value as never },
+        create: { key, value: toJson(value) },
+        update: { value: toJson(value) },
       });
     }
 
@@ -197,14 +206,14 @@ export async function completeOnboarding(
         engine: "program-generator",
         algorithmVersion: PROGRAM_GENERATOR_VERSION,
         ruleId: program.ruleId,
-        inputSnapshot: {
+        inputSnapshot: toJson({
           onboarding: data,
           estimateVersion: NUTRITION_ESTIMATE_VERSION,
           nutritionDefaults: {
             weeklyRatePct: NUTRITION_CONFIG.weeklyRatePct[data.goalType],
           },
-        } as never,
-        output: {
+        }),
+        output: toJson({
           splitType: program.splitType,
           weeklySetsByGroup: program.weeklySetsByGroup,
           warnings: program.warnings,
@@ -215,7 +224,7 @@ export async function completeOnboarding(
             fatG: estimate.fatG,
             carbsG: estimate.carbsG,
           },
-        } as never,
+        }),
         explanation: program.explanation,
         evaluationDate: localDate,
       },
