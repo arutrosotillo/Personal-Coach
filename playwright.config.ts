@@ -4,7 +4,6 @@ const PORT = 3100;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
@@ -19,9 +18,12 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm dev --port ${PORT}`,
+    // prepare-db resetea/migra/siembra data/e2e.db antes de arrancar el server
+    // (el webServer de Playwright arranca antes que globalSetup).
+    command: `pnpm exec tsx tests/e2e/prepare-db.ts && pnpm dev --port ${PORT}`,
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    // Siempre servidor (y DB e2e) frescos: el spec asume base de datos limpia.
+    reuseExistingServer: false,
     env: {
       DATABASE_URL: "file:./data/e2e.db",
     },

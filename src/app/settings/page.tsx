@@ -50,6 +50,7 @@ export default async function SettingsPage() {
                 {WORK_LABELS[overview.profile.workActivity ?? ""] ?? "—"}
               </p>
               <Button
+                nativeButton={false}
                 render={<Link href="/onboarding" />}
                 variant="secondary"
                 className="mt-3 min-h-11 w-full"
@@ -89,6 +90,7 @@ export default async function SettingsPage() {
         <div className="pt-8 text-center">
           <p className="text-muted-foreground">Aún no hay perfil.</p>
           <Button
+            nativeButton={false}
             render={<Link href="/onboarding" />}
             className="mt-4 min-h-11"
           >

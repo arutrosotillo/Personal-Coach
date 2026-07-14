@@ -30,6 +30,7 @@ export default async function DashboardPage() {
             </p>
           </div>
           <Button
+            nativeButton={false}
             render={<Link href="/onboarding" />}
             size="lg"
             className="min-h-12 w-full max-w-xs"
@@ -108,6 +109,7 @@ export default async function DashboardPage() {
                 {mesocycle?.templates.map((t) => t.name).join(" · ")}
               </p>
               <Button
+                nativeButton={false}
                 render={<Link href="/program" />}
                 variant="secondary"
                 className="mt-3 min-h-11 w-full"

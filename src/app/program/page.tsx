@@ -18,6 +18,7 @@ export default async function ProgramPage() {
         <div className="pt-16 text-center">
           <p className="text-muted-foreground">Todavía no hay programa.</p>
           <Button
+            nativeButton={false}
             render={<Link href="/onboarding" />}
             className="mt-4 min-h-11"
           >

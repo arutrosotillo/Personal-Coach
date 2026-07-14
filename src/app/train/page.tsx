@@ -19,6 +19,7 @@ export default function TrainPage() {
           Mientras tanto, puedes consultar tu programa.
         </p>
         <Button
+          nativeButton={false}
           render={<Link href="/program" />}
           variant="secondary"
           className="mt-4 min-h-11"
