@@ -13,14 +13,24 @@ export default function TrainPage() {
         tap, valores pre-rellenados, temporizador de descanso y recomendaciones
         de carga explicadas. Mientras tanto, puedes consultar tu programa.
       </PhaseNote>
-      <Button
-        nativeButton={false}
-        render={<Link href="/program" />}
-        variant="secondary"
-        className="mt-4 min-h-11 w-full"
-      >
-        Ver mi programa
-      </Button>
+      <div className="mt-4 space-y-2">
+        <Button
+          nativeButton={false}
+          render={<Link href="/program" />}
+          variant="secondary"
+          className="min-h-11 w-full"
+        >
+          Ver mi programa
+        </Button>
+        <Button
+          nativeButton={false}
+          render={<Link href="/train/exercises" />}
+          variant="secondary"
+          className="min-h-11 w-full"
+        >
+          Biblioteca de ejercicios
+        </Button>
+      </div>
     </AppShell>
   );
 }
