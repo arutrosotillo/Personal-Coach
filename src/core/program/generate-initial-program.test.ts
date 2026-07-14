@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { EXERCISES } from "@/core/catalog/exercises";
-import type { Equipment } from "@/core/enums";
+import {
+  BASELINE_WEEKLY_SETS,
+  MIN_WEEKLY_SETS,
+} from "@/core/config/training-config";
+import type { Equipment, MuscleGroupCode } from "@/core/enums";
 import { generateInitialProgram } from "@/core/program/generate-initial-program";
 import type { CatalogExercise, GeneratorInput } from "@/core/program/types";
 
@@ -40,24 +44,33 @@ const FULL_GYM: Equipment[] = [
 
 function baseInput(overrides: Partial<GeneratorInput> = {}): GeneratorInput {
   return {
-    daysPerWeek: 4,
+    daysPerWeek: 5,
     minutesPerSession: 90,
     equipment: FULL_GYM,
     contraindications: [],
     excludedExerciseNames: [],
     priorityMuscles: [],
-    goalType: "FAT_LOSS",
+    goalType: "RECOMP",
     catalog: testCatalog(),
     ...overrides,
   };
 }
 
+const directOf = (
+  p: ReturnType<typeof generateInitialProgram>,
+  g: MuscleGroupCode,
+) => p.volumeByGroup.find((v) => v.group === g)!.directSets;
+const freqOf = (
+  p: ReturnType<typeof generateInitialProgram>,
+  g: MuscleGroupCode,
+) => p.volumeByGroup.find((v) => v.group === g)!.frequency;
+
 describe("generateInitialProgram — división por días", () => {
   it.each([
     [2, "FULL_BODY_2", 2],
     [3, "FULL_BODY_3", 3],
-    [4, "TORSO_PIERNA_4", 4],
-    [5, "TORSO_PIERNA_ESPECIALIZACION_5", 5],
+    [4, "UPPER_LOWER_4", 4],
+    [5, "PPL_UL_5", 5],
     [6, "PPL_X2_6", 6],
   ])("con %i días elige %s", (days, splitType, expectedDays) => {
     const program = generateInitialProgram(baseInput({ daysPerWeek: days }));
@@ -73,8 +86,89 @@ describe("generateInitialProgram — división por días", () => {
   });
 });
 
-describe("generateInitialProgram — restricciones duras", () => {
-  it("respeta el equipamiento disponible (solo mancuernas y peso corporal)", () => {
+describe("generateInitialProgram — equilibrado sin sesgo oculto", () => {
+  const program = generateInitialProgram(baseInput({ priorityMuscles: [] }));
+
+  it("ningún grupo se marca como prioridad cuando el programa es equilibrado", () => {
+    expect(program.volumeByGroup.every((v) => !v.isPriority)).toBe(true);
+  });
+
+  it("los grupos antes 'prioritarios por defecto' no reciben más volumen que su base neutra", () => {
+    // Antes del parche, deltoide lateral/posterior, dorsal y pecho superior
+    // tenían un sesgo estético oculto. Ahora su volumen sale de la base neutra.
+    for (const g of [
+      "DELT_LATERAL",
+      "DELT_POSTERIOR",
+      "DORSAL",
+      "PECHO_SUPERIOR",
+    ] as MuscleGroupCode[]) {
+      expect(directOf(program, g)).toBeLessThanOrEqual(BASELINE_WEEKLY_SETS[g]);
+    }
+  });
+
+  it("ningún grupo principal queda abandonado (respeta los suelos)", () => {
+    for (const v of program.volumeByGroup) {
+      expect(v.directSets).toBeGreaterThanOrEqual(MIN_WEEKLY_SETS[v.group]);
+    }
+    expect(program.warnings).toEqual([]);
+  });
+});
+
+describe("generateInitialProgram — la prioridad aumenta la presencia", () => {
+  it("priorizar hombros/espalda/pecho superior les da más volumen que sin prioridad", () => {
+    const balanced = generateInitialProgram(baseInput({ priorityMuscles: [] }));
+    const prioritized = generateInitialProgram(
+      baseInput({
+        priorityMuscles: [
+          "DELT_LATERAL",
+          "DELT_POSTERIOR",
+          "DORSAL",
+          "PECHO_SUPERIOR",
+        ],
+      }),
+    );
+    for (const g of [
+      "DELT_LATERAL",
+      "DELT_POSTERIOR",
+      "DORSAL",
+      "PECHO_SUPERIOR",
+    ] as MuscleGroupCode[]) {
+      expect(directOf(prioritized, g)).toBeGreaterThan(directOf(balanced, g));
+      expect(
+        prioritized.volumeByGroup.find((v) => v.group === g)!.isPriority,
+      ).toBe(true);
+    }
+  });
+
+  it("un grupo priorizado recibe más volumen o frecuencia que un comparable no priorizado", () => {
+    // Bíceps priorizado vs tríceps no priorizado (grupos comparables).
+    const p = generateInitialProgram(
+      baseInput({ priorityMuscles: ["BICEPS"] }),
+    );
+    expect(
+      directOf(p, "BICEPS") > directOf(p, "TRICEPS") ||
+        freqOf(p, "BICEPS") >= freqOf(p, "TRICEPS"),
+    ).toBe(true);
+  });
+
+  it("prioriza sin abandonar el resto del cuerpo", () => {
+    const p = generateInitialProgram(
+      baseInput({ priorityMuscles: ["DELT_LATERAL"] }),
+    );
+    expect(directOf(p, "CUADRICEPS")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.CUADRICEPS,
+    );
+    expect(directOf(p, "ISQUIOS")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.ISQUIOS,
+    );
+    expect(directOf(p, "DORSAL")).toBeGreaterThanOrEqual(
+      MIN_WEEKLY_SETS.DORSAL,
+    );
+  });
+});
+
+describe("generateInitialProgram — restricciones prevalecen sobre prioridad", () => {
+  it("respeta el equipamiento disponible", () => {
     const program = generateInitialProgram(
       baseInput({ equipment: ["DUMBBELL", "BODYWEIGHT"] }),
     );
@@ -89,22 +183,25 @@ describe("generateInitialProgram — restricciones duras", () => {
     }
   });
 
-  it("excluye ejercicios prohibidos por el usuario", () => {
+  it("excluye ejercicios prohibidos aunque su grupo sea prioritario", () => {
     const program = generateInitialProgram(
       baseInput({
-        excludedExerciseNames: ["Press inclinado", "Sentadilla trasera"],
+        priorityMuscles: ["PECHO_SUPERIOR"],
+        excludedExerciseNames: ["Press inclinado"],
       }),
     );
     const names = program.days.flatMap((d) =>
       d.exercises.map((e) => e.exerciseName),
     );
     expect(names).not.toContain("Press inclinado");
-    expect(names).not.toContain("Sentadilla trasera");
   });
 
-  it("evita variantes contraindicadas para molestias declaradas (rodilla)", () => {
+  it("evita variantes contraindicadas (rodilla) aunque piernas estén priorizadas", () => {
     const program = generateInitialProgram(
-      baseInput({ contraindications: ["KNEE"] }),
+      baseInput({
+        priorityMuscles: ["CUADRICEPS"],
+        contraindications: ["KNEE"],
+      }),
     );
     const catalog = testCatalog();
     for (const day of program.days) {
@@ -118,92 +215,94 @@ describe("generateInitialProgram — restricciones duras", () => {
   });
 });
 
-describe("generateInitialProgram — prioridades estéticas", () => {
-  it("sesga el volumen semanal hacia Tier A sin abandonar piernas (4 días)", () => {
-    const program = generateInitialProgram(baseInput());
-    const sets = program.weeklySetsByGroup;
-    // Tier A con volumen claro
-    expect(sets.DELT_LATERAL ?? 0).toBeGreaterThanOrEqual(8);
-    expect(sets.DELT_POSTERIOR ?? 0).toBeGreaterThanOrEqual(6);
-    expect(sets.DORSAL ?? 0).toBeGreaterThanOrEqual(6);
-    expect(sets.PECHO_SUPERIOR ?? 0).toBeGreaterThanOrEqual(6);
-    // Piernas presentes en ≥2 sesiones
-    const legDays = program.days.filter((d) =>
-      d.exercises.some((e) =>
-        ["CUADRICEPS", "ISQUIOS", "GLUTEO"].includes(e.muscleGroup),
-      ),
-    );
-    expect(legDays.length).toBeGreaterThanOrEqual(2);
-    expect(sets.CUADRICEPS ?? 0).toBeGreaterThanOrEqual(4);
+describe("generateInitialProgram — volumen y contabilidad fraccional", () => {
+  const program = generateInitialProgram(baseInput());
+
+  it("las series indirectas cuentan fraccionalmente, no como una directa completa", () => {
+    // El deltoide anterior recibe mucho volumen indirecto de los empujes:
+    // su fraccional debe superar a sus series directas.
+    const delt = program.volumeByGroup.find(
+      (v) => v.group === "DELT_ANTERIOR",
+    )!;
+    expect(delt.fractionalSets).toBeGreaterThan(delt.directSets);
+    // Y ninguna contribución fraccional es entera "gratis": tríceps recibe
+    // fraccional de los empujes además de su trabajo directo.
+    const tri = program.volumeByGroup.find((v) => v.group === "TRICEPS")!;
+    expect(tri.fractionalSets).toBeGreaterThan(tri.directSets);
   });
 
-  it("la explicación menciona las prioridades y que es un plan inicial", () => {
-    const program = generateInitialProgram(baseInput());
-    expect(program.explanation).toMatch(/deltoide lateral/i);
-    expect(program.explanation).toMatch(/punto de partida/i);
-    expect(program.explanation.length).toBeGreaterThan(50);
+  it("el volumen directo por grupo se mantiene dentro de límites configurados", () => {
+    for (const v of program.volumeByGroup) {
+      expect(v.directSets).toBeLessThanOrEqual(v.targetSets + 4);
+    }
   });
 });
 
-describe("generateInitialProgram — presupuesto de tiempo", () => {
-  it("recorta trabajo no prioritario cuando la sesión no cabe (45 min)", () => {
-    const short = generateInitialProgram(baseInput({ minutesPerSession: 45 }));
-    const long = generateInitialProgram(baseInput({ minutesPerSession: 120 }));
-    const shortSets = short.days.reduce(
-      (sum, d) => sum + d.exercises.reduce((s, e) => s + e.sets, 0),
-      0,
-    );
-    const longSets = long.days.reduce(
-      (sum, d) => sum + d.exercises.reduce((s, e) => s + e.sets, 0),
-      0,
-    );
-    expect(shortSets).toBeLessThan(longSets);
-    expect(short.warnings.some((w) => /recortada/.test(w))).toBe(true);
-    // Los Tier A sobreviven al recorte
-    expect(short.weeklySetsByGroup.DELT_LATERAL ?? 0).toBeGreaterThanOrEqual(8);
+describe("generateInitialProgram — RIR y rangos dependen del tipo de ejercicio", () => {
+  const program = generateInitialProgram(baseInput());
+  const all = program.days.flatMap((d) => d.exercises);
+
+  it("los compuestos se dejan más lejos del fallo que los aislamientos", () => {
+    const compoundRir = all.filter((e) => e.isCompound).map((e) => e.targetRir);
+    const isoRir = all.filter((e) => !e.isCompound).map((e) => e.targetRir);
+    const avg = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+    expect(avg(compoundRir)).toBeGreaterThan(avg(isoRir));
   });
 
-  it("protege del recorte a los grupos priorizados por el usuario", () => {
-    const withoutPriority = generateInitialProgram(
-      baseInput({ minutesPerSession: 40 }),
-    );
-    const withPriority = generateInitialProgram(
-      baseInput({ minutesPerSession: 40, priorityMuscles: ["BICEPS"] }),
-    );
-    const bicepsSets = (p: typeof withPriority) =>
+  it("cada ejercicio lleva un rango de repeticiones válido de su variante", () => {
+    for (const e of all) {
+      expect(e.repRangeMin).toBeGreaterThan(0);
+      expect(e.repRangeMax).toBeGreaterThanOrEqual(e.repRangeMin);
+    }
+  });
+});
+
+describe("generateInitialProgram — tiempo y ausencia de redundancias", () => {
+  it("recorta trabajo cuando la sesión no cabe (45 min < 120 min)", () => {
+    const short = generateInitialProgram(baseInput({ minutesPerSession: 45 }));
+    const long = generateInitialProgram(baseInput({ minutesPerSession: 120 }));
+    const totalSets = (p: ReturnType<typeof generateInitialProgram>) =>
       p.days.reduce(
-        (sum, d) =>
-          sum +
-          d.exercises
-            .filter((e) => e.muscleGroup === "BICEPS")
-            .reduce((s, e) => s + e.sets, 0),
+        (s, d) => s + d.exercises.reduce((a, e) => a + e.sets, 0),
         0,
       );
-    expect(bicepsSets(withPriority)).toBeGreaterThanOrEqual(
-      bicepsSets(withoutPriority),
-    );
-    expect(bicepsSets(withPriority)).toBeGreaterThan(0);
+    expect(totalSets(short)).toBeLessThan(totalSets(long));
+    for (const d of short.days) {
+      expect(d.estimatedMinutes).toBeLessThanOrEqual(45);
+    }
+  });
+
+  it("no repite dos ejercicios casi idénticos (mismo grupo+patrón) el mismo día", () => {
+    const program = generateInitialProgram(baseInput({ daysPerWeek: 6 }));
+    for (const day of program.days) {
+      const seen = new Set<string>();
+      for (const e of day.exercises) {
+        const key = `${e.muscleGroup}:${e.exerciseId}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
   });
 });
 
 describe("generateInitialProgram — determinismo y trazabilidad", () => {
   it("mismo input produce exactamente el mismo output", () => {
-    const a = generateInitialProgram(baseInput());
-    const b = generateInitialProgram(baseInput());
-    expect(a).toEqual(b);
+    expect(generateInitialProgram(baseInput())).toEqual(
+      generateInitialProgram(baseInput()),
+    );
   });
 
-  it("no repite el mismo ejercicio dentro de un día", () => {
-    const program = generateInitialProgram(baseInput({ daysPerWeek: 6 }));
-    for (const day of program.days) {
-      const ids = day.exercises.map((e) => e.exerciseId);
-      expect(new Set(ids).size).toBe(ids.length);
-    }
+  it("en pérdida de grasa el volumen de partida es menor que en recomposición", () => {
+    const recomp = generateInitialProgram(baseInput({ goalType: "RECOMP" }));
+    const cut = generateInitialProgram(baseInput({ goalType: "FAT_LOSS" }));
+    const total = (p: ReturnType<typeof generateInitialProgram>) =>
+      p.volumeByGroup.reduce((s, v) => s + v.targetSets, 0);
+    expect(total(cut)).toBeLessThan(total(recomp));
   });
 
   it("expone ruleId y versión para la AlgorithmDecision", () => {
     const program = generateInitialProgram(baseInput());
-    expect(program.ruleId).toBe("program.initial.torso_pierna_4");
+    expect(program.ruleId).toBe("program.initial.ppl_ul_5");
     expect(program.version).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

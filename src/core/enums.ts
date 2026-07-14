@@ -16,6 +16,10 @@ export type UnitSystem = z.infer<typeof UnitSystem>;
 export const WorkActivity = z.enum(["SEDENTARY", "LIGHT", "MODERATE", "HIGH"]);
 export type WorkActivity = z.infer<typeof WorkActivity>;
 
+/**
+ * Comportamiento calórico interno del objetivo (lo que hace el motor con las kcal).
+ * NO es lo que elige el usuario directamente: eso es GoalStrategy (ver abajo).
+ */
 export const GoalType = z.enum([
   "FAT_LOSS",
   "RECOMP",
@@ -23,6 +27,28 @@ export const GoalType = z.enum([
   "MAINTENANCE",
 ]);
 export type GoalType = z.infer<typeof GoalType>;
+
+/**
+ * Estrategia que elige el usuario en lenguaje natural. Separa la INTENCIÓN
+ * (p. ej. "perder grasa conservando músculo") del comportamiento calórico
+ * interno, para que "recomposición" no se confunda nunca con "mantenimiento"
+ * cuando el usuario en realidad quiere perder peso.
+ */
+export const GoalStrategy = z.enum([
+  "FAT_LOSS_MUSCLE_PRESERVATION", // déficit conservador
+  "RECOMP_MAINTAIN_WEIGHT", // mantenimiento estimado, peso estable
+  "LEAN_GAIN", // superávit controlado
+  "MAINTENANCE", // mantener
+]);
+export type GoalStrategy = z.infer<typeof GoalStrategy>;
+
+/** Mapea la estrategia del usuario al comportamiento calórico interno. */
+export const STRATEGY_TO_GOAL_TYPE: Record<GoalStrategy, GoalType> = {
+  FAT_LOSS_MUSCLE_PRESERVATION: "FAT_LOSS",
+  RECOMP_MAINTAIN_WEIGHT: "RECOMP",
+  LEAN_GAIN: "LEAN_GAIN",
+  MAINTENANCE: "MAINTENANCE",
+};
 
 export const GoalStatus = z.enum(["ACTIVE", "COMPLETED", "ABANDONED"]);
 export type GoalStatus = z.infer<typeof GoalStatus>;
@@ -48,9 +74,6 @@ export type PersonalEventType = z.infer<typeof PersonalEventType>;
 
 export const BodyRegion = z.enum(["UPPER", "LOWER", "CORE"]);
 export type BodyRegion = z.infer<typeof BodyRegion>;
-
-export const PriorityTier = z.enum(["A", "B", "C"]);
-export type PriorityTier = z.infer<typeof PriorityTier>;
 
 /** Códigos de los 16 grupos musculares del seed (MuscleGroup.code). */
 export const MuscleGroupCode = z.enum([

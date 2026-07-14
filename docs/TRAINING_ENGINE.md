@@ -6,23 +6,35 @@ Motor puro determinista (`src/core/engines/training/`, F3; el generador de progr
 
 16 grupos (códigos en seed): PECHO_SUPERIOR, PECHO_MEDIO_INFERIOR, DELT_ANTERIOR, DELT_LATERAL, DELT_POSTERIOR, DORSAL, ESPALDA_ALTA, TRAPECIO_SUPERIOR, BICEPS, TRICEPS, ANTEBRAZO, CUADRICEPS, ISQUIOS, GLUTEO, GEMELO, CORE.
 
-Tiers por defecto (configurables desde onboarding):
+**Sin prioridad estética por defecto.** No existe ningún "tier" oculto: el programa es equilibrado salvo que el usuario elija en el onboarding entre 1 y 6 grupos a priorizar (o "programa equilibrado, sin prioridad"). La única palanca de prioridad es esa selección explícita. "Cintura estrecha" es objetivo de nutrición + V-taper, no un sesgo del generador.
 
-- **Tier A** (prioridad estética): DELT_LATERAL, DELT_POSTERIOR, DORSAL, PECHO_SUPERIOR — frecuencia ≥2×/sem siempre, ≥3× con ≥4 días.
-- **Tier B**: BICEPS, TRICEPS, ESPALDA_ALTA, CUADRICEPS, ISQUIOS, GLUTEO.
-- **Tier C**: resto.
+## 1. Generación de programa inicial (F1)
 
-"Cintura estrecha" = V-taper + nutrición. Por defecto sin oblicuos con carga pesada progresiva (`avoidWeightedObliques: true`); CORE 0–4 series/sem de anti-extensión/anti-rotación. Piernas: nunca <2 sesiones/sem con ≥4 días.
+Implementada en `src/core/program/generate-initial-program.ts` (versión 2.0.0). Reparte un **objetivo de volumen semanal por grupo** sobre los menús de la división elegida, con contabilidad fraccional del volumen indirecto. Determinista, sin progresión ni ajuste adaptativo (eso es F3).
 
-## 1. Generación de programa
+**Volúmenes de partida** (`training-config.ts`, `BASELINE_WEEKLY_SETS`): series directas semanales conservadoras y equilibradas por grupo. Reflejan la necesidad de cada músculo (los deltoides lateral/posterior, que apenas reciben estímulo indirecto, parten con más trabajo directo; los grupos grandes con más series), **no** prioridades estéticas. En pérdida de grasa se reduce un 15 % (`FAT_LOSS_VOLUME_FACTOR`).
 
-División por días disponibles: 2 → Full Body A/B · 3 → Full Body A/B/C · 4 → Torso/Pierna sesgado · 5 → Torso/Pierna + día de especialización hombro/espalda · 6 → PPL×2 sesgado.
+**Prioridad**: cada grupo elegido por el usuario suma `PRIORITY_BONUS_SETS` (+4) a su objetivo, acotado por `MAX_WEEKLY_SETS`.
 
-Presupuesto de tiempo por sesión: overhead 10 min + coste por serie (compuesto pesado 4 min, compuesto secundario 3, aislamiento 2). Si no cabe: recortar Tier C → aislamiento redundante de Tier B → nunca <2 series de un grupo Tier A planificado ese día.
+**División por días** (`splits.ts`, menús equilibrados de grupos por día): 2 → Full Body A/B · 3 → Full Body A/B/C · 4 → Torso/Pierna (U/L) · 5 → Push/Pull/Pierna + Torso/Pierna · 6 → PPL×2. Cada día declara qué grupos se pueden trabajar; la división no favorece a nadie.
 
-Selección de ejercicios: filtrar por equipamiento, contraindicaciones (lesiones declaradas) y lista de excluidos → 1 compuesto + 1–2 aislamientos por grupo/día → desempate por preferencia del usuario, menor fatiga sistémica, orden alfabético de id (determinismo). Orden en sesión: compuestos Tier A → compuestos resto → aislamientos Tier A → resto.
+**Reparto**: cada día se llena añadiendo ejercicios uno a uno, siempre al grupo más necesitado (**prioridad primero**, luego mayor déficit de volumen restante), hasta agotar tiempo, topes por grupo (`MAX_SETS_PER_GROUP_PER_SESSION`) o ejercicios disponibles. Al colocar una serie, su grupo primario recibe volumen directo y los secundarios volumen fraccional (`ExerciseMuscleContribution.factor`), que **reduce** la necesidad directa de esos grupos — el volumen indirecto cuenta fraccionalmente, nunca como una serie directa completa.
 
-**Fase 1 implementa una versión simple de esto** (`src/core/program/generate-initial-program.ts`): reglas de división + sesgo Tier A + filtros duros + presupuesto de tiempo, sin progresión de volumen dinámica. Los targets de volumen dinámicos llegan con F3.
+**Suelo**: `MIN_WEEKLY_SETS` por grupo; un grupo por debajo del suelo sigue siendo "necesitado" y recibe trabajo directo hasta cubrirlo (o se emite un aviso si no cabe por tiempo). Ningún grupo principal se abandona.
+
+**Selección de ejercicio**: filtra por equipamiento, contraindicaciones (lesiones) y exclusiones — **las restricciones prevalecen sobre la prioridad**. Prefiere compuesto si el grupo necesita mucho volumen y aún no tiene compuesto ese día; desempata por variedad (no repetir ejercicio en el programa), menor fatiga sistémica y orden alfabético (determinismo). No repite el mismo ejercicio dos veces el mismo día.
+
+**RIR y rango** (`TARGET_RIR`): compuestos pesados RIR 3, compuestos RIR 2, aislamientos RIR 1. El rango de repeticiones lo aporta cada variante del catálogo (rol-apropiado). **Presupuesto de tiempo**: overhead 10 min + coste por serie (compuesto pesado 4, compuesto 3, aislamiento 2); al pasarse, se recorta o se cierra la sesión sin añadir ejercicios de una sola serie.
+
+**Salida**: `volumeByGroup` (directo, fraccional, frecuencia, objetivo, prioridad) alimenta el bloque "Por qué este programa" y la trazabilidad (`AlgorithmDecision`).
+
+### Base científica (referencias)
+
+Volumen inicial conservador con margen de progresión y rendimientos decrecientes del volumen: Schoenfeld et al. 2017 (meta-análisis dosis-respuesta), Baz-Valle et al. 2022 (revisión de volumen). Rangos amplios de repeticiones válidos para hipertrofia (~5–30 con proximidad al fallo): Schoenfeld et al. 2021. Cercanía al fallo sin fallo sistemático (RIR 1–3): Refalo et al. 2023. Frecuencia como vehículo para distribuir volumen, sin efecto independiente grande a volumen igualado: Schoenfeld et al. 2019. Series indirectas cuentan pero menos que las directas: base para la contabilidad fraccional. Los números concretos son puntos de partida operativos, no verdades fisiológicas (ver COACH_PHILOSOPHY.md §7).
+
+## 1b. Motor de progresión (F3, aún no implementado)
+
+Lo siguiente (§2–§9) especifica el motor de entrenamiento adaptativo de Fase 3. **No está implementado en F1/F2A.**
 
 ## 2. Progressive overload — double progression (F3)
 

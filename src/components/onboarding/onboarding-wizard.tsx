@@ -11,17 +11,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MUSCLE_GROUPS } from "@/core/catalog/muscle-groups";
+import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
 import type {
   Contraindication,
   Equipment,
-  GoalType,
+  GoalStrategy,
   MuscleGroupCode,
   WorkActivity,
 } from "@/core/enums";
 import { estimateInitialTargets } from "@/core/nutrition/initial-estimate";
 import { ageInYears } from "@/core/dates";
 import { splitForDays } from "@/core/program/splits";
-import { GOAL_LABELS, WORK_ACTIVITY_LABELS } from "@/lib/labels";
+import {
+  STRATEGY_DESCRIPTIONS,
+  STRATEGY_LABELS,
+  WORK_ACTIVITY_LABELS,
+} from "@/lib/labels";
 import {
   onboardingSchema,
   type OnboardingInput,
@@ -39,24 +44,23 @@ const EQUIPMENT_OPTIONS: Array<{ value: Equipment; label: string }> = [
   { value: "BAND", label: "Bandas" },
 ];
 
-// Etiquetas desde @/lib/labels (fuente única); las descripciones son locales al wizard.
-const GOAL_DESCRIPTIONS: Record<GoalType, string> = {
-  FAT_LOSS: "Déficit gradual conservando músculo",
-  RECOMP: "Mismo peso: menos cintura, más fuerza",
-  LEAN_GAIN: "Superávit pequeño, mínimo de grasa",
-  MAINTENANCE: "Consolidar donde estás",
-};
-const GOAL_OPTIONS: Array<{
-  value: GoalType;
+// Estrategias en lenguaje natural (etiquetas y descripciones desde @/lib/labels).
+const STRATEGY_OPTIONS: Array<{
+  value: GoalStrategy;
   label: string;
   description: string;
-}> = (["FAT_LOSS", "RECOMP", "LEAN_GAIN", "MAINTENANCE"] as const).map(
-  (value) => ({
-    value,
-    label: GOAL_LABELS[value],
-    description: GOAL_DESCRIPTIONS[value],
-  }),
-);
+}> = (
+  [
+    "FAT_LOSS_MUSCLE_PRESERVATION",
+    "RECOMP_MAINTAIN_WEIGHT",
+    "LEAN_GAIN",
+    "MAINTENANCE",
+  ] as const
+).map((value) => ({
+  value,
+  label: STRATEGY_LABELS[value],
+  description: STRATEGY_DESCRIPTIONS[value],
+}));
 
 const WORK_ACTIVITY_DESCRIPTIONS: Record<WorkActivity, string> = {
   SEDENTARY: "Escritorio",
@@ -74,11 +78,14 @@ const WORK_ACTIVITY_OPTIONS: Array<{
   description: WORK_ACTIVITY_DESCRIPTIONS[value],
 }));
 
-const RATE_OPTIONS: Record<
-  string,
-  Array<{ value: number; label: string; description: string }>
+// Presets de ritmo por estrategia (solo las que mueven el peso deliberadamente).
+const RATE_OPTIONS: Partial<
+  Record<
+    GoalStrategy,
+    Array<{ value: number; label: string; description: string }>
+  >
 > = {
-  FAT_LOSS: [
+  FAT_LOSS_MUSCLE_PRESERVATION: [
     { value: -0.25, label: "Suave", description: "−0,25 % peso/sem" },
     { value: -0.5, label: "Estándar", description: "−0,5 % peso/sem" },
     { value: -0.75, label: "Decidido", description: "−0,75 % peso/sem" },
@@ -100,13 +107,11 @@ const CONTRA_OPTIONS: Array<{ value: Contraindication; label: string }> = [
   { value: "ANKLE", label: "Tobillo" },
 ];
 
-/** Grupos ofrecidos como prioridad extra (los Tier A ya lo son por defecto). */
-const PRIORITY_OPTIONS = MUSCLE_GROUPS.filter((g) => g.tier !== "A").map(
-  (g) => ({
-    value: g.code,
-    label: g.nameEs,
-  }),
-);
+/** Los 16 grupos musculares, todos elegibles como prioridad (sin defaults ocultos). */
+const PRIORITY_OPTIONS = MUSCLE_GROUPS.map((g) => ({
+  value: g.code,
+  label: g.nameEs,
+}));
 
 interface StepDef {
   title: string;
@@ -133,12 +138,17 @@ const STEPS: StepDef[] = [
   {
     title: "Tu objetivo",
     why: "Marca las calorías y el enfoque del programa",
-    fields: ["goalType", "weeklyRatePct", "targetWeightKg"],
+    fields: [
+      "strategy",
+      "weeklyRatePct",
+      "targetWeightKg",
+      "acknowledgedRecompWeightMismatch",
+    ],
   },
   {
     title: "Prioridades musculares",
-    why: "Hombros, espalda y pecho superior ya tienen prioridad; añade las tuyas",
-    fields: ["priorityMuscles"],
+    why: "¿Qué grupos quieres priorizar? Sin defaults ocultos: tú decides",
+    fields: ["balancedProgram", "priorityMuscles"],
   },
   {
     title: "Actividad y nutrición",
@@ -181,7 +191,10 @@ export function OnboardingWizard({
     mode: "onTouched",
     defaultValues: {
       equipment: ["BARBELL", "DUMBBELL", "MACHINE", "CABLE", "BODYWEIGHT"],
-      goalType: "FAT_LOSS",
+      strategy: "FAT_LOSS_MUSCLE_PRESERVATION",
+      bodyFatMeasured: false,
+      acknowledgedRecompWeightMismatch: false,
+      balancedProgram: false,
       priorityMuscles: [],
       contraindications: [],
       excludedExerciseNames: [],
@@ -195,6 +208,13 @@ export function OnboardingWizard({
 
   const values = form.watch();
   const isLast = step === STEPS.length - 1;
+
+  // Recomposición con peso objetivo materialmente inferior al actual.
+  const recompMismatch =
+    values.strategy === "RECOMP_MAINTAIN_WEIGHT" &&
+    typeof values.targetWeightKg === "number" &&
+    typeof values.weightKg === "number" &&
+    values.targetWeightKg < values.weightKg * 0.97;
 
   async function next() {
     const ok = await form.trigger(STEPS[step].fields, { shouldFocus: true });
@@ -431,29 +451,29 @@ export function OnboardingWizard({
           {step === 3 && (
             <>
               <div>
-                <Label className="mb-2 block">
-                  Objetivo principal (podrás cambiarlo)
-                </Label>
+                <Label className="mb-2 block">¿Qué quieres conseguir?</Label>
                 <ChipGroup
-                  label="Objetivo principal"
-                  options={GOAL_OPTIONS}
-                  value={values.goalType}
+                  label="Estrategia principal"
+                  columns={2}
+                  options={STRATEGY_OPTIONS}
+                  value={values.strategy}
                   onChange={(v) => {
-                    form.setValue("goalType", v as GoalType, {
+                    form.setValue("strategy", v as GoalStrategy, {
                       shouldValidate: true,
                     });
                     form.setValue("weeklyRatePct", undefined);
+                    form.setValue("acknowledgedRecompWeightMismatch", false);
                   }}
                 />
-                {error("goalType")}
+                {error("strategy")}
               </div>
-              {RATE_OPTIONS[values.goalType ?? ""] ? (
+              {values.strategy && RATE_OPTIONS[values.strategy] ? (
                 <div>
                   <Label className="mb-2 block">Ritmo deseado</Label>
                   <ChipGroup
                     label="Ritmo deseado"
                     columns={3}
-                    options={RATE_OPTIONS[values.goalType!]}
+                    options={RATE_OPTIONS[values.strategy]!}
                     value={values.weeklyRatePct}
                     onChange={(v) =>
                       form.setValue("weeklyRatePct", v as number, {
@@ -480,33 +500,98 @@ export function OnboardingWizard({
                 />
                 {error("targetWeightKg")}
               </div>
+              {recompMismatch ? (
+                <div className="border-warning/40 bg-warning/10 rounded-lg border p-3">
+                  <p className="text-warning text-sm font-medium">
+                    Tu objetivo pesa menos que tu peso actual
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Has elegido recomponer con el peso estable, pero tu objetivo
+                    ({values.targetWeightKg} kg) es bastante menor que tu peso
+                    actual ({values.weightKg} kg). Si de verdad quieres bajar de
+                    peso, elige “Perder grasa manteniendo músculo”.
+                  </p>
+                  <label className="mt-3 flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4"
+                      checked={values.acknowledgedRecompWeightMismatch ?? false}
+                      onChange={(e) =>
+                        form.setValue(
+                          "acknowledgedRecompWeightMismatch",
+                          e.target.checked,
+                          { shouldValidate: true },
+                        )
+                      }
+                    />
+                    <span>
+                      Lo entiendo: quiero recomponer sin bajar de peso; el peso
+                      objetivo es solo orientativo.
+                    </span>
+                  </label>
+                  {error("strategy")}
+                </div>
+              ) : null}
             </>
           )}
 
           {step === 4 && (
             <div>
               <Label className="mb-2 block">
-                Prioridades extra{" "}
-                <span className="text-muted-foreground">
-                  — opcional, máx. 6
-                </span>
+                ¿Qué grupos musculares quieres priorizar?
               </Label>
               <p className="text-muted-foreground mb-3 text-xs">
-                Deltoide lateral y posterior, dorsal y pecho superior ya son
-                prioridad del programa. Lo que marques aquí también se protegerá
-                al ajustar el tiempo.
+                No hay prioridades por defecto: el programa es equilibrado salvo
+                que elijas de 1 a 6 grupos para darles más volumen. El resto del
+                cuerpo nunca se abandona.
               </p>
+              <button
+                type="button"
+                aria-pressed={values.balancedProgram ?? false}
+                onClick={() => {
+                  const next = !values.balancedProgram;
+                  form.setValue("balancedProgram", next, {
+                    shouldValidate: true,
+                  });
+                  if (next)
+                    form.setValue("priorityMuscles", [], {
+                      shouldValidate: true,
+                    });
+                }}
+                className={`focus-visible:border-ring focus-visible:ring-ring/50 mb-3 min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-visible:ring-3 focus-visible:outline-none ${
+                  values.balancedProgram
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border bg-card text-muted-foreground"
+                }`}
+              >
+                <span className="block font-medium">
+                  Programa equilibrado, sin prioridad especial
+                </span>
+                <span className="text-muted-foreground mt-0.5 block text-xs">
+                  Reparto estándar entre todos los grupos.
+                </span>
+              </button>
               <ChipGroup
-                label="Prioridades musculares extra"
+                label="Grupos musculares a priorizar (entre 1 y 6)"
+                columns={2}
                 options={PRIORITY_OPTIONS}
                 value={values.priorityMuscles}
-                onChange={(v) =>
-                  form.setValue("priorityMuscles", v as MuscleGroupCode[], {
+                onChange={(v) => {
+                  const groups = v as MuscleGroupCode[];
+                  if (groups.length > 6) return; // tope duro en cliente
+                  form.setValue("priorityMuscles", groups, {
                     shouldValidate: true,
-                  })
-                }
+                  });
+                  if (groups.length > 0)
+                    form.setValue("balancedProgram", false, {
+                      shouldValidate: true,
+                    });
+                }}
                 multiple
               />
+              <p className="text-muted-foreground mt-2 text-xs">
+                {(values.priorityMuscles ?? []).length} de 6 seleccionados.
+              </p>
               {error("priorityMuscles")}
             </div>
           )}
@@ -730,6 +815,7 @@ function ReviewStep({
   const data = parsed.data;
   // Misma fecha local que usará el servidor al guardar (no UTC del navegador).
   const today = todayLocalDate;
+  const goalType = STRATEGY_TO_GOAL_TYPE[data.strategy];
   const estimate = estimateInitialTargets({
     sex: data.sex,
     ageYears: ageInYears(data.birthDate, today),
@@ -739,25 +825,43 @@ function ReviewStep({
     workActivity: data.workActivity,
     trainingSessionsPerWeek: data.daysPerWeek,
     minutesPerSession: data.minutesPerSession,
-    goalType: data.goalType,
+    goalType,
     weeklyRatePct: data.weeklyRatePct,
   });
   const split = splitForDays(data.daysPerWeek);
-  const goalLabel =
-    GOAL_OPTIONS.find((g) => g.value === data.goalType)?.label ?? data.goalType;
+  const nf = (n: number) => n.toLocaleString("es-ES");
+  const priorityNames = data.balancedProgram
+    ? "Equilibrado (sin prioridad especial)"
+    : data.priorityMuscles
+        .map((c) => MUSCLE_GROUPS.find((g) => g.code === c)?.nameEs ?? c)
+        .join(", ");
+  const adjustment = estimate.dailyDeficitKcal;
 
   return (
     <div className="space-y-4">
       <section className="border-border bg-card rounded-lg border p-4">
-        <h2 className="text-muted-foreground text-sm font-medium">Objetivo</h2>
-        <p className="mt-1 font-medium">{goalLabel}</p>
-        <p className="tnum text-muted-foreground text-sm">
-          Ritmo: {estimate.weeklyRatePct.toLocaleString("es-ES")} % del
-          peso/semana
-          {data.targetWeightKg
-            ? ` · Peso objetivo ~${data.targetWeightKg} kg`
-            : ""}
-        </p>
+        <h2 className="text-muted-foreground text-sm font-medium">
+          Estrategia
+        </h2>
+        <p className="mt-1 font-medium">{STRATEGY_LABELS[data.strategy]}</p>
+        <dl className="tnum text-muted-foreground mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+          <dt>Peso inicial</dt>
+          <dd className="text-right">{nf(data.weightKg)} kg</dd>
+          <dt>Peso objetivo</dt>
+          <dd className="text-right">
+            {data.targetWeightKg ? `${nf(data.targetWeightKg)} kg` : "—"}
+          </dd>
+          <dt>Ritmo semanal</dt>
+          <dd className="text-right">
+            {estimate.weeklyRatePct === 0
+              ? "0 % (peso estable)"
+              : `${nf(estimate.weeklyRatePct)} % del peso`}
+          </dd>
+          <dt>{adjustment >= 0 ? "Déficit inicial" : "Superávit inicial"}</dt>
+          <dd className="text-right">
+            {adjustment === 0 ? "—" : `${nf(Math.abs(adjustment))} kcal/día`}
+          </dd>
+        </dl>
       </section>
 
       <section className="border-border bg-card rounded-lg border p-4">
@@ -765,14 +869,16 @@ function ReviewStep({
           Nutrición de partida
         </h2>
         <p className="tnum mt-1 text-2xl font-semibold">
-          {estimate.kcalTarget.toLocaleString("es-ES")} kcal/día
+          {nf(estimate.kcalTarget)} kcal/día
         </p>
         <p className="tnum text-muted-foreground text-sm">
           {estimate.proteinG} g proteína · {estimate.fatG} g grasa ·{" "}
           {estimate.carbsG} g carbohidratos
         </p>
-        <p className="text-muted-foreground mt-2 text-xs">
-          {estimate.explanations.tdee}
+        <p className="tnum text-muted-foreground mt-2 text-xs">
+          Gasto estimado {nf(estimate.tdee)} kcal (rango{" "}
+          {nf(estimate.tdeeRange.low)}–{nf(estimate.tdeeRange.high)} kcal). Es
+          una estimación: se calibrará con tus datos reales en 2–4 semanas.
         </p>
         {estimate.clampedToFloor ? (
           <p className="text-warning mt-2 text-xs">
@@ -789,10 +895,13 @@ function ReviewStep({
         <p className="text-muted-foreground text-sm">
           {split.days.map((d) => d.name).join(" · ")}
         </p>
+        <p className="text-muted-foreground mt-2 text-sm">
+          <span className="text-foreground font-medium">Prioridades:</span>{" "}
+          {priorityNames}
+        </p>
         <p className="text-muted-foreground mt-2 text-xs">
-          Es un punto de partida conservador con énfasis en hombros, espalda y
-          pecho superior; los motores de progresión lo refinarán con tus datos
-          reales.
+          Punto de partida conservador y equilibrado. Los motores de progresión
+          lo refinarán con tus datos reales en las siguientes fases.
         </p>
       </section>
 

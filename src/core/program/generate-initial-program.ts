@@ -1,5 +1,21 @@
-import type { MuscleGroupCode, PriorityTier } from "@/core/enums";
-import { MUSCLE_GROUPS } from "@/core/catalog/muscle-groups";
+import {
+  BASELINE_WEEKLY_SETS,
+  COMPOUND_PATTERNS,
+  FAT_LOSS_VOLUME_FACTOR,
+  MAX_SETS_PER_GROUP_PER_SESSION,
+  MAX_WEEKLY_SETS,
+  MIN_WEEKLY_SETS,
+  PRIORITY_BONUS_SETS,
+  SESSION_OVERHEAD_MIN,
+  SETS_PER_EXERCISE,
+  TARGET_RIR,
+  TIME_COST_MIN,
+} from "@/core/config/training-config";
+import {
+  MUSCLE_GROUPS,
+  MUSCLE_GROUP_BY_CODE,
+} from "@/core/catalog/muscle-groups";
+import type { MuscleGroupCode } from "@/core/enums";
 import { splitForDays } from "@/core/program/splits";
 import type {
   CatalogExercise,
@@ -8,196 +24,75 @@ import type {
   GeneratedExercise,
   GeneratedProgram,
   GeneratorInput,
-  SplitSlot,
+  GroupVolume,
 } from "@/core/program/types";
 
 /**
- * Generador del programa inicial (F1) — docs/TRAINING_ENGINE.md §1.
- * Función pura y determinista: reglas simples y explícitas, sin progresión
- * dinámica de volumen (eso llega con los motores de F3).
+ * Generador del programa inicial (docs/TRAINING_ENGINE.md §1).
+ * Función pura y determinista. Reparte un objetivo de volumen semanal por grupo
+ * sobre los menús de la división elegida, con contabilidad fraccional del
+ * volumen indirecto. Equilibrado por defecto; el único sesgo es la prioridad
+ * que elige el usuario. NO incluye progresión ni ajuste adaptativo (Fase 3).
  */
 
-export const PROGRAM_GENERATOR_VERSION = "1.0.0";
+export const PROGRAM_GENERATOR_VERSION = "2.0.0";
 
-/** Coste en minutos por serie según tipo de slot (incluye descanso). */
-const SLOT_COST_MIN = { COMPOUND_HEAVY: 4, COMPOUND: 3, ISOLATION: 2 } as const;
-const SESSION_OVERHEAD_MIN = 10;
-const COMPOUND_PATTERNS = new Set([
-  "HORIZONTAL_PUSH",
-  "VERTICAL_PUSH",
-  "HORIZONTAL_PULL",
-  "VERTICAL_PULL",
-  "SQUAT",
-  "HINGE",
-  "LUNGE",
-]);
+const ALL_GROUPS: MuscleGroupCode[] = MUSCLE_GROUPS.map((g) => g.code);
 
-const DEFAULT_TIERS: Record<MuscleGroupCode, PriorityTier> = Object.fromEntries(
-  MUSCLE_GROUPS.map((g) => [g.code, g.tier]),
-) as Record<MuscleGroupCode, PriorityTier>;
-
-interface ResolvedSlot {
-  slot: SplitSlot;
-  exercise: CatalogExercise;
-  variant: CatalogVariant;
-  sets: number;
+interface Filters {
+  equipment: Set<string>;
+  contraindications: Set<string>;
+  excluded: Set<string>;
 }
 
-export function generateInitialProgram(
-  input: GeneratorInput,
-): GeneratedProgram {
-  const warnings: string[] = [];
-  const split = splitForDays(input.daysPerWeek);
+type CostKind = "compoundHeavy" | "compound" | "isolation";
 
-  // Tiers efectivos: las prioridades del usuario se elevan a Tier A.
-  const tiers: Record<MuscleGroupCode, PriorityTier> = { ...DEFAULT_TIERS };
-  for (const group of input.priorityMuscles) tiers[group] = "A";
-
-  const equipmentSet = new Set(input.equipment);
-  const userContras = new Set(input.contraindications);
-  const excluded = new Set(
-    input.excludedExerciseNames.map((n) => n.toLowerCase()),
-  );
-  const usedExerciseIds = new Set<string>();
-
-  const days: GeneratedDay[] = split.days.map((day, dayIndex) => {
-    const resolved: ResolvedSlot[] = [];
-    const usedToday = new Set<string>();
-
-    for (const slot of day.slots) {
-      const pick = pickExercise(input.catalog, slot, {
-        equipmentSet,
-        userContras,
-        excluded,
-        usedToday,
-        usedExerciseIds,
-      });
-      if (!pick) {
-        warnings.push(
-          `Sin ejercicio disponible para ${labelOf(slot.group)} (${slot.kind === "COMPOUND" ? "compuesto" : "aislamiento"}) con tu equipamiento y restricciones; hueco omitido en ${day.name}.`,
-        );
-        continue;
-      }
-      usedToday.add(pick.exercise.id);
-      usedExerciseIds.add(pick.exercise.id);
-      resolved.push({
-        slot,
-        exercise: pick.exercise,
-        variant: pick.variant,
-        sets: slot.sets,
-      });
-    }
-
-    // Presupuesto de tiempo: recortar Tier C → aislamiento Tier B; nunca Tier A.
-    trimToBudget(resolved, input.minutesPerSession, tiers, warnings, day.name);
-
-    const exercises: GeneratedExercise[] = resolved.map((r) => ({
-      exerciseId: r.exercise.id,
-      exerciseName: r.exercise.name,
-      variantId: r.variant.id,
-      variantName: r.variant.name,
-      muscleGroup: r.slot.group,
-      sets: r.sets,
-      repRangeMin: r.variant.repRangeMin,
-      repRangeMax: r.variant.repRangeMax,
-      targetRir: r.slot.kind === "COMPOUND" ? 2 : 1,
-      restSeconds: r.variant.defaultRestSeconds,
-    }));
-
-    return {
-      name: day.name,
-      ordinal: dayIndex + 1,
-      exercises,
-      estimatedMinutes: estimateMinutes(resolved),
-    };
-  });
-
-  const weeklySetsByGroup = countWeeklySets(days, input.catalog);
-
-  const priorityLabels = [
-    "DELT_LATERAL",
-    "DELT_POSTERIOR",
-    "DORSAL",
-    "PECHO_SUPERIOR",
-  ]
-    .concat(input.priorityMuscles.filter((g) => DEFAULT_TIERS[g] !== "A"))
-    .map((g) => labelOf(g as MuscleGroupCode));
-
-  const explanation =
-    `Programa inicial de ${input.daysPerWeek} días (${split.label}), elegido por tus días disponibles. ` +
-    `Volumen de partida conservador con énfasis en ${[...new Set(priorityLabels)].join(", ")}, sin descuidar piernas. ` +
-    `Filtrado por tu equipamiento${userContras.size > 0 ? ", tus molestias declaradas" : ""}${excluded.size > 0 ? " y tus ejercicios excluidos" : ""}. ` +
-    `Es un punto de partida: los motores de progresión y volumen lo refinarán con tus datos reales.`;
-
-  return {
-    name: split.label,
-    splitType: split.type,
-    daysPerWeek: input.daysPerWeek,
-    days,
-    weeklySetsByGroup,
-    explanation,
-    warnings,
-    ruleId: `program.initial.${split.type.toLowerCase()}`,
-    version: PROGRAM_GENERATOR_VERSION,
-  };
+function costKindOf(exercise: CatalogExercise): CostKind {
+  if (!COMPOUND_PATTERNS.has(exercise.movementPattern)) return "isolation";
+  return exercise.systemicFatigue >= 3 ? "compoundHeavy" : "compound";
 }
 
-function pickExercise(
-  catalog: CatalogExercise[],
-  slot: SplitSlot,
-  ctx: {
-    equipmentSet: Set<string>;
-    userContras: Set<string>;
-    excluded: Set<string>;
-    usedToday: Set<string>;
-    usedExerciseIds: Set<string>;
-  },
-): { exercise: CatalogExercise; variant: CatalogVariant } | null {
-  const isCompoundPattern = (e: CatalogExercise) =>
-    COMPOUND_PATTERNS.has(e.movementPattern);
-  const kindMatches = (e: CatalogExercise) =>
-    slot.kind === "COMPOUND" ? isCompoundPattern(e) : !isCompoundPattern(e);
+function isCompound(exercise: CatalogExercise): boolean {
+  return COMPOUND_PATTERNS.has(exercise.movementPattern);
+}
 
-  const candidates = catalog
-    .filter((e) => !ctx.excluded.has(e.name.toLowerCase()))
-    .filter((e) => !ctx.usedToday.has(e.id))
-    .filter((e) =>
-      e.contributions.some(
-        (c) => c.group === slot.group && c.role === "PRIMARY",
-      ),
-    )
-    .filter(kindMatches)
-    .map((e) => ({ exercise: e, variant: pickVariant(e, ctx) }))
-    .filter(
-      (p): p is { exercise: CatalogExercise; variant: CatalogVariant } =>
-        p.variant !== null,
-    );
+/** ¿Ya hay un ejercicio compuesto para este grupo hoy? (para no encadenar compuestos). */
+function hasCompoundToday(
+  exercises: GeneratedExercise[],
+  group: MuscleGroupCode,
+): boolean {
+  return exercises.some((e) => e.muscleGroup === group && e.isCompound);
+}
 
-  if (candidates.length === 0) return null;
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
 
-  // Determinista: preferir ejercicios aún no usados en el programa (variedad),
-  // después menor fatiga sistémica, después orden alfabético.
-  candidates.sort((a, b) => {
-    const aUsed = ctx.usedExerciseIds.has(a.exercise.id) ? 1 : 0;
-    const bUsed = ctx.usedExerciseIds.has(b.exercise.id) ? 1 : 0;
-    if (aUsed !== bUsed) return aUsed - bUsed;
-    if (a.exercise.systemicFatigue !== b.exercise.systemicFatigue) {
-      return a.exercise.systemicFatigue - b.exercise.systemicFatigue;
-    }
-    return a.exercise.name.localeCompare(b.exercise.name, "es");
-  });
-
-  return candidates[0];
+/** Objetivo de series directas semanales por grupo (base equilibrada + prioridad). */
+export function computeWeeklyTargets(
+  priorityMuscles: MuscleGroupCode[],
+  goalType: GeneratorInput["goalType"],
+): Record<MuscleGroupCode, number> {
+  const priority = new Set(priorityMuscles);
+  const fatLoss = goalType === "FAT_LOSS";
+  const targets = {} as Record<MuscleGroupCode, number>;
+  for (const group of ALL_GROUPS) {
+    let base = BASELINE_WEEKLY_SETS[group];
+    if (fatLoss) base = Math.round(base * FAT_LOSS_VOLUME_FACTOR);
+    const bonus = priority.has(group) ? PRIORITY_BONUS_SETS : 0;
+    targets[group] = Math.min(base + bonus, MAX_WEEKLY_SETS);
+  }
+  return targets;
 }
 
 function pickVariant(
   exercise: CatalogExercise,
-  ctx: { equipmentSet: Set<string>; userContras: Set<string> },
+  filters: Filters,
 ): CatalogVariant | null {
   const viable = exercise.variants.filter(
     (v) =>
-      ctx.equipmentSet.has(v.equipment) &&
-      !v.contraindications.some((c) => ctx.userContras.has(c)),
+      filters.equipment.has(v.equipment) &&
+      !v.contraindications.some((c) => filters.contraindications.has(c)),
   );
   if (viable.length === 0) return null;
   viable.sort((a, b) => {
@@ -207,99 +102,240 @@ function pickVariant(
   return viable[0];
 }
 
-function slotCost(resolved: ResolvedSlot): number {
-  if (resolved.slot.kind === "ISOLATION")
-    return resolved.sets * SLOT_COST_MIN.ISOLATION;
-  return (
-    resolved.sets *
-    (resolved.exercise.systemicFatigue >= 3
-      ? SLOT_COST_MIN.COMPOUND_HEAVY
-      : SLOT_COST_MIN.COMPOUND)
-  );
-}
-
-function estimateMinutes(resolved: ResolvedSlot[]): number {
-  return (
-    SESSION_OVERHEAD_MIN + resolved.reduce((sum, r) => sum + slotCost(r), 0)
-  );
-}
-
-function trimToBudget(
-  resolved: ResolvedSlot[],
-  minutesPerSession: number,
-  tiers: Record<MuscleGroupCode, PriorityTier>,
-  warnings: string[],
-  dayName: string,
-): void {
-  const tierOf = (r: ResolvedSlot) => tiers[r.slot.group];
-  let trimmed = false;
-
-  const overBudget = () => estimateMinutes(resolved) > minutesPerSession;
-
-  // 1. Eliminar slots Tier C enteros (desde el final del día).
-  for (let i = resolved.length - 1; i >= 0 && overBudget(); i--) {
-    if (tierOf(resolved[i]) === "C") {
-      resolved.splice(i, 1);
-      trimmed = true;
-    }
-  }
-  // 2. Reducir aislamientos Tier B a mínimo 2 series (desde el final).
-  for (let i = resolved.length - 1; i >= 0 && overBudget(); i--) {
-    const r = resolved[i];
-    while (
-      tierOf(r) === "B" &&
-      r.slot.kind === "ISOLATION" &&
-      r.sets > 2 &&
-      overBudget()
-    ) {
-      r.sets -= 1;
-      trimmed = true;
-    }
-  }
-  // 3. Eliminar aislamientos Tier B enteros (desde el final).
-  for (let i = resolved.length - 1; i >= 0 && overBudget(); i--) {
-    const r = resolved[i];
-    if (tierOf(r) === "B" && r.slot.kind === "ISOLATION") {
-      resolved.splice(i, 1);
-      trimmed = true;
-    }
-  }
-
-  if (trimmed) {
-    warnings.push(
-      `${dayName}: sesión recortada para caber en ${minutesPerSession} min (se redujo trabajo no prioritario; los grupos prioritarios se mantienen).`,
-    );
-  }
-  if (overBudget()) {
-    warnings.push(
-      `${dayName}: aun recortando, la sesión estimada (${estimateMinutes(resolved)} min) supera tus ${minutesPerSession} min. Valora más tiempo por sesión o menos días con sesiones más largas.`,
-    );
-  }
-}
-
-function countWeeklySets(
-  days: GeneratedDay[],
+function pickExercise(
   catalog: CatalogExercise[],
-): Partial<Record<MuscleGroupCode, number>> {
-  const byId = new Map(catalog.map((e) => [e.id, e]));
-  const totals: Partial<Record<MuscleGroupCode, number>> = {};
-  for (const day of days) {
-    for (const ex of day.exercises) {
-      const exercise = byId.get(ex.exerciseId);
-      if (!exercise) continue;
-      for (const contribution of exercise.contributions) {
-        totals[contribution.group] =
-          Math.round(
-            ((totals[contribution.group] ?? 0) +
-              ex.sets * contribution.factor) *
-              100,
-          ) / 100;
+  group: MuscleGroupCode,
+  filters: Filters,
+  usedInDay: Set<string>,
+  usedInProgram: Set<string>,
+  preferCompound: boolean,
+): { exercise: CatalogExercise; variant: CatalogVariant } | null {
+  const candidates = catalog
+    .filter((e) => !filters.excluded.has(e.name.toLowerCase()))
+    // no repetir el MISMO ejercicio el mismo día (evita redundancia idéntica)
+    .filter((e) => !usedInDay.has(e.id))
+    .filter((e) =>
+      e.contributions.some((c) => c.group === group && c.role === "PRIMARY"),
+    )
+    .map((e) => ({ exercise: e, variant: pickVariant(e, filters) }))
+    .filter(
+      (p): p is { exercise: CatalogExercise; variant: CatalogVariant } =>
+        p.variant !== null,
+    );
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    // 1) el tipo preferido (compuesto o aislamiento) primero
+    const aPref = isCompound(a.exercise) === preferCompound ? 0 : 1;
+    const bPref = isCompound(b.exercise) === preferCompound ? 0 : 1;
+    if (aPref !== bPref) return aPref - bPref;
+    // 2) variedad: ejercicios aún no usados en el programa
+    const aUsed = usedInProgram.has(a.exercise.id) ? 1 : 0;
+    const bUsed = usedInProgram.has(b.exercise.id) ? 1 : 0;
+    if (aUsed !== bUsed) return aUsed - bUsed;
+    // 3) menor fatiga sistémica, luego alfabético (determinismo)
+    if (a.exercise.systemicFatigue !== b.exercise.systemicFatigue) {
+      return a.exercise.systemicFatigue - b.exercise.systemicFatigue;
+    }
+    return a.exercise.name.localeCompare(b.exercise.name, "es");
+  });
+
+  return candidates[0];
+}
+
+export function generateInitialProgram(
+  input: GeneratorInput,
+): GeneratedProgram {
+  const warnings: string[] = [];
+  const split = splitForDays(input.daysPerWeek);
+  const priority = new Set(input.priorityMuscles);
+
+  const targets = computeWeeklyTargets(input.priorityMuscles, input.goalType);
+  const remaining: Record<MuscleGroupCode, number> = { ...targets };
+
+  const filters: Filters = {
+    equipment: new Set(input.equipment),
+    contraindications: new Set(input.contraindications),
+    excluded: new Set(input.excludedExerciseNames.map((n) => n.toLowerCase())),
+  };
+
+  const usedInProgram = new Set<string>();
+  // Series directas por grupo acumuladas en todo el programa.
+  const directSets: Record<MuscleGroupCode, number> = Object.fromEntries(
+    ALL_GROUPS.map((g) => [g, 0]),
+  ) as Record<MuscleGroupCode, number>;
+  const fractionalSets: Record<MuscleGroupCode, number> = Object.fromEntries(
+    ALL_GROUPS.map((g) => [g, 0]),
+  ) as Record<MuscleGroupCode, number>;
+  const daysTrainingGroup: Record<
+    MuscleGroupCode,
+    Set<number>
+  > = Object.fromEntries(
+    ALL_GROUPS.map((g) => [g, new Set<number>()]),
+  ) as Record<MuscleGroupCode, Set<number>>;
+
+  const isNeedy = (group: MuscleGroupCode): boolean =>
+    remaining[group] > 0.5 || directSets[group] < MIN_WEEKLY_SETS[group];
+  const groupDayCap = (group: MuscleGroupCode): number =>
+    priority.has(group)
+      ? MAX_SETS_PER_GROUP_PER_SESSION.priority
+      : MAX_SETS_PER_GROUP_PER_SESSION.standard;
+  const exerciseSetsMax = (group: MuscleGroupCode): number =>
+    priority.has(group) ? SETS_PER_EXERCISE.maxPriority : SETS_PER_EXERCISE.max;
+
+  const days: GeneratedDay[] = split.days.map((menu, dayIndex) => {
+    const exercises: GeneratedExercise[] = [];
+    const usedInDay = new Set<string>();
+    const setsForGroupToday: Record<string, number> = {};
+    let minutes = SESSION_OVERHEAD_MIN;
+
+    // Se rellena el día añadiendo ejercicios uno a uno, siempre al grupo más
+    // necesitado (prioridad primero), hasta que no cabe nada más (tiempo,
+    // topes por grupo o falta de ejercicios disponibles).
+    // Backstop de iteraciones muy por encima de cualquier día real.
+    for (let guard = 0; guard < 40; guard++) {
+      // Candidatos: en el menú, necesitados, con margen de series y con un
+      // ejercicio elegible que no se haya usado hoy.
+      const candidates = menu.groups
+        .filter((g) => isNeedy(g))
+        .filter((g) => (setsForGroupToday[g] ?? 0) < groupDayCap(g))
+        .map((g) => ({
+          group: g,
+          pick: pickExercise(
+            input.catalog,
+            g,
+            filters,
+            usedInDay,
+            usedInProgram,
+            remaining[g] >= 3 && !hasCompoundToday(exercises, g),
+          ),
+        }))
+        .filter(
+          (
+            c,
+          ): c is {
+            group: MuscleGroupCode;
+            pick: NonNullable<typeof c.pick>;
+          } => c.pick !== null,
+        );
+
+      if (candidates.length === 0) break;
+
+      candidates.sort((a, b) => {
+        const pa = priority.has(a.group) ? 0 : 1;
+        const pb = priority.has(b.group) ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        if (remaining[b.group] !== remaining[a.group])
+          return remaining[b.group] - remaining[a.group];
+        return BASELINE_WEEKLY_SETS[b.group] - BASELINE_WEEKLY_SETS[a.group];
+      });
+
+      const { group, pick } = candidates[0];
+      const kind = costKindOf(pick.exercise);
+      const cost = TIME_COST_MIN[kind];
+
+      const usedForGroup = setsForGroupToday[group] ?? 0;
+      const need =
+        remaining[group] > 0
+          ? remaining[group]
+          : MIN_WEEKLY_SETS[group] - directSets[group];
+      let sets = clamp(
+        Math.ceil(need),
+        SETS_PER_EXERCISE.min,
+        exerciseSetsMax(group),
+      );
+      sets = Math.min(sets, groupDayCap(group) - usedForGroup);
+
+      // Presupuesto de tiempo: recortar o abandonar si la sesión se pasa.
+      if (minutes + sets * cost > input.minutesPerSession) {
+        const affordable = Math.floor(
+          (input.minutesPerSession - minutes) / cost,
+        );
+        sets = Math.min(sets, affordable);
+      }
+      // No se añaden ejercicios de una sola serie: si no caben al menos las
+      // mínimas, la sesión está llena.
+      if (sets < SETS_PER_EXERCISE.min) break;
+
+      exercises.push({
+        exerciseId: pick.exercise.id,
+        exerciseName: pick.exercise.name,
+        variantId: pick.variant.id,
+        variantName: pick.variant.name,
+        muscleGroup: group,
+        isCompound: isCompound(pick.exercise),
+        sets,
+        repRangeMin: pick.variant.repRangeMin,
+        repRangeMax: pick.variant.repRangeMax,
+        targetRir: TARGET_RIR[kind],
+        restSeconds: pick.variant.defaultRestSeconds,
+      });
+
+      minutes += sets * cost;
+      usedInDay.add(pick.exercise.id);
+      usedInProgram.add(pick.exercise.id);
+      setsForGroupToday[group] = usedForGroup + sets;
+      directSets[group] += sets;
+      daysTrainingGroup[group].add(dayIndex);
+
+      for (const contribution of pick.exercise.contributions) {
+        remaining[contribution.group] -= sets * contribution.factor;
+        fractionalSets[contribution.group] += sets * contribution.factor;
+        if (contribution.factor > 0)
+          daysTrainingGroup[contribution.group].add(dayIndex);
       }
     }
+
+    return {
+      name: menu.name,
+      ordinal: dayIndex + 1,
+      exercises,
+      estimatedMinutes: minutes,
+    };
+  });
+
+  // Aviso si algún grupo prioritario o principal quedó por debajo del suelo.
+  for (const group of ALL_GROUPS) {
+    if (directSets[group] < MIN_WEEKLY_SETS[group]) {
+      warnings.push(
+        `${MUSCLE_GROUP_BY_CODE[group].nameEs}: solo caben ${directSets[group]} series directas (mínimo recomendado ${MIN_WEEKLY_SETS[group]}). Valora más tiempo por sesión o más días.`,
+      );
+    }
   }
-  return totals;
+
+  const volumeByGroup: GroupVolume[] = ALL_GROUPS.map((group) => ({
+    group,
+    directSets: directSets[group],
+    fractionalSets: round1(fractionalSets[group]),
+    frequency: daysTrainingGroup[group].size,
+    isPriority: priority.has(group),
+    targetSets: targets[group],
+  }));
+
+  const priorityLabels = input.priorityMuscles.map(
+    (g) => MUSCLE_GROUP_BY_CODE[g].nameEs,
+  );
+  const explanation =
+    priorityLabels.length > 0
+      ? `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, con más trabajo en tus prioridades: ${priorityLabels.join(", ")}. Ningún grupo se abandona. Se refinará con tus datos en las siguientes fases.`
+      : `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, sin prioridad especial: todos los grupos reciben un reparto estándar. Se refinará con tus datos en las siguientes fases.`;
+
+  return {
+    name: split.label,
+    splitType: split.type,
+    daysPerWeek: input.daysPerWeek,
+    minutesPerSession: input.minutesPerSession,
+    priorityMuscles: input.priorityMuscles,
+    days,
+    volumeByGroup,
+    explanation,
+    warnings,
+    ruleId: `program.initial.${split.type.toLowerCase()}`,
+    version: PROGRAM_GENERATOR_VERSION,
+  };
 }
 
-function labelOf(code: MuscleGroupCode): string {
-  return MUSCLE_GROUPS.find((g) => g.code === code)?.nameEs ?? code;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }

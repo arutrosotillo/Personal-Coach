@@ -26,9 +26,8 @@ export async function runSeed(prisma: PrismaClient): Promise<SeedCounts> {
         code: group.code,
         nameEs: group.nameEs,
         region: group.region,
-        tier: group.tier,
       },
-      update: { nameEs: group.nameEs, region: group.region, tier: group.tier },
+      update: { nameEs: group.nameEs, region: group.region },
     });
   }
   const groupsByCode = new Map(

@@ -1,5 +1,6 @@
 import { ageInYears, DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
 import { NUTRITION_CONFIG } from "@/core/config/nutrition-config";
+import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
 import {
   estimateInitialTargets,
   NUTRITION_ESTIMATE_VERSION,
@@ -35,6 +36,8 @@ export async function completeOnboarding(
   now: Date = new Date(),
 ) {
   const localDate = toLocalDate(now, DEFAULT_TIMEZONE);
+  // La estrategia elegida por el usuario deriva el comportamiento calórico interno.
+  const goalType = STRATEGY_TO_GOAL_TYPE[data.strategy];
 
   // 1. Cálculos puros (fuera de la transacción)
   const estimate = estimateInitialTargets({
@@ -46,7 +49,7 @@ export async function completeOnboarding(
     workActivity: data.workActivity,
     trainingSessionsPerWeek: data.daysPerWeek,
     minutesPerSession: data.minutesPerSession,
-    goalType: data.goalType,
+    goalType,
     weeklyRatePct: data.weeklyRatePct,
   });
 
@@ -57,8 +60,8 @@ export async function completeOnboarding(
     equipment: data.equipment,
     contraindications: data.contraindications,
     excludedExerciseNames: data.excludedExerciseNames,
-    priorityMuscles: data.priorityMuscles,
-    goalType: data.goalType,
+    priorityMuscles: data.balancedProgram ? [] : data.priorityMuscles,
+    goalType,
     catalog,
   });
 
@@ -99,8 +102,10 @@ export async function completeOnboarding(
     const goal = await tx.goal.create({
       data: {
         profileId: profile.id,
-        type: data.goalType,
+        strategy: data.strategy,
+        type: goalType,
         startDate: localDate,
+        startWeightKg: data.weightKg,
         weeklyRatePct: estimate.weeklyRatePct,
         targetWeightKg: data.targetWeightKg ?? null,
       },
@@ -208,12 +213,13 @@ export async function completeOnboarding(
           onboarding: data,
           estimateVersion: NUTRITION_ESTIMATE_VERSION,
           nutritionDefaults: {
-            weeklyRatePct: NUTRITION_CONFIG.weeklyRatePct[data.goalType],
+            weeklyRatePct: NUTRITION_CONFIG.weeklyRatePct[goalType],
           },
         }),
         output: toJson({
           splitType: program.splitType,
-          weeklySetsByGroup: program.weeklySetsByGroup,
+          volumeByGroup: program.volumeByGroup,
+          priorityMuscles: program.priorityMuscles,
           warnings: program.warnings,
           estimate: {
             tdee: estimate.tdee,

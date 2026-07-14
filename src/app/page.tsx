@@ -4,7 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PhaseNote } from "@/components/layout/phase-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { goalLabel } from "@/lib/labels";
+import { strategyLabel } from "@/lib/labels";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ export default async function DashboardPage() {
               <CardTitle className="text-base">Objetivo</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="font-medium">{goalLabel(goal.type)}</p>
+              <p className="font-medium">{strategyLabel(goal.strategy)}</p>
               <p className="tnum text-muted-foreground text-sm">
                 Ritmo {goal.weeklyRatePct.toLocaleString("es-ES")} % del
                 peso/semana

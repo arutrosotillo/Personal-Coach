@@ -17,7 +17,7 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 **Identidad y objetivo**
 
 - `UserProfile` — sexo (para cálculo energético), fecha de nacimiento, altura, timezone, unitSystem. Una fila en la práctica, pero todo cuelga de `profileId`: multi-usuario futuro = añadir auth, no re-modelar.
-- `Goal` — tipo (FAT_LOSS/RECOMP/LEAN_GAIN/MAINTENANCE), estado, ritmo semanal (% peso/sem), peso objetivo opcional. Historial de objetivos = filas, no updates.
+- `Goal` — `strategy` (la intención elegida por el usuario en lenguaje natural: FAT_LOSS_MUSCLE_PRESERVATION / RECOMP_MAINTAIN_WEIGHT / LEAN_GAIN / MAINTENANCE) + `type` (comportamiento calórico interno derivado), estado, `startWeightKg`, ritmo semanal (% peso/sem), peso objetivo opcional. La estrategia separa la intención del comportamiento calórico para que "recomposición" nunca se confunda con "mantenimiento" cuando el usuario quiere perder peso. Historial de objetivos = filas, no updates.
 - `UserPreference` — clave/valor JSON validado (preferencias UI y de coach).
 - `AppSetting` — clave/valor de sistema (versión de seed, etc.).
 
@@ -31,7 +31,7 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 
 **Catálogo de entrenamiento**
 
-- `MuscleGroup` — 16 grupos con `code` único (seed fijo; DELT_LATERAL, DORSAL, PECHO_SUPERIOR…).
+- `MuscleGroup` — 16 grupos con `code` único (seed fijo; DELT_LATERAL, DORSAL, PECHO_SUPERIOR…). Sin campo de prioridad: los volúmenes de partida viven en `training-config.ts` y la única prioridad es la que elige el usuario.
 - `Exercise` — nombre, patrón de movimiento, instrucciones cortas, activo/custom.
 - `ExerciseMuscleContribution` — (ejercicio, grupo, rol, factor 0–1). **Los factores son aproximaciones operativas para contar volumen, no hechos científicos** — se documenta también en la UI.
 - `ExerciseVariant` — el nivel donde vive el historial y la progresión (equipamiento, incremento mínimo de carga `loadStepKg`, contraindicaciones). Nunca se comparan cargas entre variantes.

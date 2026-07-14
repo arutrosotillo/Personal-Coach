@@ -47,9 +47,11 @@ model Goal {
   id             String  @id @default(cuid())
   profileId      String
   profile        UserProfile @relation(fields: [profileId], references: [id])
-  type           String // enum GoalType: FAT_LOSS | RECOMP | LEAN_GAIN | MAINTENANCE
+  strategy       String // enum GoalStrategy (intención elegida por el usuario)
+  type           String // enum GoalType: comportamiento calórico interno derivado de strategy
   status         String  @default("ACTIVE") // enum GoalStatus: ACTIVE | COMPLETED | ABANDONED
   startDate      String // localDate
+  startWeightKg  Float // peso al fijar el objetivo (para la traza)
   weeklyRatePct  Float // % del peso corporal / semana (negativo = pérdida)
   targetWeightKg Float?
   notes          String?
@@ -172,7 +174,6 @@ model MuscleGroup {
   code   String @unique // "DELT_LATERAL", "DORSAL", ... (seed fijo)
   nameEs String
   region String // enum BodyRegion: UPPER | LOWER | CORE
-  tier   String @default("C") // enum PriorityTier: A | B | C (default global; ajustable por usuario)
 
   contributions    ExerciseMuscleContribution[]
   recoveryCheckIns RecoveryCheckIn[]

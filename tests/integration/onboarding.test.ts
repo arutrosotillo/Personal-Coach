@@ -30,9 +30,10 @@ const VALID: OnboardingData = onboardingSchema.parse({
   daysPerWeek: 4,
   minutesPerSession: 75,
   equipment: ["BARBELL", "DUMBBELL", "MACHINE", "CABLE", "BODYWEIGHT"],
-  goalType: "FAT_LOSS",
+  strategy: "FAT_LOSS_MUSCLE_PRESERVATION",
   dailySteps: 8500,
   workActivity: "SEDENTARY",
+  balancedProgram: false,
   priorityMuscles: ["BICEPS"],
   contraindications: ["KNEE"],
   excludedExerciseNames: ["Press banca"],
@@ -141,7 +142,7 @@ describe("completeOnboarding", () => {
 
   it("re-ejecutar el onboarding NO crea un segundo perfil y archiva objetivo y programa anteriores", async () => {
     const second = await completeOnboarding(
-      { ...VALID, goalType: "MAINTENANCE", daysPerWeek: 3 },
+      { ...VALID, strategy: "MAINTENANCE", daysPerWeek: 3 },
       new Date("2026-07-14T18:00:00Z"),
     );
 
@@ -178,7 +179,9 @@ describe("completeOnboarding", () => {
       daysPerWeek: 3,
       minutesPerSession: 60,
       equipment: ["DUMBBELL", "BODYWEIGHT"],
-      goalType: "RECOMP",
+      strategy: "RECOMP_MAINTAIN_WEIGHT",
+      balancedProgram: true,
+      priorityMuscles: [],
     });
     const result = await completeOnboarding(
       minimal,

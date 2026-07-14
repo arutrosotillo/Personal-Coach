@@ -39,23 +39,10 @@ export interface GeneratorInput {
   equipment: Equipment[];
   contraindications: Contraindication[];
   excludedExerciseNames: string[];
-  /** Prioridades elegidas por el usuario; se suman al Tier A por defecto. */
+  /** Grupos que el usuario ha elegido priorizar. Vacío = programa equilibrado. */
   priorityMuscles: MuscleGroupCode[];
   goalType: GoalType;
   catalog: CatalogExercise[];
-}
-
-export type SlotKind = "COMPOUND" | "ISOLATION";
-
-export interface SplitSlot {
-  group: MuscleGroupCode;
-  kind: SlotKind;
-  sets: number;
-}
-
-export interface SplitDay {
-  name: string;
-  slots: SplitSlot[];
 }
 
 export interface GeneratedExercise {
@@ -64,6 +51,7 @@ export interface GeneratedExercise {
   variantId: string;
   variantName: string;
   muscleGroup: MuscleGroupCode;
+  isCompound: boolean;
   sets: number;
   repRangeMin: number;
   repRangeMax: number;
@@ -78,13 +66,25 @@ export interface GeneratedDay {
   estimatedMinutes: number;
 }
 
+/** Volumen semanal resultante por grupo, separando directo de fraccional. */
+export interface GroupVolume {
+  group: MuscleGroupCode;
+  directSets: number; // series cuyo grupo PRIMARIO es este
+  fractionalSets: number; // suma ponderada por factor de contribución (directas + indirectas)
+  frequency: number; // nº de días que trabajan el grupo
+  isPriority: boolean;
+  targetSets: number;
+}
+
 export interface GeneratedProgram {
   name: string;
   splitType: string;
   daysPerWeek: number;
+  minutesPerSession: number;
+  priorityMuscles: MuscleGroupCode[];
   days: GeneratedDay[];
-  /** Series semanales planificadas por grupo (conteo fraccional). */
-  weeklySetsByGroup: Partial<Record<MuscleGroupCode, number>>;
+  /** Volumen por grupo (directo + fraccional + frecuencia) para el bloque "por qué". */
+  volumeByGroup: GroupVolume[];
   explanation: string;
   warnings: string[];
   ruleId: string;

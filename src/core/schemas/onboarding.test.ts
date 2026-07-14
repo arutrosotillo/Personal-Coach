@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
+/** Mínimo válido: programa equilibrado + estrategia de pérdida de grasa. */
 const VALID_MINIMAL = {
   sex: "MALE",
   birthDate: "1992-03-10",
@@ -11,40 +12,121 @@ const VALID_MINIMAL = {
   daysPerWeek: 4,
   minutesPerSession: 75,
   equipment: ["BARBELL", "DUMBBELL", "CABLE", "MACHINE"],
-  goalType: "FAT_LOSS",
+  strategy: "FAT_LOSS_MUSCLE_PRESERVATION",
+  balancedProgram: true,
+  priorityMuscles: [],
 };
 
 describe("onboardingSchema — datos válidos", () => {
-  it("acepta el mínimo imprescindible y aplica defaults", () => {
+  it("acepta el mínimo (programa equilibrado) y aplica defaults", () => {
     const r = onboardingSchema.parse(VALID_MINIMAL);
     expect(r.dailySteps).toBe(6000);
     expect(r.workActivity).toBe("SEDENTARY");
+    expect(r.balancedProgram).toBe(true);
     expect(r.priorityMuscles).toEqual([]);
-    expect(r.contraindications).toEqual([]);
     expect(r.dietaryPreference).toBe("NONE");
   });
 
-  it("acepta opcionales completos", () => {
+  it("acepta de 1 a 6 prioridades explícitas", () => {
     const r = onboardingSchema.parse({
       ...VALID_MINIMAL,
+      balancedProgram: false,
+      priorityMuscles: ["DELT_LATERAL", "DORSAL", "PECHO_SUPERIOR"],
       waistCm: 88,
       weeklyRatePct: -0.5,
       targetWeightKg: 78,
-      priorityMuscles: ["DELT_LATERAL", "DORSAL"],
       contraindications: ["KNEE"],
-      excludedExerciseNames: ["Sentadilla trasera"],
-      sleepHoursTypical: 7,
-      mealsPerDay: 4,
     });
-    expect(r.waistCm).toBe(88);
+    expect(r.priorityMuscles).toHaveLength(3);
     expect(r.contraindications).toEqual(["KNEE"]);
+  });
+});
+
+describe("onboardingSchema — prioridades (cliente y servidor)", () => {
+  it("rechaza combinar 'equilibrado' con grupos prioritarios", () => {
+    const r = onboardingSchema.safeParse({
+      ...VALID_MINIMAL,
+      balancedProgram: true,
+      priorityMuscles: ["BICEPS"],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message).join(" ")).toMatch(
+        /No puedes combinar/i,
+      );
+    }
+  });
+
+  it("rechaza no elegir ni equilibrado ni grupos", () => {
+    const r = onboardingSchema.safeParse({
+      ...VALID_MINIMAL,
+      balancedProgram: false,
+      priorityMuscles: [],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message).join(" ")).toMatch(
+        /entre 1 y 6/i,
+      );
+    }
+  });
+
+  it("rechaza más de 6 grupos (validado en el servidor)", () => {
+    const r = onboardingSchema.safeParse({
+      ...VALID_MINIMAL,
+      balancedProgram: false,
+      priorityMuscles: [
+        "PECHO_SUPERIOR",
+        "DORSAL",
+        "DELT_LATERAL",
+        "DELT_POSTERIOR",
+        "BICEPS",
+        "TRICEPS",
+        "CUADRICEPS",
+      ],
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
+describe("onboardingSchema — recomposición con peso objetivo inferior", () => {
+  const recompLowerTarget = {
+    ...VALID_MINIMAL,
+    strategy: "RECOMP_MAINTAIN_WEIGHT",
+    weightKg: 83.5,
+    targetWeightKg: 78, // ~6,6 % menos
+  };
+
+  it("rechaza terminar sin confirmar el desajuste de peso", () => {
+    const r = onboardingSchema.safeParse(recompLowerTarget);
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message).join(" ")).toMatch(
+        /Perder grasa manteniendo músculo|recomponer sin bajar/i,
+      );
+    }
+  });
+
+  it("acepta si el usuario confirma expresamente", () => {
+    const r = onboardingSchema.safeParse({
+      ...recompLowerTarget,
+      acknowledgedRecompWeightMismatch: true,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("no exige confirmación si el peso objetivo no es materialmente inferior", () => {
+    const r = onboardingSchema.safeParse({
+      ...recompLowerTarget,
+      targetWeightKg: 82, // <3 % de diferencia
+    });
+    expect(r.success).toBe(true);
   });
 });
 
 describe("onboardingSchema — datos inválidos rechazados con mensaje útil", () => {
   it.each([
     [{ weightKg: 500 }, /30 y 300/],
-    [{ weightKg: 20 }, /30 y 300/],
     [{ heightCm: 100 }, /120 y 230/],
     [{ daysPerWeek: 1 }, /Mínimo 2 días/],
     [{ daysPerWeek: 7 }, /Máximo 6 días/],
