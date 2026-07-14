@@ -80,10 +80,9 @@ export function estimateInitialTargets(input: InitialEstimateInput): InitialEsti
   const rateCfg = CFG.weeklyRatePct[input.goalType];
   const weeklyRatePct = clamp(input.weeklyRatePct ?? rateCfg.default, rateCfg.min, rateCfg.max);
 
-  // Déficit diario derivado del ritmo (negativo si superávit).
-  const dailyDeficitKcal = Math.round(
-    (input.weightKg * (-weeklyRatePct / 100) * CFG.kcalPerKgBodyweight) / 7,
-  );
+  // Déficit diario derivado del ritmo (negativo si superávit). El "+ 0" evita -0.
+  const dailyDeficitKcal =
+    Math.round((input.weightKg * (-weeklyRatePct / 100) * CFG.kcalPerKgBodyweight) / 7) + 0;
 
   const floorKcal = Math.max(
     Math.round(bmr * CFG.minKcalBmrFactor),
