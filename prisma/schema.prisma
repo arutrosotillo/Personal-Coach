@@ -324,6 +324,7 @@ model WorkoutSession {
   // Feedback post-sesión (chips 1..5)
   perceivedPerformance Int?
   pump                 Int?
+  jointPain            Int?
   fatigue              Int?
   motivation           Int?
   notes       String?

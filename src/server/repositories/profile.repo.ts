@@ -9,6 +9,14 @@ export async function getProfile() {
   return prisma.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
 }
 
+/** id del perfil único (app personal). Lanza si aún no hay onboarding. */
+export async function requireProfileId(): Promise<string> {
+  const profile = await getProfile();
+  if (!profile)
+    throw new Error("No hay perfil: completa el onboarding primero.");
+  return profile.id;
+}
+
 /** Última medición corporal registrada (para el resumen de progreso). */
 export async function getLatestMeasurement(profileId: string) {
   return prisma.bodyMeasurement.findFirst({
