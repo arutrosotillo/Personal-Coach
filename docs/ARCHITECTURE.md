@@ -55,6 +55,7 @@ El servidor corre en la máquina del usuario, así que "sin Internet" funciona p
 3. IDs `cuid()` portables.
 4. Fotos tras interfaz `PhotoStorage` (filesystem hoy, blob storage mañana) — F4.
 5. `src/server/db.ts` único punto de conexión; cambiar provider = 1 línea + baseline de migraciones.
+6. Columnas `Json` (preferencias, snapshots de decisiones, contraindicaciones) se almacenan como TEXT en SQLite: la migración a Postgres requiere cast `TEXT→jsonb` explícito, y cualquier filtrado por contenido JSON se hace hoy en memoria en `core` (nunca con operadores JSON de SQL).
 
 ## Decisiones registradas (ADR abreviado)
 

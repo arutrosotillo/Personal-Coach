@@ -39,7 +39,7 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 - `RecoveryCheckIn` — feedback post-sesión por grupo muscular (escala 1–5), operativo en F2/F3.
 
 **Nutrición**
-- `NutritionTarget` — serie temporal de objetivos (`@@unique(profileId, effectiveFrom)`), `source` MANUAL|ALGORITHM, enlace opcional a la recomendación que lo produjo. El onboarding crea el primero (estimación inicial, F4 lo hace operativo).
+- `NutritionTarget` — serie temporal de objetivos (`@@unique(profileId, effectiveFrom)`), `source` MANUAL|ALGORITHM|ONBOARDING, enlace opcional (0..1) a la recomendación que lo produjo. El onboarding crea el primero (estimación inicial, F4 lo hace operativo).
 - `NutritionLog`, `MealTemplate` — F4 para la UI; tablas desde F1.
 
 **Trazabilidad**

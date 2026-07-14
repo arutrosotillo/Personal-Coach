@@ -1,7 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Personal Coach — modelo de datos (F1).
+// Decisiones y convenciones: docs/DATA_MODEL.md
+// - SQLite no soporta enums: columnas "enum" son String validadas por Zod (src/core/enums.ts).
+// - localDate = String "YYYY-MM-DD" (día del usuario, timezone del perfil); DateTime UTC solo auditoría.
+// - DB siempre en métrico (kg / cm / kcal).
+// - Tablas de Coach AI pospuestas a la migración de Fase 6 (docs/AI_COACH.md).
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +12,484 @@ generator client {
 
 datasource db {
   provider = "sqlite"
+}
+
+// ============ PERFIL, OBJETIVO Y PREFERENCIAS ============
+
+model UserProfile {
+  id         String   @id @default(cuid())
+  sex        String // enum Sex: MALE | FEMALE (usado para cálculos energéticos)
+  birthDate  String // localDate
+  heightCm   Float
+  timezone   String   @default("Europe/Madrid")
+  unitSystem String   @default("METRIC") // enum UnitSystem
+  // Contexto de actividad recogido en onboarding (inputs del TDEE inicial)
+  dailySteps        Int?
+  workActivity      String? // enum WorkActivity: SEDENTARY | LIGHT | MODERATE | HIGH
+  sleepHoursTypical Float?
+  trainingYears     Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  goals            Goal[]
+  bodyMeasurements BodyMeasurement[]
+  progressPhotos   ProgressPhoto[]
+  dailyCheckIns    DailyCheckIn[]
+  weeklyCheckIns   WeeklyCheckIn[]
+  personalEvents   PersonalEvent[]
+  trainingPrograms TrainingProgram[]
+  nutritionTargets NutritionTarget[]
+  nutritionLogs    NutritionLog[]
+  recommendations  Recommendation[]
+}
+
+model Goal {
+  id             String  @id @default(cuid())
+  profileId      String
+  profile        UserProfile @relation(fields: [profileId], references: [id])
+  type           String // enum GoalType: FAT_LOSS | RECOMP | LEAN_GAIN | MAINTENANCE
+  status         String  @default("ACTIVE") // enum GoalStatus: ACTIVE | COMPLETED | ABANDONED
+  startDate      String // localDate
+  weeklyRatePct  Float // % del peso corporal / semana (negativo = pérdida)
+  targetWeightKg Float?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([profileId, status])
+}
+
+model UserPreference {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ============ CUERPO Y CHECK-INS ============
+
+model BodyMeasurement {
+  id         String  @id @default(cuid())
+  profileId  String
+  profile    UserProfile @relation(fields: [profileId], references: [id])
+  localDate  String
+  weightKg   Float?
+  waistCm    Float?
+  neckCm     Float?
+  chestCm    Float?
+  hipsCm     Float?
+  bicepLeftCm  Float?
+  bicepRightCm Float?
+  thighLeftCm  Float?
+  thighRightCm Float?
+  calfCm     Float?
+  bodyFatPct Float?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([profileId, localDate])
+}
+
+model ProgressPhoto {
+  id        String    @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id])
+  localDate String
+  pose      String // enum PhotoPose: FRONT | SIDE | BACK
+  filePath  String // relativo a data/photos/ — nunca binarios en DB
+  notes     String?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([profileId, pose, localDate])
+}
+
+model DailyCheckIn {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id])
+  localDate String
+  weightKg  Float?
+  kcal      Int?
+  proteinG  Int?
+  steps     Int?
+  hunger    Int? // 1..5
+  energy    Int? // 1..5
+  sleepHours Float?
+  trained   Boolean?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([profileId, localDate])
+}
+
+model WeeklyCheckIn {
+  id                    String  @id @default(cuid())
+  profileId             String
+  profile               UserProfile @relation(fields: [profileId], references: [id])
+  isoYear               Int
+  isoWeek               Int
+  weekStartDate         String // lunes, localDate
+  avgWeightKg           Float?
+  weightTrendKgPerWeek  Float?
+  waistCm               Float?
+  trainingAdherencePct  Float?
+  nutritionAdherencePct Float?
+  avgSleepHours         Float?
+  fatigue               Int? // 1..5
+  hunger                Int? // 1..5
+  motivation            Int? // 1..5
+  notes                 String?
+  closedAt              DateTime?
+  createdAt             DateTime @default(now())
+
+  @@unique([profileId, isoYear, isoWeek])
+}
+
+model PersonalEvent {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id])
+  localDate String
+  endDate   String? // rangos (enfermedad, viaje)
+  type      String // enum PersonalEventType (12 valores, src/core/enums.ts)
+  note      String? // texto libre: dato NO confiable para la IA
+  createdAt DateTime @default(now())
+
+  @@index([profileId, localDate])
+}
+
+// ============ CATÁLOGO ============
+
+model MuscleGroup {
+  id     String @id @default(cuid())
+  code   String @unique // "DELT_LATERAL", "DORSAL", ... (seed fijo)
+  nameEs String
+  region String // enum BodyRegion: UPPER | LOWER | CORE
+  tier   String @default("C") // enum PriorityTier: A | B | C (default global; ajustable por usuario)
+
+  contributions    ExerciseMuscleContribution[]
+  recoveryCheckIns RecoveryCheckIn[]
+}
+
+model Exercise {
+  id              String  @id @default(cuid())
+  name            String  @unique
+  movementPattern String // enum MovementPattern
+  systemicFatigue Int     @default(2) // 1..3 (coste sistémico aproximado)
+  instructions    String?
+  isCustom        Boolean @default(false)
+  isActive        Boolean @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  variants      ExerciseVariant[]
+  contributions ExerciseMuscleContribution[]
+
+  @@index([movementPattern])
+}
+
+model ExerciseMuscleContribution {
+  id            String @id @default(cuid())
+  exerciseId    String
+  exercise      Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  muscleGroupId String
+  muscleGroup   MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+  role          String // enum MuscleRole: PRIMARY | SECONDARY
+  factor        Float // 0..1 — aproximación operativa para contar volumen, no fisiología medida
+
+  @@unique([exerciseId, muscleGroupId])
+  @@index([muscleGroupId])
+}
+
+model ExerciseVariant {
+  id                String  @id @default(cuid())
+  exerciseId        String
+  exercise          Exercise @relation(fields: [exerciseId], references: [id])
+  name              String // "Press inclinado — barra"
+  equipment         String // enum Equipment
+  loadStepKg        Float   @default(2.5) // incremento mínimo real de carga
+  repRangeMin       Int     @default(8)
+  repRangeMax       Int     @default(12)
+  defaultRestSeconds Int    @default(120)
+  contraindications Json    @default("[]") // array de enum Contraindication
+  isDefault         Boolean @default(false)
+  deletedAt         DateTime?
+  createdAt         DateTime @default(now())
+
+  templateExercises TemplateExercise[]
+  workoutExercises  WorkoutExercise[]
+  setLogs           SetLog[]
+
+  @@unique([exerciseId, name])
+  @@index([equipment])
+}
+
+// ============ PROGRAMA ============
+
+model TrainingProgram {
+  id          String  @id @default(cuid())
+  profileId   String
+  profile     UserProfile @relation(fields: [profileId], references: [id])
+  name        String
+  daysPerWeek Int
+  description String?
+  isActive    Boolean @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  mesocycles Mesocycle[]
+
+  @@index([profileId, isActive])
+}
+
+model Mesocycle {
+  id           String  @id @default(cuid())
+  programId    String
+  program      TrainingProgram @relation(fields: [programId], references: [id])
+  ordinal      Int
+  status       String  @default("PLANNED") // enum MesocycleStatus: PLANNED | ACTIVE | COMPLETED | ABORTED
+  weeksPlanned Int     @default(6)
+  currentWeek  Int     @default(0) // 0 = no empezado
+  startDate    String?
+  endDate      String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  templates WorkoutTemplate[]
+  sessions  WorkoutSession[]
+
+  @@unique([programId, ordinal])
+  @@index([status])
+}
+
+model WorkoutTemplate {
+  id          String  @id @default(cuid())
+  mesocycleId String
+  mesocycle   Mesocycle @relation(fields: [mesocycleId], references: [id])
+  name        String // "Día 1 — Torso A"
+  ordinal     Int // orden dentro del microciclo semanal
+  deletedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  exercises TemplateExercise[]
+  sessions  WorkoutSession[]
+
+  @@unique([mesocycleId, ordinal])
+}
+
+model TemplateExercise {
+  id                String @id @default(cuid())
+  templateId        String
+  template          WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  exerciseVariantId String
+  exerciseVariant   ExerciseVariant @relation(fields: [exerciseVariantId], references: [id])
+  ordinal           Int
+  baseSets          Int
+  repRangeMin       Int
+  repRangeMax       Int
+  targetRir         Int    @default(2)
+  restSeconds       Int    @default(120)
+  notes             String?
+
+  @@unique([templateId, ordinal])
+  @@index([exerciseVariantId])
+}
+
+// ============ SESIONES Y LOGGING (operativo en F2; schema estable desde F1) ============
+// Las sesiones NUNCA se hard-deletean desde la app (se marcan ABORTED/SKIPPED):
+// la cascada WorkoutSession → WorkoutExercise → SetLog existe solo para
+// correcciones deliberadas del usuario, y borra el historial a sabiendas.
+
+model WorkoutSession {
+  id          String  @id @default(cuid())
+  mesocycleId String
+  mesocycle   Mesocycle @relation(fields: [mesocycleId], references: [id])
+  templateId  String?
+  template    WorkoutTemplate? @relation(fields: [templateId], references: [id])
+  weekNumber  Int
+  weekKind    String  @default("ACCUMULATION") // enum WeekKind: ACCUMULATION | DELOAD
+  status      String  @default("PLANNED") // enum SessionStatus: PLANNED | IN_PROGRESS | COMPLETED | ABORTED | SKIPPED
+  localDate   String
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  // Feedback post-sesión (chips 1..5)
+  perceivedPerformance Int?
+  pump                 Int?
+  fatigue              Int?
+  motivation           Int?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  exercises        WorkoutExercise[]
+  recoveryCheckIns RecoveryCheckIn[]
+
+  @@index([mesocycleId, weekNumber])
+  @@index([templateId])
+  @@index([localDate])
+  @@index([status])
+}
+
+model WorkoutExercise {
+  id                String @id @default(cuid())
+  sessionId         String
+  session           WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exerciseVariantId String
+  exerciseVariant   ExerciseVariant @relation(fields: [exerciseVariantId], references: [id])
+  ordinal           Int
+  // SNAPSHOT de lo prescrito para ESTA sesión (editar la plantilla no reescribe historia)
+  plannedSets Int
+  repRangeMin Int
+  repRangeMax Int
+  targetRir   Int
+  restSeconds Int
+  notes       String?
+
+  setLogs SetLog[]
+
+  @@unique([sessionId, ordinal])
+  @@index([exerciseVariantId])
+}
+
+model SetLog {
+  id                String @id @default(cuid())
+  workoutExerciseId String
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  // Denormalizado: historial por variante en una sola query indexada
+  exerciseVariantId String
+  exerciseVariant   ExerciseVariant @relation(fields: [exerciseVariantId], references: [id])
+  localDate         String
+  setNumber         Int
+  setType           String  @default("WORKING") // enum SetType: WARMUP | WORKING
+  weightKg          Float
+  reps              Int
+  rir               Int?
+  technique         Int? // 1..5
+  completed         Boolean @default(true)
+  estimated1Rm      Float? // Epley con reps efectivas; calculado en escritura; solo si reps+rir <= 12
+  notes             String?
+  completedAt       DateTime @default(now())
+
+  @@unique([workoutExerciseId, setNumber])
+  @@index([exerciseVariantId, localDate])
+}
+
+model RecoveryCheckIn {
+  id            String @id @default(cuid())
+  sessionId     String
+  session       WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  muscleGroupId String
+  muscleGroup   MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+  soreness      Int? // 1..5 (DOMS previo)
+  jointPain     Int? // 1..5
+  jointArea     String?
+  createdAt     DateTime @default(now())
+
+  @@unique([sessionId, muscleGroupId])
+  @@index([muscleGroupId, createdAt])
+}
+
+// ============ NUTRICIÓN (operativo en F4; target inicial desde onboarding F1) ============
+
+model NutritionTarget {
+  id               String  @id @default(cuid())
+  profileId        String
+  profile          UserProfile @relation(fields: [profileId], references: [id])
+  effectiveFrom    String // localDate; vigente hasta el siguiente target
+  kcal             Int
+  proteinG         Int
+  carbsG           Int
+  fatG             Int
+  source           String // enum TargetSource: MANUAL | ALGORITHM | ONBOARDING
+  recommendationId String? @unique
+  recommendation   Recommendation? @relation(fields: [recommendationId], references: [id])
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@unique([profileId, effectiveFrom])
+}
+
+model MealTemplate {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  kcal      Int
+  proteinG  Int
+  carbsG    Int     @default(0)
+  fatG      Int     @default(0)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+
+  logs NutritionLog[]
+}
+
+model NutritionLog {
+  id             String  @id @default(cuid())
+  profileId      String
+  profile        UserProfile @relation(fields: [profileId], references: [id])
+  localDate      String
+  description    String?
+  mealTemplateId String?
+  mealTemplate   MealTemplate? @relation(fields: [mealTemplateId], references: [id])
+  // Snapshot: editar la plantilla no reescribe logs
+  kcal     Int
+  proteinG Int @default(0)
+  carbsG   Int @default(0)
+  fatG     Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([profileId, localDate])
+  @@index([mealTemplateId])
+}
+
+// ============ TRAZABILIDAD ============
+
+model AlgorithmDecision {
+  id               String   @id @default(cuid())
+  engine           String // "program-generator" | "training" | "nutrition" | "recovery" | "safety" | "recommendation"
+  algorithmVersion String
+  ruleId           String
+  inputSnapshot    Json // input completo del motor, congelado
+  output           Json
+  explanation      String
+  evaluationDate   String // localDate que vio el motor
+  createdAt        DateTime @default(now())
+
+  recommendation Recommendation?
+
+  @@index([engine, ruleId])
+  @@index([evaluationDate])
+}
+
+model Recommendation {
+  id                 String  @id @default(cuid())
+  profileId          String
+  profile            UserProfile @relation(fields: [profileId], references: [id])
+  decisionId         String  @unique // trazabilidad 1:1 obligatoria
+  decision           AlgorithmDecision @relation(fields: [decisionId], references: [id])
+  type               String // enum RecommendationType
+  scope              String // enum RecommendationScope
+  scopeId            String?
+  priority           String  @default("MEDIUM") // enum Priority: LOW | MEDIUM | HIGH | CRITICAL
+  status             String  @default("PENDING") // enum RecommendationStatus
+  title              String
+  body               String
+  payload            Json?
+  suppressedBy       String? // tipo de recomendación de mayor precedencia que la suprimió
+  appliesToLocalDate String
+  resolvedAt         DateTime?
+  createdAt          DateTime @default(now())
+
+  nutritionTarget NutritionTarget? // 0..1: recommendationId es @unique
+
+  @@index([profileId, status, priority])
+  @@index([appliesToLocalDate])
 }
