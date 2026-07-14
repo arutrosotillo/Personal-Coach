@@ -35,8 +35,11 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
+    // role/aria-level dan semántica de encabezado (h2) sin alterar el layout.
     <div
       data-slot="card-title"
+      role="heading"
+      aria-level={2}
       className={cn(
         "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
         className,

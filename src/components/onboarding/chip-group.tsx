@@ -13,12 +13,15 @@ export function ChipGroup<T extends string | number>({
   options,
   value,
   onChange,
+  label,
   multiple = false,
   columns = 2,
 }: {
   options: ReadonlyArray<ChipOption<T>>;
   value: T | T[] | undefined;
   onChange: (next: T | T[]) => void;
+  /** Nombre accesible del grupo (lo que un lector de pantalla anuncia). */
+  label: string;
   multiple?: boolean;
   columns?: 2 | 3;
 }) {
@@ -39,6 +42,8 @@ export function ChipGroup<T extends string | number>({
 
   return (
     <div
+      role="group"
+      aria-label={label}
       className={cn(
         "grid gap-2",
         columns === 3 ? "grid-cols-3" : "grid-cols-2",
@@ -53,7 +58,7 @@ export function ChipGroup<T extends string | number>({
             aria-pressed={active}
             onClick={() => toggle(option.value)}
             className={cn(
-              "min-h-11 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+              "focus-visible:border-ring focus-visible:ring-ring/50 min-h-11 rounded-lg border px-3 py-2 text-left text-sm transition-colors focus-visible:ring-3 focus-visible:outline-none",
               active
                 ? "border-primary bg-primary/15 text-foreground"
                 : "border-border bg-card text-muted-foreground hover:text-foreground",

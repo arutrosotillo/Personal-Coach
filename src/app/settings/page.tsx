@@ -4,16 +4,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { workActivityLabel } from "@/lib/labels";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
-
-const WORK_LABELS: Record<string, string> = {
-  SEDENTARY: "Sedentaria",
-  LIGHT: "Ligera",
-  MODERATE: "Moderada",
-  HIGH: "Alta",
-};
 
 export default async function SettingsPage() {
   const overview = await getProfileOverview();
@@ -47,7 +41,7 @@ export default async function SettingsPage() {
                 <span className="text-muted-foreground">
                   Actividad laboral:
                 </span>{" "}
-                {WORK_LABELS[overview.profile.workActivity ?? ""] ?? "—"}
+                {workActivityLabel(overview.profile.workActivity)}
               </p>
               <Button
                 nativeButton={false}

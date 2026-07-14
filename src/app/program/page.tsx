@@ -33,8 +33,9 @@ export default async function ProgramPage() {
     <AppShell>
       <h1 className="mb-1 text-2xl font-semibold">{program.name}</h1>
       <p className="text-muted-foreground mb-4 text-sm">
-        {program.daysPerWeek} días/semana · Mesociclo 1 (
-        {mesocycle.weeksPlanned} semanas,{" "}
+        <span className="tnum">{program.daysPerWeek}</span> días/semana ·
+        Mesociclo 1 (<span className="tnum">{mesocycle.weeksPlanned}</span>{" "}
+        semanas,{" "}
         {mesocycle.status === "PLANNED"
           ? "planificado"
           : mesocycle.status.toLowerCase()}

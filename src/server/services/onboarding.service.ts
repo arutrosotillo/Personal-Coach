@@ -1,4 +1,4 @@
-import { toLocalDate, ageInYears } from "@/core/dates";
+import { ageInYears, DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
 import { NUTRITION_CONFIG } from "@/core/config/nutrition-config";
 import {
   estimateInitialTargets,
@@ -12,8 +12,6 @@ import type { OnboardingData } from "@/core/schemas/onboarding";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
 import { loadCatalog } from "@/server/repositories/catalog.repo";
-
-const DEFAULT_TIMEZONE = "Europe/Madrid";
 
 /**
  * Serializa un valor a JSON válido para columnas Prisma `Json`. El round-trip

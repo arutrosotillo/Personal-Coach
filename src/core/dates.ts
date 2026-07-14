@@ -5,6 +5,9 @@
  * Ver docs/ARCHITECTURE.md — Fechas y unidades.
  */
 
+/** Timezone por defecto del perfil (mismo default que el schema Prisma). */
+export const DEFAULT_TIMEZONE = "Europe/Madrid";
+
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function isLocalDate(value: string): boolean {

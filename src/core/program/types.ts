@@ -5,7 +5,6 @@ import type {
   MovementPattern,
   MuscleGroupCode,
   MuscleRole,
-  PriorityTier,
 } from "@/core/enums";
 
 /** Vista del catálogo que consume el generador (independiente de Prisma). */
@@ -90,8 +89,4 @@ export interface GeneratedProgram {
   warnings: string[];
   ruleId: string;
   version: string;
-}
-
-export interface EffectiveTiers {
-  tiers: Record<MuscleGroupCode, PriorityTier>;
 }

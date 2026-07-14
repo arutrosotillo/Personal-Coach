@@ -1,10 +1,8 @@
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard";
-import { toLocalDate } from "@/core/dates";
+import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
 import { listExerciseNames } from "@/server/repositories/catalog.repo";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_TIMEZONE = "Europe/Madrid";
 
 export default async function OnboardingPage() {
   const exerciseNames = await listExerciseNames();

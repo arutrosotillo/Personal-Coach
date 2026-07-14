@@ -24,6 +24,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // viewport-fit=cover activa las env(safe-area-inset-*) usadas por la bottom nav.
+  viewportFit: "cover",
   themeColor: "#0a0a0a",
 };
 

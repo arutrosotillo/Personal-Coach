@@ -1,19 +1,13 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { Badge } from "@/components/ui/badge";
+import { PhaseNote } from "@/components/layout/phase-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { goalLabel } from "@/lib/labels";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
-
-const GOAL_LABELS: Record<string, string> = {
-  FAT_LOSS: "Perder grasa",
-  RECOMP: "Recomposición",
-  LEAN_GAIN: "Ganancia controlada",
-  MAINTENANCE: "Mantenimiento",
-};
 
 export default async function DashboardPage() {
   const overview = await getProfileOverview();
@@ -58,9 +52,7 @@ export default async function DashboardPage() {
               <CardTitle className="text-base">Objetivo</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="font-medium">
-                {GOAL_LABELS[goal.type] ?? goal.type}
-              </p>
+              <p className="font-medium">{goalLabel(goal.type)}</p>
               <p className="tnum text-muted-foreground text-sm">
                 Ritmo {goal.weeklyRatePct.toLocaleString("es-ES")} % del
                 peso/semana
@@ -105,8 +97,8 @@ export default async function DashboardPage() {
             <CardContent>
               <p className="font-medium">{program.name}</p>
               <p className="text-muted-foreground text-sm">
-                {program.daysPerWeek} días/semana ·{" "}
-                {mesocycle?.templates.map((t) => t.name).join(" · ")}
+                <span className="tnum">{program.daysPerWeek}</span> días/semana
+                · {mesocycle?.templates.map((t) => t.name).join(" · ")}
               </p>
               <Button
                 nativeButton={false}
@@ -120,18 +112,11 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="text-muted-foreground flex items-center gap-2 text-base">
-              Próximamente <Badge variant="outline">Fase 2</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-muted-foreground text-sm">
-            Registro de entrenamientos con recomendaciones de carga, check-in
-            diario de peso y calorías, e historial. Esta versión deja creado tu
-            plan inicial; el registro llega en la siguiente fase.
-          </CardContent>
-        </Card>
+        <PhaseNote phase="Fase 2">
+          Registro de entrenamientos con recomendaciones de carga, check-in
+          diario de peso y calorías, e historial. Esta versión deja creado tu
+          plan inicial; el registro llega en la siguiente fase.
+        </PhaseNote>
       </div>
     </AppShell>
   );

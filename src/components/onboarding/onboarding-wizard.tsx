@@ -16,10 +16,12 @@ import type {
   Equipment,
   GoalType,
   MuscleGroupCode,
+  WorkActivity,
 } from "@/core/enums";
 import { estimateInitialTargets } from "@/core/nutrition/initial-estimate";
 import { ageInYears } from "@/core/dates";
 import { splitForDays } from "@/core/program/splits";
+import { GOAL_LABELS, WORK_ACTIVITY_LABELS } from "@/lib/labels";
 import {
   onboardingSchema,
   type OnboardingInput,
@@ -37,32 +39,40 @@ const EQUIPMENT_OPTIONS: Array<{ value: Equipment; label: string }> = [
   { value: "BAND", label: "Bandas" },
 ];
 
+// Etiquetas desde @/lib/labels (fuente única); las descripciones son locales al wizard.
+const GOAL_DESCRIPTIONS: Record<GoalType, string> = {
+  FAT_LOSS: "Déficit gradual conservando músculo",
+  RECOMP: "Mismo peso: menos cintura, más fuerza",
+  LEAN_GAIN: "Superávit pequeño, mínimo de grasa",
+  MAINTENANCE: "Consolidar donde estás",
+};
 const GOAL_OPTIONS: Array<{
   value: GoalType;
   label: string;
   description: string;
-}> = [
-  {
-    value: "FAT_LOSS",
-    label: "Perder grasa",
-    description: "Déficit gradual conservando músculo",
-  },
-  {
-    value: "RECOMP",
-    label: "Recomposición",
-    description: "Mismo peso: menos cintura, más fuerza",
-  },
-  {
-    value: "LEAN_GAIN",
-    label: "Ganancia controlada",
-    description: "Superávit pequeño, mínimo de grasa",
-  },
-  {
-    value: "MAINTENANCE",
-    label: "Mantenimiento",
-    description: "Consolidar donde estás",
-  },
-];
+}> = (["FAT_LOSS", "RECOMP", "LEAN_GAIN", "MAINTENANCE"] as const).map(
+  (value) => ({
+    value,
+    label: GOAL_LABELS[value],
+    description: GOAL_DESCRIPTIONS[value],
+  }),
+);
+
+const WORK_ACTIVITY_DESCRIPTIONS: Record<WorkActivity, string> = {
+  SEDENTARY: "Escritorio",
+  LIGHT: "De pie a ratos",
+  MODERATE: "En movimiento",
+  HIGH: "Trabajo físico",
+};
+const WORK_ACTIVITY_OPTIONS: Array<{
+  value: WorkActivity;
+  label: string;
+  description: string;
+}> = (["SEDENTARY", "LIGHT", "MODERATE", "HIGH"] as const).map((value) => ({
+  value,
+  label: WORK_ACTIVITY_LABELS[value],
+  description: WORK_ACTIVITY_DESCRIPTIONS[value],
+}));
 
 const RATE_OPTIONS: Record<
   string,
@@ -239,6 +249,7 @@ export function OnboardingWizard({
           aria-valuenow={step + 1}
           aria-valuemin={1}
           aria-valuemax={STEPS.length}
+          aria-valuetext={`Paso ${step + 1} de ${STEPS.length}: ${STEPS[step].title}`}
           aria-label="Progreso del onboarding"
         >
           {STEPS.map((_, i) => (
@@ -271,6 +282,7 @@ export function OnboardingWizard({
                   Sexo (para los cálculos energéticos)
                 </Label>
                 <ChipGroup
+                  label="Sexo para los cálculos energéticos"
                   options={[
                     { value: "MALE", label: "Hombre" },
                     { value: "FEMALE", label: "Mujer" },
@@ -356,6 +368,7 @@ export function OnboardingWizard({
                   Días que puedes entrenar por semana
                 </Label>
                 <ChipGroup
+                  label="Días que puedes entrenar por semana"
                   columns={3}
                   options={[2, 3, 4, 5, 6].map((d) => ({
                     value: d,
@@ -377,6 +390,7 @@ export function OnboardingWizard({
               <div>
                 <Label className="mb-2 block">Duración máxima por sesión</Label>
                 <ChipGroup
+                  label="Duración máxima por sesión"
                   columns={3}
                   options={[45, 60, 75, 90, 120].map((m) => ({
                     value: m,
@@ -400,6 +414,7 @@ export function OnboardingWizard({
                 Marca todo lo que tengas disponible
               </Label>
               <ChipGroup
+                label="Equipamiento disponible"
                 options={EQUIPMENT_OPTIONS}
                 value={values.equipment}
                 onChange={(v) =>
@@ -420,6 +435,7 @@ export function OnboardingWizard({
                   Objetivo principal (podrás cambiarlo)
                 </Label>
                 <ChipGroup
+                  label="Objetivo principal"
                   options={GOAL_OPTIONS}
                   value={values.goalType}
                   onChange={(v) => {
@@ -435,6 +451,7 @@ export function OnboardingWizard({
                 <div>
                   <Label className="mb-2 block">Ritmo deseado</Label>
                   <ChipGroup
+                    label="Ritmo deseado"
                     columns={3}
                     options={RATE_OPTIONS[values.goalType!]}
                     value={values.weeklyRatePct}
@@ -480,6 +497,7 @@ export function OnboardingWizard({
                 al ajustar el tiempo.
               </p>
               <ChipGroup
+                label="Prioridades musculares extra"
                 options={PRIORITY_OPTIONS}
                 value={values.priorityMuscles}
                 onChange={(v) =>
@@ -509,28 +527,8 @@ export function OnboardingWizard({
               <div>
                 <Label className="mb-2 block">Actividad en tu trabajo</Label>
                 <ChipGroup
-                  options={[
-                    {
-                      value: "SEDENTARY",
-                      label: "Sedentaria",
-                      description: "Escritorio",
-                    },
-                    {
-                      value: "LIGHT",
-                      label: "Ligera",
-                      description: "De pie a ratos",
-                    },
-                    {
-                      value: "MODERATE",
-                      label: "Moderada",
-                      description: "En movimiento",
-                    },
-                    {
-                      value: "HIGH",
-                      label: "Alta",
-                      description: "Trabajo físico",
-                    },
-                  ]}
+                  label="Actividad en tu trabajo"
+                  options={WORK_ACTIVITY_OPTIONS}
                   value={values.workActivity}
                   onChange={(v) =>
                     form.setValue("workActivity", v as "SEDENTARY", {
@@ -569,6 +567,7 @@ export function OnboardingWizard({
               <div>
                 <Label className="mb-2 block">Preferencia alimentaria</Label>
                 <ChipGroup
+                  label="Preferencia alimentaria"
                   options={[
                     { value: "NONE", label: "Sin restricción" },
                     { value: "VEGETARIAN", label: "Vegetariana" },
@@ -599,6 +598,7 @@ export function OnboardingWizard({
                   consúltalo.
                 </p>
                 <ChipGroup
+                  label="Zonas con molestias o lesiones"
                   options={CONTRA_OPTIONS}
                   value={values.contraindications}
                   onChange={(v) =>
@@ -627,6 +627,7 @@ export function OnboardingWizard({
                   <Button
                     type="button"
                     variant="secondary"
+                    className="min-h-11"
                     onClick={() => {
                       const name = excludedDraft.trim();
                       if (!name) return;
@@ -653,7 +654,8 @@ export function OnboardingWizard({
                     <button
                       key={name}
                       type="button"
-                      className="border-border bg-card rounded-full border px-3 py-1.5 text-xs"
+                      aria-label={`Quitar ${name}`}
+                      className="border-border bg-card focus-visible:border-ring focus-visible:ring-ring/50 rounded-full border px-3 py-1.5 text-xs focus-visible:ring-3 focus-visible:outline-none"
                       onClick={() =>
                         form.setValue(
                           "excludedExerciseNames",
@@ -663,7 +665,7 @@ export function OnboardingWizard({
                         )
                       }
                     >
-                      {name} ✕
+                      {name} <span aria-hidden="true">✕</span>
                     </button>
                   ))}
                 </div>
@@ -773,7 +775,7 @@ function ReviewStep({
           {estimate.explanations.tdee}
         </p>
         {estimate.clampedToFloor ? (
-          <p className="mt-2 text-xs text-yellow-500">
+          <p className="text-warning mt-2 text-xs">
             {estimate.explanations.kcal}
           </p>
         ) : null}
