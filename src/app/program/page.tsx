@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { ProgramEditor } from "@/components/training/program-editor";
 import { ProgramRationaleCard } from "@/components/training/program-rationale-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { getProgramRationale } from "@/server/repositories/program.repo";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
+import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,12 @@ export default async function ProgramPage() {
   const overview = await getProfileOverview();
   const program = overview?.program;
   const mesocycle = program?.mesocycles[0];
-  const rationale = program ? await getProgramRationale(program.id) : null;
+  const [rationale, substitutionOptions] = program
+    ? await Promise.all([
+        getProgramRationale(program.id),
+        listSubstitutionOptions(),
+      ])
+    : [null, []];
 
   if (!overview || !program || !mesocycle) {
     return (
@@ -57,40 +64,24 @@ export default async function ProgramPage() {
         </Card>
       ) : null}
 
-      <div className="space-y-4">
-        {mesocycle.templates.map((template) => (
-          <Card key={template.id}>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Día {template.ordinal} — {template.name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-border divide-y">
-                {template.exercises.map((te) => (
-                  <li
-                    key={te.id}
-                    className="flex items-baseline justify-between gap-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        {te.exerciseVariant.exercise.name}
-                      </p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {te.exerciseVariant.name}
-                      </p>
-                    </div>
-                    <p className="tnum text-muted-foreground shrink-0 text-sm">
-                      {te.baseSets} × {te.repRangeMin}–{te.repRangeMax} · RIR{" "}
-                      {te.targetRir}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <ProgramEditor
+        templates={mesocycle.templates.map((template) => ({
+          id: template.id,
+          name: template.name,
+          ordinal: template.ordinal,
+          exercises: template.exercises.map((te) => ({
+            id: te.id,
+            exerciseName: te.exerciseVariant.exercise.name,
+            variantName: te.exerciseVariant.name,
+            baseSets: te.baseSets,
+            repRangeMin: te.repRangeMin,
+            repRangeMax: te.repRangeMax,
+            targetRir: te.targetRir,
+            restSeconds: te.restSeconds,
+          })),
+        }))}
+        substitutionOptions={substitutionOptions}
+      />
     </AppShell>
   );
 }
