@@ -32,9 +32,23 @@ Implementada en `src/core/program/generate-initial-program.ts` (versión 2.0.0).
 
 Volumen inicial conservador con margen de progresión y rendimientos decrecientes del volumen: Schoenfeld et al. 2017 (meta-análisis dosis-respuesta), Baz-Valle et al. 2022 (revisión de volumen). Rangos amplios de repeticiones válidos para hipertrofia (~5–30 con proximidad al fallo): Schoenfeld et al. 2021. Cercanía al fallo sin fallo sistemático (RIR 1–3): Refalo et al. 2023. Frecuencia como vehículo para distribuir volumen, sin efecto independiente grande a volumen igualado: Schoenfeld et al. 2019. Series indirectas cuentan pero menos que las directas: base para la contabilidad fraccional. Los números concretos son puntos de partida operativos, no verdades fisiológicas (ver COACH_PHILOSOPHY.md §7).
 
-## 1b. Motor de progresión (F3, aún no implementado)
+## 1b. Motor de progresión
 
-Lo siguiente (§2–§9) especifica el motor de entrenamiento adaptativo de Fase 3. **No está implementado en F1/F2A.**
+Lo siguiente (§2–§9) especifica el motor de entrenamiento adaptativo **completo de Fase 3** (D0–D10,
+modos, deload, mesociclos). La **Fase 2B implementa un subconjunto honesto y solo-sugerencia** de la
+cola de double progression, sin persistir ni modificar el programa. Ver `docs/PHASE_2B_PLAN.md`.
+
+**Implementado en 2B** (`src/core/training/progression.ts`, puro y determinista, sugerencia efímera):
+`INCREASE_LOAD` (≈D6, subir un `loadStepKg` al completar el tope del rango con RIR ≥ objetivo),
+`ADD_REP` (≈D7, dentro del rango), `HOLD` (≈D9/D10 + fallo/cerca del fallo/sesión inutilizable),
+`START` (primera vez: no inventa peso). Reglas transparentes, ancladas a `exerciseVariantId`,
+prescripción del snapshot vigente, filtrando WARMUP y sesiones no válidas, con RIR imputado a objetivo
+cuando falta y confianza en 3 niveles (nunca porcentajes). El historial por ejercicio (mejor set,
+e1RM~, tendencia) se calcula on-demand en `src/core/training/history.ts`.
+
+**Reservado a F3** (NO en 2B): D0 completo (sueño/energía/duración/eventos), D1 CALIBRACION,
+D2 sustituir por dolor, D4/D5 **bajar carga**/estancamiento por regresión, D6a rango extendido,
+modos NORMAL/CALIBRACION/RECONSTRUCCION, deload y mesociclos. **2B nunca baja el peso.**
 
 ## 2. Progressive overload — double progression (F3)
 
