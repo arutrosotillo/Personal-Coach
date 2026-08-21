@@ -10,17 +10,21 @@ Motor puro determinista (`src/core/engines/training/`, F3; el generador de progr
 
 ## 1. Generación de programa inicial (F1)
 
-Implementada en `src/core/program/generate-initial-program.ts` (versión 2.0.0). Reparte un **objetivo de volumen semanal por grupo** sobre los menús de la división elegida, con contabilidad fraccional del volumen indirecto. Determinista, sin progresión ni ajuste adaptativo (eso es F3).
+Implementada en `src/core/program/generate-initial-program.ts` (versión **3.0.0**, modelo de **volumen efectivo** de Fase 3.2; ver `docs/PHASE_3_2_VOLUME_PLAN.md`). Reparte un **objetivo de volumen efectivo semanal por grupo** sobre los menús de la división elegida. Determinista, sin progresión ni ajuste adaptativo (eso es F3.3/F3.4).
 
-**Volúmenes de partida** (`training-config.ts`, `BASELINE_WEEKLY_SETS`): series directas semanales conservadoras y equilibradas por grupo. Reflejan la necesidad de cada músculo (los deltoides lateral/posterior, que apenas reciben estímulo indirecto, parten con más trabajo directo; los grupos grandes con más series), **no** prioridades estéticas. En pérdida de grasa se reduce un 15 % (`FAT_LOSS_VOLUME_FACTOR`).
+**Volumen efectivo** = `series directas × 1.0 + Σ(series indirectas × factor)`. El conteo fraccional directo/indirecto está respaldado por la literatura (Pelland 2025 lo modela) **[EVIDENCIA RAZONABLE]**; los NÚMEROS concretos son un **punto de partida conservador de PRODUCTO**, no óptimos universales.
 
-**Prioridad**: cada grupo elegido por el usuario suma `PRIORITY_BONUS_SETS` (+4) a su objetivo, acotado por `MAX_WEEKLY_SETS`.
+**Objetivos de partida** (`training-config.ts`, `EFFECTIVE_TARGET`): banda inicial conservadora (~6–10 efectivas/músculo) con margen para progresar — **[HEURÍSTICA DE PRODUCTO]**, no un "óptimo científico" (la evidencia indica dosis-respuesta con rendimientos decrecientes y sin techo claro). Se escala por **experiencia** (`EXPERIENCE_MULT`: 0.75/1.0/1.15 según `trainingYears`) **[heurística conservadora]** y por **días** (`DAY_MULT`: 5d +8 %, 6d +12 %) **[heurística de generación; más días REPARTEN, no una dosis-respuesta demostrada]**. En déficit se reduce un 15 % (`FAT_LOSS_VOLUME_FACTOR`).
 
-**División por días** (`splits.ts`, menús equilibrados de grupos por día): 2 → Full Body A/B · 3 → Full Body A/B/C · 4 → Torso/Pierna (U/L) · 5 → Push/Pull/Pierna + Torso/Pierna · 6 → PPL×2. Cada día declara qué grupos se pueden trabajar; la división no favorece a nadie.
+**Prioridad**: sube el **objetivo efectivo semanal** del grupo (`PRIORITY_BONUS_EFFECTIVE` +5) y le da **un slot más por día** (cap 3→4), **nunca** series por ejercicio más grandes. El volumen extra entra como más frecuencia/otro ejercicio. Límite honesto: un músculo con pocos ejercicios primarios en el catálogo (p.ej. deltoide lateral) no puede absorber toda la prioridad — se comunica, no se inventa volumen imposible.
 
-**Reparto**: cada día se llena añadiendo ejercicios uno a uno, siempre al grupo más necesitado (**prioridad primero**, luego mayor déficit de volumen restante), hasta agotar tiempo, topes por grupo (`MAX_SETS_PER_GROUP_PER_SESSION`) o ejercicios disponibles. Al colocar una serie, su grupo primario recibe volumen directo y los secundarios volumen fraccional (`ExerciseMuscleContribution.factor`), que **reduce** la necesidad directa de esos grupos — el volumen indirecto cuenta fraccionalmente, nunca como una serie directa completa.
+**División por días** (`splits.ts`): 2 → Full Body A/B · 3 → Full Body A/B/C · 4 → Torso/Pierna · 5 → Push/Pull/Pierna + Torso/Pierna · 6 → PPL×2.
 
-**Suelo**: `MIN_WEEKLY_SETS` por grupo; un grupo por debajo del suelo sigue siendo "necesitado" y recibe trabajo directo hasta cubrirlo (o se emite un aviso si no cabe por tiempo). Ningún grupo principal se abandona.
+**Reparto**: cada día se llena al grupo más necesitado (**prioridad primero**, luego mayor déficit de volumen efectivo restante). Guardrails **[HEURÍSTICA]**: **máx 3 series por ejercicio** (`SETS_PER_EXERCISE.max` — no un límite fisiológico; 4+ requeriría una razón que hoy no existe), máx por grupo/sesión (`MAX_SETS_PER_GROUP_PER_SESSION` 3/4), y **tope de densidad ≤18 series de trabajo/sesión** (`SESSION_SET_CAP`, guardrail de fatiga/UX). El volumen indirecto cuenta fraccionalmente, nunca como serie directa completa.
+
+**Suelo directo** (`DIRECT_MIN`): asegura estímulo **directo** mínimo (que un músculo no viva solo de indirecto); `0` = puede cubrirse con indirecto. **Aviso** de músculo desatendido solo si `DIRECT_MIN[g] > 0` **y** su volumen **efectivo** `< WARN_FRACTION (0.6) × objetivo`: así nunca se avisa por pocas series directas cuando el indirecto ya cubre al músculo (p.ej. el glúteo, ~10 efectivas de piernas, no genera aviso).
+
+**Frecuencia** ≥2×/semana para músculos grandes es una **preferencia de distribución cuando la división lo permite**, no una restricción dura: si la estructura del programa la hace inviable para algún músculo, se degrada con elegancia (no se rompe la rutina por forzarla) **[FUERTE que ≥2× es buen default; el no forzarlo es de producto]**.
 
 **Selección de ejercicio**: filtra por equipamiento, contraindicaciones (lesiones) y exclusiones — **las restricciones prevalecen sobre la prioridad**. Prefiere compuesto si el grupo necesita mucho volumen y aún no tiene compuesto ese día; desempata por variedad (no repetir ejercicio en el programa), menor fatiga sistémica y orden alfabético (determinismo). No repite el mismo ejercicio dos veces el mismo día.
 
