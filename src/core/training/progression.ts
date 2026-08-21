@@ -34,8 +34,12 @@ export interface ProgressionSet {
 
 export interface ProgressionInput {
   prescription: ProgressionPrescription;
-  /** Series de TRABAJO de la última sesión válida de la variante, o null. */
-  lastSession: { sets: ProgressionSet[] } | null;
+  /**
+   * Última sesión válida de la variante, o null. `sets` = series de TRABAJO;
+   * `comparableSessions` = nº de sesiones válidas de la variante en el historial
+   * (para no dar confianza ALTA con una sola sesión). Si se omite, se asume ≥2.
+   */
+  lastSession: { sets: ProgressionSet[]; comparableSessions?: number } | null;
 }
 
 export interface ProgressionSuggestion {
@@ -101,15 +105,21 @@ export function suggestProgression(
   }
 
   const n = sets.length;
+  const comparableSessions = lastSession?.comparableSessions ?? 2;
   const pesoRef = referenceWeight(sets);
   const imputedRir = sets.filter((s) => s.rir === null).length;
   const rirEff = sets.map((s) => (s.rir === null ? targetRir : s.rir));
 
   const numbers = { pesoRef, ...base, n, imputedRir };
 
-  // Confianza base: degrada si falta RIR o hay pocos datos.
+  // Confianza base: degrada si falta RIR, hay pocas series, o solo hay una
+  // sesión comparable (nunca ALTA por un único dato).
   const confidence: Confidence =
-    imputedRir > n / 2 ? "LOW" : imputedRir > 0 || n === 1 ? "MEDIUM" : "HIGH";
+    imputedRir > n / 2
+      ? "LOW"
+      : imputedRir > 0 || n === 1 || comparableSessions <= 1
+        ? "MEDIUM"
+        : "HIGH";
 
   // ── SESSION_UNUSABLE: la última sesión registró datos parciales ─────────
   const minSets = Math.ceil(plannedSets * config.UNUSABLE_SESSION_FRACTION);
@@ -125,12 +135,20 @@ export function suggestProgression(
     };
   }
 
-  // ── INCREASE_LOAD: tope del rango con RIR ≥ objetivo ────────────────────
+  // Fallo o casi: rirEff ≥ NEAR_FAILURE_MARGIN por debajo del objetivo, o fallo
+  // absoluto (rir 0) cuando la prescripción pedía reserva. Se calcula antes que
+  // INCREASE para que una serie a fallo bloquee la subida.
+  const isNearFailure = (i: number) =>
+    rirEff[i] <= targetRir - config.NEAR_FAILURE_MARGIN ||
+    (rirEff[i] === 0 && targetRir >= 1);
+
+  // ── INCREASE_LOAD: tope del rango con RIR ≥ objetivo, sin series a fallo ──
   const qualifying = sets.filter(
     (s, i) => s.reps >= repRangeMax && rirEff[i] >= targetRir,
   ).length;
   const noneTooLow = sets.every((s) => s.reps >= repRangeMax - 1);
-  if (qualifying >= Math.max(n - 1, 1) && noneTooLow) {
+  const noneNearFailure = sets.every((_, i) => !isNearFailure(i));
+  if (qualifying >= Math.max(n - 1, 1) && noneTooLow && noneNearFailure) {
     const suggestedWeightKg = pesoRef + loadStepKg;
     return {
       action: "INCREASE_LOAD",
@@ -145,9 +163,7 @@ export function suggestProgression(
 
   // ── NEAR_FAILURE_HOLD: fallo o casi, sin llegar al tope ─────────────────
   const nearFailure = sets.some(
-    (s, i) =>
-      rirEff[i] <= targetRir - config.NEAR_FAILURE_MARGIN &&
-      s.reps < repRangeMax,
+    (s, i) => isNearFailure(i) && s.reps < repRangeMax,
   );
   if (nearFailure) {
     return {

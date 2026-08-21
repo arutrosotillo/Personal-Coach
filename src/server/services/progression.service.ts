@@ -39,6 +39,7 @@ export function buildSuggestions(
               reps: s.reps,
               rir: s.rir,
             })),
+            comparableSessions: ex.lastTime.comparableSessions,
           }
         : null,
     });

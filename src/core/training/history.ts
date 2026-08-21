@@ -61,9 +61,15 @@ export function bestSet(sessions: HistorySession[]): BestSet | null {
   };
 }
 
+/** Ordena las sesiones por fecha ascendente sin mutar la entrada. */
+function chronological(sessions: HistorySession[]): HistorySession[] {
+  return [...sessions].sort((a, b) => a.localDate.localeCompare(b.localDate));
+}
+
 /** e1RM~ actual: el mejor e1RM de la sesión más reciente (o null). */
 export function currentE1rm(sessions: HistorySession[]): number | null {
-  const last = sessions[sessions.length - 1];
+  const ordered = chronological(sessions);
+  const last = ordered[ordered.length - 1];
   if (!last) return null;
   const values = last.sets
     .map((s) => s.estimated1Rm)
@@ -98,6 +104,7 @@ export function trend(sessions: HistorySession[]): Trend {
     toDate: null,
   };
   if (sessions.length < 2) return insufficient;
+  const ordered = chronological(sessions);
 
   const point = (s: HistorySession) => {
     const e1rms = s.sets
@@ -107,8 +114,8 @@ export function trend(sessions: HistorySession[]): Trend {
     const bestTonnage = Math.max(...s.sets.map((x) => x.weightKg * x.reps));
     return { localDate: s.localDate, bestE1rm, bestTonnage };
   };
-  const first = point(sessions[0]);
-  const last = point(sessions[sessions.length - 1]);
+  const first = point(ordered[0]);
+  const last = point(ordered[ordered.length - 1]);
 
   const useE1rm = first.bestE1rm !== null && last.bestE1rm !== null;
   const metric = useE1rm ? "E1RM" : "TONNAGE";

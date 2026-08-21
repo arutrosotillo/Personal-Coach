@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { DEFAULT_TIMEZONE, addDays, toLocalDate } from "@/core/dates";
 import {
   logSetSchema,
   sessionFeedbackSchema,
@@ -9,6 +10,10 @@ import {
   type SessionFeedbackData,
 } from "@/core/schemas/workout";
 import { requireProfileId } from "@/server/repositories/profile.repo";
+import {
+  getExerciseHistorySummary,
+  type ExerciseHistorySummary,
+} from "@/server/services/progression.service";
 import {
   deleteSet,
   discardSession,
@@ -22,6 +27,33 @@ import {
 export interface ActionResult {
   ok: boolean;
   error?: string;
+}
+
+/** Ventana del mini-historial: ~8 semanas para responder "¿progreso reciente?". */
+const HISTORY_WINDOW_DAYS = 56;
+
+/** Mini-historial on-demand de una variante (drawer del ejercicio). */
+export async function getExerciseHistoryAction(
+  variantId: string,
+): Promise<
+  { ok: true; summary: ExerciseHistorySummary } | { ok: false; error: string }
+> {
+  try {
+    const profileId = await requireProfileId();
+    const since = addDays(
+      toLocalDate(new Date(), DEFAULT_TIMEZONE),
+      -HISTORY_WINDOW_DAYS,
+    );
+    const summary = await getExerciseHistorySummary(
+      profileId,
+      variantId,
+      since,
+    );
+    return { ok: true, summary };
+  } catch (error) {
+    console.error("getExerciseHistoryAction", error);
+    return { ok: false, error: "No se pudo cargar el historial." };
+  }
 }
 
 export async function startSessionAction(

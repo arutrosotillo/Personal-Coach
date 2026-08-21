@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 import { RestTimer } from "@/components/training/rest-timer";
@@ -15,11 +16,14 @@ import {
 import {
   discardSessionAction,
   finishSessionAction,
+  getExerciseHistoryAction,
   logSetAction,
   setPlannedSetsAction,
   substituteExerciseAction,
 } from "@/server/actions/workout.action";
 import type { ExecutionSession } from "@/server/repositories/workout.repo";
+import type { ExerciseHistorySummary } from "@/server/services/progression.service";
+import type { ProgressionSuggestion } from "@/core/training/progression";
 import { cn } from "@/lib/utils";
 
 export interface SubstitutionExercise {
@@ -66,9 +70,11 @@ function initRows(session: ExecutionSession): RowsMap {
 export function SessionRunner({
   session,
   substitution,
+  suggestions,
 }: {
   session: ExecutionSession;
   substitution: SubstitutionExercise[];
+  suggestions: Record<string, ProgressionSuggestion>;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<RowsMap>(() => initRows(session));
@@ -76,11 +82,13 @@ export function SessionRunner({
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const exercises = session.exercises;
   const ex = exercises[current];
   const exRows = rows[ex.id] ?? [];
+  const suggestion = suggestions[ex.id];
 
   const totalPlanned = exercises.reduce(
     (a, e) => a + (rows[e.id]?.length ?? 0),
@@ -140,6 +148,39 @@ export function SessionRunner({
     const next = arr.slice(0, -1);
     setRows((prev) => ({ ...prev, [ex.id]: next }));
     void setPlannedSetsAction(ex.id, next.length);
+  }
+
+  /** Aplica la carga/reps sugeridas a la primera serie no completada (prefill;
+   * no persiste ni cambia el programa). */
+  function applySuggestion() {
+    if (!suggestion || suggestion.suggestedWeightKg == null) return;
+    const arr = rows[ex.id] ?? [];
+    const idx = arr.findIndex((r) => !r.done);
+    if (idx < 0) return;
+    updateRow(ex.id, idx, {
+      weight: suggestion.suggestedWeightKg.toString(),
+      ...(suggestion.suggestedReps != null
+        ? { reps: suggestion.suggestedReps }
+        : {}),
+    });
+  }
+
+  /** Copia peso/reps/RIR de la "última vez" de esta serie (o de la serie
+   * anterior de hoy) a una fila no completada, en un tap. */
+  function repeatRow(idx: number) {
+    const lastSet = ex.lastTime?.sets[idx];
+    const prev = idx > 0 ? (rows[ex.id] ?? [])[idx - 1] : undefined;
+    const source = lastSet
+      ? {
+          weight: lastSet.weightKg.toString(),
+          reps: lastSet.reps,
+          rir: lastSet.rir ?? ex.targetRir,
+        }
+      : prev
+        ? { weight: prev.weight, reps: prev.reps, rir: prev.rir }
+        : null;
+    if (!source) return;
+    updateRow(ex.id, idx, source);
   }
 
   function substitute(variantId: string) {
@@ -228,11 +269,31 @@ export function SessionRunner({
       {/* Ejercicio actual */}
       <div className="flex-1">
         <div className="mb-3">
-          <h1 className="text-xl font-semibold">{ex.exerciseName}</h1>
-          <p className="text-muted-foreground text-sm">
-            {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps · RIR{" "}
-            {ex.targetRir}
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="min-w-0 text-left"
+              aria-label={`Ver historial de ${ex.exerciseName}`}
+            >
+              <h1 className="text-xl font-semibold">
+                {ex.exerciseName}
+                <span className="text-muted-foreground ml-1 text-sm font-normal">
+                  ℹ
+                </span>
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps · RIR{" "}
+                {ex.targetRir}
+              </p>
+            </button>
+            {suggestion ? (
+              <SuggestionBadge
+                suggestion={suggestion}
+                onApply={applySuggestion}
+              />
+            ) : null}
+          </div>
           {ex.lastTime ? (
             <p className="tnum text-muted-foreground mt-1 text-xs">
               Última vez ({ex.lastTime.localDate}):{" "}
@@ -257,8 +318,10 @@ export function SessionRunner({
               index={idx}
               row={row}
               loadStepKg={ex.loadStepKg}
+              lastSet={ex.lastTime?.sets[idx] ?? null}
               onChange={(patch) => updateRow(ex.id, idx, patch)}
               onComplete={() => completeSet(idx)}
+              onRepeat={() => repeatRow(idx)}
               disabled={pending}
             />
           ))}
@@ -351,6 +414,171 @@ export function SessionRunner({
         options={substitution}
         onPick={substitute}
       />
+
+      <ExerciseHistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        variantId={ex.variantId}
+        exerciseName={ex.exerciseName}
+      />
+    </div>
+  );
+}
+
+/** Badge discreto con la sugerencia de progresión. Un tap despliega el "por
+ * qué"; "aplicar" solo rellena el primer set (no persiste, no toca el programa). */
+function SuggestionBadge({
+  suggestion,
+  onApply,
+}: {
+  suggestion: ProgressionSuggestion;
+  onApply: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const canApply =
+    suggestion.suggestedWeightKg != null &&
+    (suggestion.action === "INCREASE_LOAD" || suggestion.action === "ADD_REP");
+  const tentative = suggestion.confidence !== "HIGH";
+
+  const label =
+    suggestion.action === "INCREASE_LOAD"
+      ? `${tentative ? "Prueba" : "Sube"} ${suggestion.suggestedWeightKg} kg`
+      : suggestion.action === "ADD_REP"
+        ? `Prueba ${suggestion.suggestedReps} reps`
+        : suggestion.action === "START"
+          ? "Primera vez"
+          : "Mantén";
+
+  return (
+    <div className="flex max-w-[45%] shrink-0 flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "rounded-full border px-2 py-1 text-xs",
+          canApply
+            ? "border-primary/40 text-foreground"
+            : "border-border text-muted-foreground",
+        )}
+        aria-expanded={open}
+      >
+        {label} <span aria-hidden>·</span> ?
+      </button>
+      {canApply ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="min-h-9"
+          onClick={onApply}
+        >
+          Aplicar
+        </Button>
+      ) : null}
+      {open ? (
+        <p className="text-muted-foreground max-w-full text-right text-xs">
+          {suggestion.explanation}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const TREND_LABEL: Record<string, string> = {
+  UP: "↑ progresando",
+  FLAT: "→ estable",
+  DOWN: "↓ a la baja",
+  INSUFFICIENT: "sin datos suficientes",
+};
+
+/** Drawer de mini-historial del ejercicio: mejor set, e1RM~ y tendencia.
+ * Carga on-demand al abrir (lectura efímera, sin persistir). */
+function ExerciseHistorySheet({
+  open,
+  onOpenChange,
+  variantId,
+  exerciseName,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  variantId: string;
+  exerciseName: string;
+}) {
+  // Solo se hace setState dentro del callback asíncrono (no de forma síncrona
+  // en el efecto). `loading` se deriva comparando la variante ya cargada.
+  const [data, setData] = useState<{
+    variantId: string;
+    summary: ExerciseHistorySummary | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    getExerciseHistoryAction(variantId).then((res) => {
+      if (!alive) return;
+      setData({ variantId, summary: res.ok ? res.summary : null });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open, variantId]);
+
+  const loaded = data?.variantId === variantId ? data : null;
+  const loading = open && loaded === null;
+  const summary = loaded?.summary ?? null;
+
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>{exerciseName}</DrawerTitle>
+        </DrawerHeader>
+        <div className="space-y-3 px-4 pb-8 text-sm">
+          {loading ? (
+            <p className="text-muted-foreground">Cargando…</p>
+          ) : !summary || summary.sessionCount === 0 ? (
+            <p className="text-muted-foreground">
+              Aún no hay historial de este ejercicio en las últimas semanas.
+            </p>
+          ) : (
+            <>
+              <Row label="Sesiones (8 sem)">
+                <span className="tnum">{summary.sessionCount}</span>
+              </Row>
+              {summary.bestSet ? (
+                <Row label="Mejor set">
+                  <span className="tnum">
+                    {summary.bestSet.weightKg}×{summary.bestSet.reps}
+                    {summary.bestSet.e1rm != null
+                      ? ` · e1RM~ ${summary.bestSet.e1rm} kg`
+                      : ""}{" "}
+                    <span className="text-muted-foreground">
+                      ({summary.bestSet.localDate})
+                    </span>
+                  </span>
+                </Row>
+              ) : null}
+              {summary.currentE1rm != null ? (
+                <Row label="e1RM~ actual">
+                  <span className="tnum">~{summary.currentE1rm} kg</span>
+                </Row>
+              ) : null}
+              <Row label="Tendencia">
+                <span>{TREND_LABEL[summary.trend.direction]}</span>
+              </Row>
+            </>
+          )}
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right">{children}</span>
     </div>
   );
 }
@@ -359,18 +587,25 @@ function SetRow({
   index,
   row,
   loadStepKg,
+  lastSet,
   onChange,
   onComplete,
+  onRepeat,
   disabled,
 }: {
   index: number;
   row: RowState;
   loadStepKg: number;
+  lastSet: { weightKg: number; reps: number; rir: number | null } | null;
   onChange: (patch: Partial<RowState>) => void;
   onComplete: () => void;
+  onRepeat: () => void;
   disabled: boolean;
 }) {
   const weightNum = row.weight === "" ? 0 : Number(row.weight);
+  const ghost = lastSet
+    ? `${lastSet.weightKg}×${lastSet.reps}${lastSet.rir != null ? `@${lastSet.rir}` : ""}`
+    : null;
   return (
     <li
       className={cn(
@@ -380,10 +615,28 @@ function SetRow({
           : "border-border bg-card",
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="mb-1 flex items-center gap-2">
         <span className="text-muted-foreground w-6 shrink-0 text-sm">
           {index + 1}
         </span>
+        {ghost ? (
+          <span className="tnum text-muted-foreground text-xs">
+            últ {ghost}
+          </span>
+        ) : null}
+        {!row.done && (ghost || index > 0) ? (
+          <button
+            type="button"
+            onClick={onRepeat}
+            disabled={disabled}
+            className="border-border text-muted-foreground ml-auto rounded-full border px-2 py-0.5 text-xs"
+          >
+            repetir{ghost ? ` ${ghost}` : ""}
+          </button>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-6 shrink-0" />
         <Stepper
           label="Peso (kg)"
           value={row.weight}

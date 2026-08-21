@@ -4,6 +4,7 @@ import { SessionRunner } from "@/components/training/session-runner";
 import { getExecutionSession } from "@/server/repositories/workout.repo";
 import { requireProfileId } from "@/server/repositories/profile.repo";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
+import { buildSuggestions } from "@/server/services/progression.service";
 
 export const dynamic = "force-dynamic";
 
@@ -18,5 +19,12 @@ export default async function SessionPage({
   if (!session) notFound();
 
   const substitution = await listSubstitutionOptions();
-  return <SessionRunner session={session} substitution={substitution} />;
+  const suggestions = buildSuggestions(session);
+  return (
+    <SessionRunner
+      session={session}
+      substitution={substitution}
+      suggestions={suggestions}
+    />
+  );
 }

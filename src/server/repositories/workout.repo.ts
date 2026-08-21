@@ -8,6 +8,8 @@ export interface LastComparable {
     reps: number;
     rir: number | null;
   }>;
+  /** Nº de sesiones válidas de la variante en el historial (para la confianza). */
+  comparableSessions: number;
 }
 
 /**
@@ -32,6 +34,7 @@ async function lastWorkingSetsForVariants(
       exerciseVariantId: { in: variantIds },
       setType: "WORKING",
       completed: true,
+      reps: { gt: 0 },
       workoutExercise: {
         sessionId: { not: excludeSessionId },
         session: { status: "COMPLETED" },
@@ -49,12 +52,17 @@ async function lastWorkingSetsForVariants(
     },
   });
 
-  // workoutExerciseId elegido por variante (el del set más reciente).
+  // workoutExerciseId elegido por variante (el del set más reciente) y nº de
+  // sesiones (workoutExercise) distintas por variante = sesiones comparables.
   const chosenWeId = new Map<string, string>();
+  const sessionsByVariant = new Map<string, Set<string>>();
   for (const r of rows) {
     if (!chosenWeId.has(r.exerciseVariantId)) {
       chosenWeId.set(r.exerciseVariantId, r.workoutExerciseId);
     }
+    const set = sessionsByVariant.get(r.exerciseVariantId) ?? new Set<string>();
+    set.add(r.workoutExerciseId);
+    sessionsByVariant.set(r.exerciseVariantId, set);
   }
   for (const r of rows) {
     const weId = chosenWeId.get(r.exerciseVariantId);
@@ -62,6 +70,7 @@ async function lastWorkingSetsForVariants(
     const entry = result.get(r.exerciseVariantId) ?? {
       localDate: r.localDate,
       sets: [],
+      comparableSessions: sessionsByVariant.get(r.exerciseVariantId)?.size ?? 1,
     };
     entry.sets.push({
       setNumber: r.setNumber,
@@ -283,6 +292,7 @@ export async function getVariantHistory(
       exerciseVariantId: variantId,
       setType: "WORKING",
       completed: true,
+      reps: { gt: 0 },
       ...(sinceLocalDate ? { localDate: { gte: sinceLocalDate } } : {}),
       workoutExercise: {
         session: {
