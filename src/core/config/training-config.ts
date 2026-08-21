@@ -92,6 +92,19 @@ export const TARGET_RIR = {
   isolation: 1,
 } as const;
 
+/**
+ * Umbrales del motor de sugerencia de progresión de Fase 2B (double progression
+ * solo-sugerencia; ver docs/PHASE_2B_PLAN.md y TRAINING_ENGINE.md §1b). Nunca
+ * hardcodear en la lógica: la fuente de verdad está aquí.
+ */
+export const PROGRESSION_2B = {
+  /** La última sesión se considera inutilizable si registró menos de esta
+   * fracción de las series previstas (datos parciales → no ajustar). */
+  UNUSABLE_SESSION_FRACTION: 0.7,
+  /** rirEff ≤ targetRir − este margen = fallo o casi (consolidar, no subir). */
+  NEAR_FAILURE_MARGIN: 2,
+} as const;
+
 /** Patrones de movimiento considerados "compuestos" (multiarticulares). */
 export const COMPOUND_PATTERNS: ReadonlySet<string> = new Set([
   "HORIZONTAL_PUSH",
