@@ -20,15 +20,17 @@ export interface LastComparable {
  * progresión, que nunca deben contar calentamientos.
  */
 async function lastWorkingSetsForVariants(
+  profileId: string,
   variantIds: string[],
   excludeSessionId: string,
 ): Promise<Map<string, LastComparable>> {
   const result = new Map<string, LastComparable>();
   if (variantIds.length === 0) return result;
 
-  // Todos los sets WORKING de sesiones COMPLETED (salvo la actual) para estas
-  // variantes, del más reciente al más antiguo. El primer set de cada variante
-  // identifica su workoutExercise más reciente = su última sesión válida.
+  // Todos los sets WORKING de sesiones COMPLETED del perfil (salvo la actual)
+  // para estas variantes, del día más reciente al más antiguo. Se ordena por
+  // `localDate` (día del usuario; el feature entero se ancla a él, no a la marca
+  // de auditoría `completedAt`), con desempates estables.
   const rows = await prisma.setLog.findMany({
     where: {
       exerciseVariantId: { in: variantIds },
@@ -37,36 +39,47 @@ async function lastWorkingSetsForVariants(
       reps: { gt: 0 },
       workoutExercise: {
         sessionId: { not: excludeSessionId },
-        session: { status: "COMPLETED" },
+        session: {
+          status: "COMPLETED",
+          mesocycle: { program: { profileId } },
+        },
       },
     },
-    orderBy: [{ completedAt: "desc" }],
+    orderBy: [
+      { localDate: "desc" },
+      { completedAt: "desc" },
+      { setNumber: "asc" },
+    ],
     select: {
       exerciseVariantId: true,
-      workoutExerciseId: true,
       localDate: true,
       setNumber: true,
       weightKg: true,
       reps: true,
       rir: true,
+      workoutExercise: { select: { sessionId: true } },
     },
   });
 
-  // workoutExerciseId elegido por variante (el del set más reciente) y nº de
-  // sesiones (workoutExercise) distintas por variante = sesiones comparables.
-  const chosenWeId = new Map<string, string>();
+  // Por variante: la sesión (sessionId) más reciente = "última vez", y el nº de
+  // sesiones distintas = sesiones comparables (por sessionId, NO por
+  // workoutExercise: una variante repetida en la misma sesión cuenta una vez).
+  const chosenSessionId = new Map<string, string>();
   const sessionsByVariant = new Map<string, Set<string>>();
   for (const r of rows) {
-    if (!chosenWeId.has(r.exerciseVariantId)) {
-      chosenWeId.set(r.exerciseVariantId, r.workoutExerciseId);
+    const sessionId = r.workoutExercise.sessionId;
+    if (!chosenSessionId.has(r.exerciseVariantId)) {
+      chosenSessionId.set(r.exerciseVariantId, sessionId);
     }
     const set = sessionsByVariant.get(r.exerciseVariantId) ?? new Set<string>();
-    set.add(r.workoutExerciseId);
+    set.add(sessionId);
     sessionsByVariant.set(r.exerciseVariantId, set);
   }
   for (const r of rows) {
-    const weId = chosenWeId.get(r.exerciseVariantId);
-    if (r.workoutExerciseId !== weId) continue;
+    if (
+      r.workoutExercise.sessionId !== chosenSessionId.get(r.exerciseVariantId)
+    )
+      continue;
     const entry = result.get(r.exerciseVariantId) ?? {
       localDate: r.localDate,
       sets: [],
@@ -139,6 +152,7 @@ export async function getExecutionSession(
   if (!session) return null;
 
   const lastByVariant = await lastWorkingSetsForVariants(
+    profileId,
     session.exercises.map((we) => we.exerciseVariantId),
     session.id,
   );
@@ -301,26 +315,32 @@ export async function getVariantHistory(
         },
       },
     },
-    orderBy: [{ localDate: "asc" }, { setNumber: "asc" }],
+    orderBy: [
+      { localDate: "asc" },
+      { completedAt: "asc" },
+      { setNumber: "asc" },
+    ],
     select: {
-      workoutExerciseId: true,
       localDate: true,
       weightKg: true,
       reps: true,
       rir: true,
       estimated1Rm: true,
+      workoutExercise: { select: { sessionId: true } },
     },
   });
 
-  // Agrupa por sesión (workoutExerciseId = un ejercicio de una sesión).
-  const byWe = new Map<string, VariantHistorySession>();
+  // Agrupa por SESIÓN (sessionId): una variante repetida en la misma sesión es
+  // una sola entrada de historial, no dos.
+  const bySession = new Map<string, VariantHistorySession>();
   const order: string[] = [];
   for (const r of rows) {
-    let entry = byWe.get(r.workoutExerciseId);
+    const sessionId = r.workoutExercise.sessionId;
+    let entry = bySession.get(sessionId);
     if (!entry) {
       entry = { localDate: r.localDate, sets: [] };
-      byWe.set(r.workoutExerciseId, entry);
-      order.push(r.workoutExerciseId);
+      bySession.set(sessionId, entry);
+      order.push(sessionId);
     }
     entry.sets.push({
       weightKg: r.weightKg,
@@ -329,5 +349,5 @@ export async function getVariantHistory(
       estimated1Rm: r.estimated1Rm,
     });
   }
-  return order.map((id) => byWe.get(id)!);
+  return order.map((id) => bySession.get(id)!);
 }

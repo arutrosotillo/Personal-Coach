@@ -112,5 +112,6 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
   await page.goto("/train/history");
   await expect(page.getByRole("heading", { name: "Historial" })).toBeVisible();
-  await expect(page.getByText(/1 series|[1-9]\d* series/)).toBeVisible();
+  // (La DB e2e es compartida: puede haber más de una sesión en el historial.)
+  await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
 });

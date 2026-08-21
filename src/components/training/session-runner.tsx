@@ -163,6 +163,7 @@ export function SessionRunner({
         ? { reps: suggestion.suggestedReps }
         : {}),
     });
+    toast.success(`Serie ${idx + 1}: ${suggestion.suggestedWeightKg} kg`);
   }
 
   /** Copia peso/reps/RIR de la "última vez" de esta serie (o de la serie
@@ -270,23 +271,20 @@ export function SessionRunner({
       <div className="flex-1">
         <div className="mb-3">
           <div className="flex items-start justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(true)}
-              className="min-w-0 text-left"
-              aria-label={`Ver historial de ${ex.exerciseName}`}
-            >
-              <h1 className="text-xl font-semibold">
-                {ex.exerciseName}
-                <span className="text-muted-foreground ml-1 text-sm font-normal">
-                  ℹ
-                </span>
-              </h1>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold">{ex.exerciseName}</h1>
               <p className="text-muted-foreground text-sm">
                 {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps · RIR{" "}
                 {ex.targetRir}
               </p>
-            </button>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                className="text-muted-foreground mt-1 min-h-9 text-xs underline underline-offset-2"
+              >
+                Ver historial
+              </button>
+            </div>
             {suggestion ? (
               <SuggestionBadge
                 suggestion={suggestion}
@@ -440,6 +438,7 @@ function SuggestionBadge({
     (suggestion.action === "INCREASE_LOAD" || suggestion.action === "ADD_REP");
   const tentative = suggestion.confidence !== "HIGH";
 
+  const explanationId = `sug-why-${suggestion.reasonCode}`;
   const label =
     suggestion.action === "INCREASE_LOAD"
       ? `${tentative ? "Prueba" : "Sube"} ${suggestion.suggestedWeightKg} kg`
@@ -455,28 +454,34 @@ function SuggestionBadge({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "rounded-full border px-2 py-1 text-xs",
+          "min-h-9 rounded-full border px-3 py-2 text-xs",
           canApply
             ? "border-primary/40 text-foreground"
             : "border-border text-muted-foreground",
         )}
         aria-expanded={open}
+        aria-controls={explanationId}
+        aria-label={`${label}. Ver por qué`}
       >
-        {label} <span aria-hidden>·</span> ?
+        {label} <span aria-hidden>· por qué</span>
       </button>
       {canApply ? (
         <Button
           type="button"
           size="sm"
           variant="secondary"
-          className="min-h-9"
+          className="min-h-11"
+          aria-label={`Rellenar la primera serie con ${suggestion.suggestedWeightKg} kg (no guarda el cambio)`}
           onClick={onApply}
         >
           Aplicar
         </Button>
       ) : null}
       {open ? (
-        <p className="text-muted-foreground max-w-full text-right text-xs">
+        <p
+          id={explanationId}
+          className="text-muted-foreground max-w-full text-right text-xs"
+        >
           {suggestion.explanation}
         </p>
       ) : null}
@@ -509,6 +514,7 @@ function ExerciseHistorySheet({
   const [data, setData] = useState<{
     variantId: string;
     summary: ExerciseHistorySummary | null;
+    error: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -516,7 +522,11 @@ function ExerciseHistorySheet({
     let alive = true;
     getExerciseHistoryAction(variantId).then((res) => {
       if (!alive) return;
-      setData({ variantId, summary: res.ok ? res.summary : null });
+      setData({
+        variantId,
+        summary: res.ok ? res.summary : null,
+        error: !res.ok,
+      });
     });
     return () => {
       alive = false;
@@ -536,6 +546,10 @@ function ExerciseHistorySheet({
         <div className="space-y-3 px-4 pb-8 text-sm">
           {loading ? (
             <p className="text-muted-foreground">Cargando…</p>
+          ) : loaded?.error ? (
+            <p className="text-destructive">
+              No se pudo cargar el historial. Inténtalo de nuevo.
+            </p>
           ) : !summary || summary.sessionCount === 0 ? (
             <p className="text-muted-foreground">
               Aún no hay historial de este ejercicio en las últimas semanas.
@@ -629,9 +643,14 @@ function SetRow({
             type="button"
             onClick={onRepeat}
             disabled={disabled}
-            className="border-border text-muted-foreground ml-auto rounded-full border px-2 py-0.5 text-xs"
+            aria-label={
+              ghost
+                ? `Repetir la última vez de esta serie: ${ghost}`
+                : "Repetir la serie anterior"
+            }
+            className="border-border text-muted-foreground ml-auto min-h-9 rounded-full border px-3 py-1.5 text-xs"
           >
-            repetir{ghost ? ` ${ghost}` : ""}
+            {ghost ? "repetir" : "repetir anterior"}
           </button>
         ) : null}
       </div>

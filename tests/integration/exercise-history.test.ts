@@ -107,6 +107,39 @@ describe("última vez (contexto in-session)", () => {
     await wsService.discardSession(profileId, today.sessionId);
   });
 
+  it("con dos sesiones COMPLETED elige la del localDate más reciente", async () => {
+    const v = variantId;
+    await prisma.setLog.deleteMany({ where: { exerciseVariantId: v } });
+    // Sesión reciente por localDate, pero SEMBRADA PRIMERO (completedAt anterior):
+    // debe ganar por fecha, no por marca de auditoría.
+    await seedCompletedSessionWithSets(prisma, {
+      mesocycleId,
+      variantId: v,
+      localDate: "2026-07-20",
+      sets: [{ setNumber: 1, weightKg: 90, reps: 8, rir: 2 }],
+    });
+    await seedCompletedSessionWithSets(prisma, {
+      mesocycleId,
+      variantId: v,
+      localDate: "2026-07-05",
+      sets: [{ setNumber: 1, weightKg: 70, reps: 8, rir: 2 }],
+    });
+
+    const today = await wsService.startOrResumeSession(
+      profileId,
+      templateId,
+      new Date("2026-07-25T10:00:00Z"),
+    );
+    const exec = await getExecutionSession(profileId, today.sessionId);
+    const target = exec?.exercises.find((e) => e.variantId === v);
+    expect(target?.lastTime?.localDate).toBe("2026-07-20");
+    expect(target?.lastTime?.sets[0].weightKg).toBe(90);
+    // Dos sesiones comparables distintas.
+    expect(target?.lastTime?.comparableSessions).toBe(2);
+
+    await wsService.discardSession(profileId, today.sessionId);
+  });
+
   it("ignora sesiones ABORTED: usa la última COMPLETED", async () => {
     // Trabajo válido antiguo…
     await seedCompletedSessionWithSets(prisma, {
