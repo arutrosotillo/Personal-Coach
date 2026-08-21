@@ -341,12 +341,17 @@ export function generateInitialProgram(
   // Aviso de músculo DESATENDIDO en volumen EFECTIVO (no en directo): solo para
   // músculos con estímulo directo requerido (DIRECT_MIN>0) cuyo efectivo queda por
   // debajo de WARN_FRACTION del objetivo. Así nunca se avisa por pocas series
-  // directas cuando el indirecto ya cubre al músculo (p.ej. glúteo).
+  // directas cuando el indirecto ya cubre al músculo (p.ej. glúteo). El umbral usa
+  // el objetivo BASE (sin el bonus de prioridad): priorizar un músculo topado por
+  // el catálogo no debe encender un aviso engañoso ("más tiempo/días") por un
+  // volumen que sin prioridad sería suficiente.
   for (const group of ALL_GROUPS) {
     if (DIRECT_MIN[group] <= 0) continue;
-    if (fractionalSets[group] < WARN_FRACTION * targets[group]) {
+    const baseTarget =
+      targets[group] - (priority.has(group) ? PRIORITY_BONUS_EFFECTIVE : 0);
+    if (fractionalSets[group] < WARN_FRACTION * baseTarget) {
       warnings.push(
-        `${MUSCLE_GROUP_BY_CODE[group].nameEs}: ${round1(fractionalSets[group])} series efectivas/semana (objetivo ${round1(targets[group])}). Valora más tiempo por sesión o más días.`,
+        `${MUSCLE_GROUP_BY_CODE[group].nameEs}: ${round1(fractionalSets[group])} series efectivas/semana (objetivo ${round1(baseTarget)}). Valora más tiempo por sesión o más días.`,
       );
     }
   }

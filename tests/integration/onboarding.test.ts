@@ -134,10 +134,19 @@ describe("completeOnboarding", () => {
     expect(recommendation.scopeId).toBe(program.id);
     expect(recommendation.decision.engine).toBe("program-generator");
     expect(recommendation.decision.explanation.length).toBeGreaterThan(50);
+    expect(recommendation.decision.algorithmVersion).toMatch(/^\d+\.\d+\.\d+$/);
     const snapshot = recommendation.decision.inputSnapshot as {
       onboarding?: { weightKg?: number };
     };
     expect(snapshot.onboarding?.weightKg).toBe(84);
+
+    // El bloque "por qué este programa" valida el output del generador (no cae
+    // a null): blinda el schema programRationaleOutput ante futuros renombrados.
+    const { getProgramRationale } =
+      await import("@/server/repositories/program.repo");
+    const rationale = await getProgramRationale(program.id);
+    expect(rationale).not.toBeNull();
+    expect(rationale!.output.volumeByGroup.length).toBeGreaterThan(0);
   });
 
   it("re-ejecutar el onboarding NO crea un segundo perfil y archiva objetivo y programa anteriores", async () => {

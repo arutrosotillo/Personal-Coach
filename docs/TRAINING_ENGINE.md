@@ -16,7 +16,7 @@ Implementada en `src/core/program/generate-initial-program.ts` (versión **3.0.0
 
 **Objetivos de partida** (`training-config.ts`, `EFFECTIVE_TARGET`): banda inicial conservadora (~6–10 efectivas/músculo) con margen para progresar — **[HEURÍSTICA DE PRODUCTO]**, no un "óptimo científico" (la evidencia indica dosis-respuesta con rendimientos decrecientes y sin techo claro). Se escala por **experiencia** (`EXPERIENCE_MULT`: 0.75/1.0/1.15 según `trainingYears`) **[heurística conservadora]** y por **días** (`DAY_MULT`: 5d +8 %, 6d +12 %) **[heurística de generación; más días REPARTEN, no una dosis-respuesta demostrada]**. En déficit se reduce un 15 % (`FAT_LOSS_VOLUME_FACTOR`).
 
-**Prioridad**: sube el **objetivo efectivo semanal** del grupo (`PRIORITY_BONUS_EFFECTIVE` +5) y le da **un slot más por día** (cap 3→4), **nunca** series por ejercicio más grandes. El volumen extra entra como más frecuencia/otro ejercicio. Límite honesto: un músculo con pocos ejercicios primarios en el catálogo (p.ej. deltoide lateral) no puede absorber toda la prioridad — se comunica, no se inventa volumen imposible.
+**Prioridad**: sube el **objetivo efectivo semanal** del grupo (`PRIORITY_BONUS_EFFECTIVE` +5), **nunca** las series por ejercicio. Su efecto real es más **frecuencia** (más días con el grupo) y algo más de volumen efectivo. El aviso de "desatendido" usa el objetivo BASE (sin el bonus), para no encender avisos engañosos al priorizar. Límite honesto: un músculo con pocos ejercicios primarios en el catálogo (p.ej. deltoide lateral) no puede absorber toda la prioridad — se comunica, no se inventa volumen imposible.
 
 **División por días** (`splits.ts`): 2 → Full Body A/B · 3 → Full Body A/B/C · 4 → Torso/Pierna · 5 → Push/Pull/Pierna + Torso/Pierna · 6 → PPL×2.
 

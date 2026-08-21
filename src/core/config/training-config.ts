@@ -103,8 +103,11 @@ export const MAX_WEEKLY_SETS = 20;
 /** En pérdida de grasa se reduce el volumen de partida (peor recuperación en déficit). */
 export const FAT_LOSS_VOLUME_FACTOR = 0.85;
 
-/** Máximo de series directas de un mismo grupo en una sola sesión. La prioridad da
- * 1 slot más/día, NO series por ejercicio más grandes. */
+/** Máximo de series directas de un mismo grupo en una sola sesión (techo de
+ * densidad por grupo). La prioridad NO sube las series por ejercicio; su efecto
+ * real es un objetivo semanal mayor → más FRECUENCIA (más días con el grupo). El
+ * tope `priority` (4) es una holgura que rara vez actúa (un ejercicio ya ocupa 3
+ * de las 4). Ver PHASE_3_2_VOLUME_PLAN §5. */
 export const MAX_SETS_PER_GROUP_PER_SESSION = {
   priority: 4,
   standard: 3,

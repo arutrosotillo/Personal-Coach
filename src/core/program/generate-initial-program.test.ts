@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { EXERCISES } from "@/core/catalog/exercises";
+import { MUSCLE_GROUP_BY_CODE } from "@/core/catalog/muscle-groups";
 import {
   DIRECT_MIN,
   SESSION_SET_CAP,
@@ -137,6 +138,27 @@ describe("F3.2 — densidad de sesión", () => {
   );
 });
 
+describe("F3.2 — sin volumen efectivo extremo accidental", () => {
+  it("ningún músculo supera un techo de seguridad de volumen efectivo", () => {
+    const CEILING = 22; // muy por encima de cualquier objetivo real (~6–14)
+    const scenarios = [
+      baseInput({ daysPerWeek: 3 }),
+      baseInput({ daysPerWeek: 6 }),
+      baseInput({
+        daysPerWeek: 6,
+        priorityMuscles: ["DELT_LATERAL", "BICEPS", "DORSAL"],
+        experienceLevel: "advanced",
+      }),
+    ];
+    for (const input of scenarios) {
+      const p = generateInitialProgram(input);
+      for (const v of p.volumeByGroup) {
+        expect(v.fractionalSets).toBeLessThanOrEqual(CEILING);
+      }
+    }
+  });
+});
+
 describe("F3.2 — warnings por volumen EFECTIVO (no directo)", () => {
   it("el glúteo, muy servido por indirecto, NO genera aviso pese a poco directo", () => {
     const p = generateInitialProgram(baseInput({ daysPerWeek: 3 }));
@@ -148,6 +170,11 @@ describe("F3.2 — warnings por volumen EFECTIVO (no directo)", () => {
   });
 
   it("todo aviso habla de series EFECTIVAS, nunca 'solo N directas'", () => {
+    // Un caso muy constreñido garantiza ≥1 aviso (para no pasar en vacío).
+    const constrained = generateInitialProgram(
+      baseInput({ daysPerWeek: 2, minutesPerSession: 45 }),
+    );
+    expect(constrained.warnings.length).toBeGreaterThan(0);
     for (const days of [2, 3, 4, 5, 6]) {
       const p = generateInitialProgram(
         baseInput({ daysPerWeek: days, minutesPerSession: 60 }),
@@ -165,9 +192,24 @@ describe("F3.2 — warnings por volumen EFECTIVO (no directo)", () => {
     );
     for (const g of Object.keys(DIRECT_MIN) as MuscleGroupCode[]) {
       if (DIRECT_MIN[g] === 0) {
-        expect(p.warnings.join(" ")).not.toContain(`${g}`.replace(/_/g, " "));
+        // Compara contra el NOMBRE del aviso, no el código con guiones.
+        expect(p.warnings.join(" ")).not.toContain(
+          MUSCLE_GROUP_BY_CODE[g].nameEs,
+        );
       }
     }
+  });
+
+  it("priorizar un músculo topado por catálogo NO enciende un aviso engañoso", () => {
+    // El deltoide lateral tiene pocos ejercicios primarios: la prioridad sube su
+    // objetivo pero el catálogo lo topa. El aviso usa el objetivo BASE, así que
+    // entregar su volumen base (sin prioridad) no debe avisar.
+    const p = generateInitialProgram(
+      baseInput({ daysPerWeek: 5, priorityMuscles: ["DELT_LATERAL"] }),
+    );
+    expect(p.warnings.join(" ")).not.toContain(
+      MUSCLE_GROUP_BY_CODE.DELT_LATERAL.nameEs,
+    );
   });
 });
 
