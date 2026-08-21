@@ -28,6 +28,10 @@ export const GoalType = z.enum([
 ]);
 export type GoalType = z.infer<typeof GoalType>;
 
+/** Nivel de experiencia de entrenamiento (calibra el volumen inicial). */
+export const ExperienceLevel = z.enum(["beginner", "intermediate", "advanced"]);
+export type ExperienceLevel = z.infer<typeof ExperienceLevel>;
+
 /**
  * Estrategia que elige el usuario en lenguaje natural. Separa la INTENCIÓN
  * (p. ej. "perder grasa conservando músculo") del comportamiento calórico

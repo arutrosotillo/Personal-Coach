@@ -1,6 +1,7 @@
 import type {
   Contraindication,
   Equipment,
+  ExperienceLevel,
   GoalType,
   MovementPattern,
   MuscleGroupCode,
@@ -42,6 +43,8 @@ export interface GeneratorInput {
   /** Grupos que el usuario ha elegido priorizar. Vacío = programa equilibrado. */
   priorityMuscles: MuscleGroupCode[];
   goalType: GoalType;
+  /** Calibra el volumen inicial (deriva de trainingYears). Default intermedio. */
+  experienceLevel?: ExperienceLevel;
   catalog: CatalogExercise[];
 }
 

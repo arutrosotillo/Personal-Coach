@@ -1,21 +1,25 @@
 import {
-  BASELINE_WEEKLY_SETS,
   COMPOUND_PATTERNS,
+  DAY_MULT,
+  DIRECT_MIN,
+  EFFECTIVE_TARGET,
+  EXPERIENCE_MULT,
   FAT_LOSS_VOLUME_FACTOR,
   MAX_SETS_PER_GROUP_PER_SESSION,
   MAX_WEEKLY_SETS,
-  MIN_WEEKLY_SETS,
-  PRIORITY_BONUS_SETS,
+  PRIORITY_BONUS_EFFECTIVE,
   SESSION_OVERHEAD_MIN,
+  SESSION_SET_CAP,
   SETS_PER_EXERCISE,
   TARGET_RIR,
   TIME_COST_MIN,
+  WARN_FRACTION,
 } from "@/core/config/training-config";
 import {
   MUSCLE_GROUPS,
   MUSCLE_GROUP_BY_CODE,
 } from "@/core/catalog/muscle-groups";
-import type { MuscleGroupCode } from "@/core/enums";
+import type { ExperienceLevel, MuscleGroupCode } from "@/core/enums";
 import { splitForDays } from "@/core/program/splits";
 import type {
   CatalogExercise,
@@ -35,9 +39,16 @@ import type {
  * que elige el usuario. NO incluye progresión ni ajuste adaptativo (Fase 3).
  */
 
-export const PROGRAM_GENERATOR_VERSION = "2.0.0";
+export const PROGRAM_GENERATOR_VERSION = "3.0.0";
 
 const ALL_GROUPS: MuscleGroupCode[] = MUSCLE_GROUPS.map((g) => g.code);
+
+/** Deriva el nivel de experiencia de los años entrenando (banda conservadora). */
+export function experienceFromYears(years: number): ExperienceLevel {
+  if (years < 2) return "beginner";
+  if (years >= 5) return "advanced";
+  return "intermediate";
+}
 
 interface Filters {
   equipment: Set<string>;
@@ -68,18 +79,26 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-/** Objetivo de series directas semanales por grupo (base equilibrada + prioridad). */
+/**
+ * Objetivo de VOLUMEN EFECTIVO semanal por grupo: base conservadora × experiencia
+ * × días (+ bonus de prioridad al objetivo semanal, no a las series por ejercicio),
+ * con factor de déficit y techo duro de seguridad. Ver PHASE_3_2_VOLUME_PLAN §2–§3.
+ */
 export function computeWeeklyTargets(
   priorityMuscles: MuscleGroupCode[],
   goalType: GeneratorInput["goalType"],
+  experienceLevel: ExperienceLevel,
+  daysPerWeek: number,
 ): Record<MuscleGroupCode, number> {
   const priority = new Set(priorityMuscles);
   const fatLoss = goalType === "FAT_LOSS";
+  const expMult = EXPERIENCE_MULT[experienceLevel];
+  const dayMult = DAY_MULT[daysPerWeek] ?? 1;
   const targets = {} as Record<MuscleGroupCode, number>;
   for (const group of ALL_GROUPS) {
-    let base = BASELINE_WEEKLY_SETS[group];
-    if (fatLoss) base = Math.round(base * FAT_LOSS_VOLUME_FACTOR);
-    const bonus = priority.has(group) ? PRIORITY_BONUS_SETS : 0;
+    let base = EFFECTIVE_TARGET[group] * expMult * dayMult;
+    if (fatLoss) base *= FAT_LOSS_VOLUME_FACTOR;
+    const bonus = priority.has(group) ? PRIORITY_BONUS_EFFECTIVE : 0;
     targets[group] = Math.min(base + bonus, MAX_WEEKLY_SETS);
   }
   return targets;
@@ -150,8 +169,14 @@ export function generateInitialProgram(
   const warnings: string[] = [];
   const split = splitForDays(input.daysPerWeek);
   const priority = new Set(input.priorityMuscles);
+  const experienceLevel = input.experienceLevel ?? "intermediate";
 
-  const targets = computeWeeklyTargets(input.priorityMuscles, input.goalType);
+  const targets = computeWeeklyTargets(
+    input.priorityMuscles,
+    input.goalType,
+    experienceLevel,
+    input.daysPerWeek,
+  );
   const remaining: Record<MuscleGroupCode, number> = { ...targets };
 
   const filters: Filters = {
@@ -177,14 +202,15 @@ export function generateInitialProgram(
     ALL_GROUPS.map((g) => [g, new Set<number>()]),
   ) as Record<MuscleGroupCode, Set<number>>;
 
+  // Necesitado = aún no alcanza su volumen EFECTIVO objetivo, o le falta el suelo
+  // de series DIRECTAS (estímulo directo mínimo). El indirecto NO cuenta para el
+  // suelo directo, pero SÍ para el objetivo (vía `remaining`).
   const isNeedy = (group: MuscleGroupCode): boolean =>
-    remaining[group] > 0.5 || directSets[group] < MIN_WEEKLY_SETS[group];
+    remaining[group] > 0.5 || directSets[group] < DIRECT_MIN[group];
   const groupDayCap = (group: MuscleGroupCode): number =>
     priority.has(group)
       ? MAX_SETS_PER_GROUP_PER_SESSION.priority
       : MAX_SETS_PER_GROUP_PER_SESSION.standard;
-  const exerciseSetsMax = (group: MuscleGroupCode): number =>
-    priority.has(group) ? SETS_PER_EXERCISE.maxPriority : SETS_PER_EXERCISE.max;
 
   const days: GeneratedDay[] = split.days.map((menu, dayIndex) => {
     const exercises: GeneratedExercise[] = [];
@@ -194,12 +220,14 @@ export function generateInitialProgram(
     // elegible); se excluyen de los candidatos sin cerrar la sesión entera.
     const blockedToday = new Set<MuscleGroupCode>();
     let minutes = SESSION_OVERHEAD_MIN;
+    let sessionSets = 0; // tope blando de densidad por sesión (SESSION_SET_CAP)
 
     // Se rellena el día añadiendo ejercicios uno a uno, siempre al grupo más
     // necesitado (prioridad primero), hasta que no cabe nada más (tiempo,
-    // topes por grupo o falta de ejercicios disponibles).
+    // topes por grupo, densidad o falta de ejercicios disponibles).
     // Backstop de iteraciones muy por encima de cualquier día real.
     for (let guard = 0; guard < 60; guard++) {
+      if (sessionSets >= SESSION_SET_CAP) break;
       // Candidatos: en el menú, necesitados, no bloqueados hoy, con margen de
       // series y con un ejercicio elegible que no se haya usado hoy.
       const candidates = menu.groups
@@ -233,7 +261,7 @@ export function generateInitialProgram(
         if (pa !== pb) return pa - pb;
         if (remaining[b.group] !== remaining[a.group])
           return remaining[b.group] - remaining[a.group];
-        return BASELINE_WEEKLY_SETS[b.group] - BASELINE_WEEKLY_SETS[a.group];
+        return EFFECTIVE_TARGET[b.group] - EFFECTIVE_TARGET[a.group];
       });
 
       const { group, pick } = candidates[0];
@@ -241,16 +269,21 @@ export function generateInitialProgram(
       const cost = TIME_COST_MIN[kind];
 
       const usedForGroup = setsForGroupToday[group] ?? 0;
+      // Cuánto falta: el hueco de volumen efectivo, o el suelo directo pendiente.
       const need =
         remaining[group] > 0
           ? remaining[group]
-          : MIN_WEEKLY_SETS[group] - directSets[group];
+          : DIRECT_MIN[group] - directSets[group];
       let sets = clamp(
         Math.ceil(need),
         SETS_PER_EXERCISE.min,
-        exerciseSetsMax(group),
+        SETS_PER_EXERCISE.max,
       );
-      sets = Math.min(sets, groupDayCap(group) - usedForGroup);
+      sets = Math.min(
+        sets,
+        groupDayCap(group) - usedForGroup,
+        SESSION_SET_CAP - sessionSets,
+      );
 
       // Si a este grupo ya no le caben las series mínimas por su tope diario,
       // se bloquea HOY y se sigue con otros grupos (no se cierra la sesión).
@@ -284,6 +317,7 @@ export function generateInitialProgram(
       });
 
       minutes += sets * cost;
+      sessionSets += sets;
       usedInDay.add(pick.exercise.id);
       usedInProgram.add(pick.exercise.id);
       setsForGroupToday[group] = usedForGroup + sets;
@@ -304,11 +338,15 @@ export function generateInitialProgram(
     };
   });
 
-  // Aviso si algún grupo prioritario o principal quedó por debajo del suelo.
+  // Aviso de músculo DESATENDIDO en volumen EFECTIVO (no en directo): solo para
+  // músculos con estímulo directo requerido (DIRECT_MIN>0) cuyo efectivo queda por
+  // debajo de WARN_FRACTION del objetivo. Así nunca se avisa por pocas series
+  // directas cuando el indirecto ya cubre al músculo (p.ej. glúteo).
   for (const group of ALL_GROUPS) {
-    if (directSets[group] < MIN_WEEKLY_SETS[group]) {
+    if (DIRECT_MIN[group] <= 0) continue;
+    if (fractionalSets[group] < WARN_FRACTION * targets[group]) {
       warnings.push(
-        `${MUSCLE_GROUP_BY_CODE[group].nameEs}: solo caben ${directSets[group]} series directas (mínimo recomendado ${MIN_WEEKLY_SETS[group]}). Valora más tiempo por sesión o más días.`,
+        `${MUSCLE_GROUP_BY_CODE[group].nameEs}: ${round1(fractionalSets[group])} series efectivas/semana (objetivo ${round1(targets[group])}). Valora más tiempo por sesión o más días.`,
       );
     }
   }

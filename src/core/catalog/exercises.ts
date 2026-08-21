@@ -11,6 +11,10 @@ import type {
  * Los factores de contribución muscular son APROXIMACIONES OPERATIVAS para
  * contar volumen fraccional — no hechos científicos (docs/DATA_MODEL.md).
  * El historial y la progresión viven a nivel de VARIANTE.
+ *
+ * Factores (cubos; evita falsa precisión): PRIMARY = 1.0 (músculo objetivo);
+ * SECONDARY ∈ {0.75 alto · 0.5 moderado · 0.25 ligero}. El volumen EFECTIVO de un
+ * músculo = Σ(series × factor) (directo + indirecto), respaldado por Pelland 2025.
  */
 
 export interface ContributionSeed {
@@ -138,7 +142,7 @@ export const EXERCISES: ExerciseSeed[] = [
       c("PECHO_MEDIO_INFERIOR", "PRIMARY", 1.0),
       c("PECHO_SUPERIOR", "SECONDARY", 0.5),
       c("TRICEPS", "SECONDARY", 0.5),
-      c("DELT_ANTERIOR", "SECONDARY", 0.3),
+      c("DELT_ANTERIOR", "SECONDARY", 0.25), // press plano: estímulo ligero del delt. anterior
     ],
     variants: [
       {

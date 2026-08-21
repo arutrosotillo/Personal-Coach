@@ -1,5 +1,8 @@
 import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
-import { generateInitialProgram } from "@/core/program/generate-initial-program";
+import {
+  experienceFromYears,
+  generateInitialProgram,
+} from "@/core/program/generate-initial-program";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 import type { TemplateExerciseEdit } from "@/core/schemas/template-edit";
 import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
@@ -191,6 +194,7 @@ export async function restoreInitialProgram(
     excludedExerciseNames: data.excludedExerciseNames,
     priorityMuscles: data.balancedProgram ? [] : data.priorityMuscles,
     goalType: STRATEGY_TO_GOAL_TYPE[data.strategy],
+    experienceLevel: experienceFromYears(data.trainingYears),
     catalog,
   });
 

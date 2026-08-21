@@ -6,6 +6,7 @@ import {
   NUTRITION_ESTIMATE_VERSION,
 } from "@/core/nutrition/initial-estimate";
 import {
+  experienceFromYears,
   generateInitialProgram,
   PROGRAM_GENERATOR_VERSION,
 } from "@/core/program/generate-initial-program";
@@ -65,6 +66,7 @@ export async function completeOnboarding(
     excludedExerciseNames: data.excludedExerciseNames,
     priorityMuscles: data.balancedProgram ? [] : data.priorityMuscles,
     goalType,
+    experienceLevel: experienceFromYears(data.trainingYears),
     catalog,
   });
 
