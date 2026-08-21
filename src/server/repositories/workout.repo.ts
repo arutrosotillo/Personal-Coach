@@ -1,29 +1,81 @@
 import { prisma } from "@/server/db";
 
-/** Sets de la última sesión COMPLETADA de una variante, antes de una sesión dada. */
-async function lastComparableSets(
-  exerciseVariantId: string,
+export interface LastComparable {
+  localDate: string;
+  sets: Array<{
+    setNumber: number;
+    weightKg: number;
+    reps: number;
+    rir: number | null;
+  }>;
+}
+
+/**
+ * Para cada variante, los sets de TRABAJO (WORKING, completados) de su última
+ * sesión COMPLETED anterior a `excludeSessionId`. Una sola query + agrupación en
+ * memoria (evita el N+1 de pedir la última sesión por ejercicio). Ignora WARMUP
+ * y sesiones no completadas: es el contexto "última vez" y la base del motor de
+ * progresión, que nunca deben contar calentamientos.
+ */
+async function lastWorkingSetsForVariants(
+  variantIds: string[],
   excludeSessionId: string,
-) {
-  const last = await prisma.setLog.findMany({
+): Promise<Map<string, LastComparable>> {
+  const result = new Map<string, LastComparable>();
+  if (variantIds.length === 0) return result;
+
+  // Todos los sets WORKING de sesiones COMPLETED (salvo la actual) para estas
+  // variantes, del más reciente al más antiguo. El primer set de cada variante
+  // identifica su workoutExercise más reciente = su última sesión válida.
+  const rows = await prisma.setLog.findMany({
     where: {
-      exerciseVariantId,
+      exerciseVariantId: { in: variantIds },
+      setType: "WORKING",
+      completed: true,
       workoutExercise: {
         sessionId: { not: excludeSessionId },
         session: { status: "COMPLETED" },
       },
     },
     orderBy: [{ completedAt: "desc" }],
-    take: 1,
-    select: { workoutExerciseId: true, localDate: true },
+    select: {
+      exerciseVariantId: true,
+      workoutExerciseId: true,
+      localDate: true,
+      setNumber: true,
+      weightKg: true,
+      reps: true,
+      rir: true,
+    },
   });
-  if (last.length === 0) return null;
-  const sets = await prisma.setLog.findMany({
-    where: { workoutExerciseId: last[0].workoutExerciseId },
-    orderBy: { setNumber: "asc" },
-    select: { setNumber: true, weightKg: true, reps: true, rir: true },
-  });
-  return { localDate: last[0].localDate, sets };
+
+  // workoutExerciseId elegido por variante (el del set más reciente).
+  const chosenWeId = new Map<string, string>();
+  for (const r of rows) {
+    if (!chosenWeId.has(r.exerciseVariantId)) {
+      chosenWeId.set(r.exerciseVariantId, r.workoutExerciseId);
+    }
+  }
+  for (const r of rows) {
+    const weId = chosenWeId.get(r.exerciseVariantId);
+    if (r.workoutExerciseId !== weId) continue;
+    const entry = result.get(r.exerciseVariantId) ?? {
+      localDate: r.localDate,
+      sets: [],
+    };
+    entry.sets.push({
+      setNumber: r.setNumber,
+      weightKg: r.weightKg,
+      reps: r.reps,
+      rir: r.rir,
+    });
+    result.set(r.exerciseVariantId, entry);
+  }
+  // Orden estable por número de serie dentro de cada variante.
+  for (const entry of result.values()) {
+    entry.sets.sort((a, b) => a.setNumber - b.setNumber);
+  }
+  return result;
 }
 
 export interface ExecutionExercise {
@@ -45,15 +97,7 @@ export interface ExecutionExercise {
     reps: number;
     rir: number | null;
   }>;
-  lastTime: {
-    localDate: string;
-    sets: Array<{
-      setNumber: number;
-      weightKg: number;
-      reps: number;
-      rir: number | null;
-    }>;
-  } | null;
+  lastTime: LastComparable | null;
 }
 
 export interface ExecutionSession {
@@ -85,30 +129,32 @@ export async function getExecutionSession(
   });
   if (!session) return null;
 
-  const exercises: ExecutionExercise[] = [];
-  for (const we of session.exercises) {
-    exercises.push({
-      id: we.id,
-      ordinal: we.ordinal,
-      exerciseName: we.exerciseVariant.exercise.name,
-      variantId: we.exerciseVariantId,
-      variantName: we.exerciseVariant.name,
-      equipment: we.exerciseVariant.equipment,
-      plannedSets: we.plannedSets,
-      repRangeMin: we.repRangeMin,
-      repRangeMax: we.repRangeMax,
-      targetRir: we.targetRir,
-      restSeconds: we.restSeconds,
-      loadStepKg: we.exerciseVariant.loadStepKg,
-      setLogs: we.setLogs.map((s) => ({
-        setNumber: s.setNumber,
-        weightKg: s.weightKg,
-        reps: s.reps,
-        rir: s.rir,
-      })),
-      lastTime: await lastComparableSets(we.exerciseVariantId, session.id),
-    });
-  }
+  const lastByVariant = await lastWorkingSetsForVariants(
+    session.exercises.map((we) => we.exerciseVariantId),
+    session.id,
+  );
+
+  const exercises: ExecutionExercise[] = session.exercises.map((we) => ({
+    id: we.id,
+    ordinal: we.ordinal,
+    exerciseName: we.exerciseVariant.exercise.name,
+    variantId: we.exerciseVariantId,
+    variantName: we.exerciseVariant.name,
+    equipment: we.exerciseVariant.equipment,
+    plannedSets: we.plannedSets,
+    repRangeMin: we.repRangeMin,
+    repRangeMax: we.repRangeMax,
+    targetRir: we.targetRir,
+    restSeconds: we.restSeconds,
+    loadStepKg: we.exerciseVariant.loadStepKg,
+    setLogs: we.setLogs.map((s) => ({
+      setNumber: s.setNumber,
+      weightKg: s.weightKg,
+      reps: s.reps,
+      rir: s.rir,
+    })),
+    lastTime: lastByVariant.get(we.exerciseVariantId) ?? null,
+  }));
 
   return {
     id: session.id,
@@ -209,4 +255,69 @@ export async function listCompletedSessions(profileId: string) {
         : null,
     totalSets: s.exercises.reduce((a, e) => a + e._count.setLogs, 0),
   }));
+}
+
+export interface VariantHistorySession {
+  localDate: string;
+  sets: Array<{
+    weightKg: number;
+    reps: number;
+    rir: number | null;
+    estimated1Rm: number | null;
+  }>;
+}
+
+/**
+ * Historial de TRABAJO de una variante (sesiones COMPLETED del perfil), de la
+ * más antigua a la más reciente y opcionalmente desde `sinceLocalDate`. Base
+ * on-demand del mini-historial: mejor set, e1RM~ y tendencia se calculan en
+ * `src/core/training/history.ts` a partir de esto. Sin persistir agregados.
+ */
+export async function getVariantHistory(
+  profileId: string,
+  variantId: string,
+  sinceLocalDate?: string,
+): Promise<VariantHistorySession[]> {
+  const rows = await prisma.setLog.findMany({
+    where: {
+      exerciseVariantId: variantId,
+      setType: "WORKING",
+      completed: true,
+      ...(sinceLocalDate ? { localDate: { gte: sinceLocalDate } } : {}),
+      workoutExercise: {
+        session: {
+          status: "COMPLETED",
+          mesocycle: { program: { profileId } },
+        },
+      },
+    },
+    orderBy: [{ localDate: "asc" }, { setNumber: "asc" }],
+    select: {
+      workoutExerciseId: true,
+      localDate: true,
+      weightKg: true,
+      reps: true,
+      rir: true,
+      estimated1Rm: true,
+    },
+  });
+
+  // Agrupa por sesión (workoutExerciseId = un ejercicio de una sesión).
+  const byWe = new Map<string, VariantHistorySession>();
+  const order: string[] = [];
+  for (const r of rows) {
+    let entry = byWe.get(r.workoutExerciseId);
+    if (!entry) {
+      entry = { localDate: r.localDate, sets: [] };
+      byWe.set(r.workoutExerciseId, entry);
+      order.push(r.workoutExerciseId);
+    }
+    entry.sets.push({
+      weightKg: r.weightKg,
+      reps: r.reps,
+      rir: r.rir,
+      estimated1Rm: r.estimated1Rm,
+    });
+  }
+  return order.map((id) => byWe.get(id)!);
 }
