@@ -104,15 +104,13 @@ foco inicial en "Cancelar".
 
 **Tras guardar**: se reutiliza el mismo editor (F2A + controles de día) para toda edición.
 
-### Decisión de producto: ¿reactivar programa archivado?
+### Archivado *(decisión aprobada: A — copy honesto, sin reactivación aún)*
 Crear un programa **archiva** el activo (`isActive:false`, **no** se borra; historial intacto).
-Hoy **no existe** UI para reactivar un programa archivado. El reviewer avisa: prometer
-"podrás recuperarlo" sin un camino real erosiona la confianza. Dos opciones:
-- **(A, recomendada F3.1)** copy honesto — *"Tu programa actual se archiva (no se borra) y tu
-  historial se conserva"* — **sin** prometer reactivación en un tap; añadir "reactivar
-  archivado" como fast-follow.
-- **(B)** incluir una acción mínima "reactivar programa archivado" (poner `isActive:true` al
-  elegido y `false` al actual) — pequeña, pero amplía el alcance de F3.1.
+El aviso dirá exactamente: *"Tu programa actual se archiva (no se borra) y tu historial se
+conserva"*, **sin** prometer reactivación en un tap. "Reactivar programa archivado" queda
+como **fast-follow** (fuera de F3.1). La elección "generar vs crear" vive en **`/program`**
+(dos CTAs en vacío; "Crear un programa nuevo" con programa activo); la elección dentro del
+onboarding se aplaza (no se toca la transacción de `completeOnboarding`).
 
 ## 4. Defaults inteligentes (derivable vs heurística)
 
@@ -122,10 +120,12 @@ Al añadir un ejercicio (una variante del catálogo):
 - **Descanso** (`restSeconds`): **DERIVABLE** — `ExerciseVariant.defaultRestSeconds`.
 - **Series** (`baseSets`) = **3**: **HEURÍSTICA nueva** (coincide con el default ya usado en
   `addTemplateExercise`). Editable; **el límite de 3 del generador NO aplica al manual**.
-- **RIR** (`targetRir`) = **2**: default simple (coincide con el `@default(2)` del schema).
-  *Refinamiento opcional*: RIR por rol (compuesto 2 / aislamiento 1) reutilizando
-  `TARGET_RIR` — requiere añadir `systemicFatigue`/patrón al picker; se puede dejar para
-  después. Todo editable.
+- **RIR** (`targetRir`) por **ROL** *(decisión aprobada)*: reutiliza `TARGET_RIR` de F3.2
+  (compuesto pesado 3 / compuesto 2 / aislamiento 1) vía la lógica `costKindOf`
+  (patrón de movimiento + `systemicFatigue`). Requiere exponer `systemicFatigue` en el picker
+  (`listLibrary()` ya trae `movementPattern`; se añade `systemicFatigue`, lectura, sin
+  migración) y un pequeño helper puro `defaultTargetRir(movementPattern, systemicFatigue)` en
+  core. Editable.
 
 ## 5. Migración: **NINGUNA** (verificado)
 
