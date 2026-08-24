@@ -205,6 +205,11 @@ export async function restoreInitialProgramAction(): Promise<ActionResult> {
     revalidatePath("/program");
     return { ok: true };
   } catch (error) {
-    return fail("restoreInitialProgramAction", error);
+    console.error("restoreInitialProgramAction", error);
+    const message =
+      error instanceof Error && error.message.includes("manual")
+        ? error.message
+        : "No se pudo restaurar el programa.";
+    return { ok: false, error: message };
   }
 }

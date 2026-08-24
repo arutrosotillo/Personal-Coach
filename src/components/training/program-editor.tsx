@@ -37,9 +37,12 @@ export interface EditorTemplate {
 export function ProgramEditor({
   templates,
   substitutionOptions,
+  canRestore = true,
 }: {
   templates: EditorTemplate[];
   substitutionOptions: SubstitutionExercise[];
+  /** Solo los programas generados pueden restaurar su plan inicial (Fase 3.1). */
+  canRestore?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -122,7 +125,7 @@ export function ProgramEditor({
         </Card>
       ))}
 
-      {editing ? (
+      {editing && canRestore ? (
         <div className="border-border rounded-lg border border-dashed p-4">
           <p className="text-muted-foreground mb-2 text-sm">
             Restaurar el plan inicial descarta tus ediciones y vuelve al

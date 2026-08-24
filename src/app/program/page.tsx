@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getProgramRationale } from "@/server/repositories/program.repo";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
+import { canRestoreProgram } from "@/server/services/program-source.service";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +16,13 @@ export default async function ProgramPage() {
   const overview = await getProfileOverview();
   const program = overview?.program;
   const mesocycle = program?.mesocycles[0];
-  const [rationale, substitutionOptions] = program
+  const [rationale, substitutionOptions, canRestore] = program
     ? await Promise.all([
         getProgramRationale(program.id),
         listSubstitutionOptions(),
+        canRestoreProgram(program.id),
       ])
-    : [null, []];
+    : [null, [], false];
 
   if (!overview || !program || !mesocycle) {
     return (
@@ -81,6 +83,7 @@ export default async function ProgramPage() {
           })),
         }))}
         substitutionOptions={substitutionOptions}
+        canRestore={canRestore}
       />
     </AppShell>
   );

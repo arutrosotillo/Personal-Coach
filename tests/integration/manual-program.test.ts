@@ -20,6 +20,10 @@ const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
 const { createManualProgram } =
   await import("@/server/services/manual-program.service");
+const { isGeneratedProgram, canRestoreProgram } =
+  await import("@/server/services/program-source.service");
+const { restoreInitialProgram } =
+  await import("@/server/services/program-edit.service");
 
 let profileId: string;
 let generatedProgramId: string;
@@ -185,6 +189,39 @@ describe("createManualProgram", () => {
       where: { type: "INITIAL_PROGRAM", scopeId: programId },
     });
     expect(rec).toBeNull();
+  });
+
+  it("origen derivable: generado → isGenerated/canRestore true; manual → false", async () => {
+    expect(await isGeneratedProgram(generatedProgramId)).toBe(true);
+    expect(await canRestoreProgram(generatedProgramId)).toBe(true);
+    const { programId } = await createManualProgram(
+      profileId,
+      { ...manualInput(), name: "Manual origen" },
+      new Date("2026-08-01T10:00:00Z"),
+    );
+    expect(await isGeneratedProgram(programId)).toBe(false);
+    expect(await canRestoreProgram(programId)).toBe(false);
+  });
+
+  it("restore sobre un programa manual falla de forma CONTROLADA y sin corromper", async () => {
+    // El activo es manual (creado en el test anterior).
+    const activeBefore = await prisma.trainingProgram.findFirstOrThrow({
+      where: { profileId, isActive: true },
+      include: { mesocycles: { include: { templates: true } } },
+    });
+    expect(await canRestoreProgram(activeBefore.id)).toBe(false);
+
+    await expect(restoreInitialProgram(profileId)).rejects.toThrow(/manual/);
+
+    // Nada cambió: mismo activo, mismas plantillas.
+    const activeAfter = await prisma.trainingProgram.findFirstOrThrow({
+      where: { profileId, isActive: true },
+      include: { mesocycles: { include: { templates: true } } },
+    });
+    expect(activeAfter.id).toBe(activeBefore.id);
+    expect(activeAfter.mesocycles[0].templates.length).toBe(
+      activeBefore.mesocycles[0].templates.length,
+    );
   });
 
   it("rechaza (controlado) una variante inexistente, sin corromper", async () => {

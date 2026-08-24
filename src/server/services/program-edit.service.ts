@@ -176,10 +176,17 @@ export async function restoreInitialProgram(
   });
   const mesocycle = program.mesocycles[0];
   if (!mesocycle) throw new Error("El programa activo no tiene mesociclos.");
-  const recommendation = await prisma.recommendation.findFirstOrThrow({
+  // Solo los programas GENERADOS tienen un plan inicial que restaurar. Para un
+  // programa manual se falla de forma controlada (nunca findFirstOrThrow crudo).
+  const recommendation = await prisma.recommendation.findFirst({
     where: { type: "INITIAL_PROGRAM", scopeId: program.id },
     include: { decision: true },
   });
+  if (!recommendation) {
+    throw new Error(
+      "Este programa es manual: no tiene un plan inicial que restaurar.",
+    );
+  }
   const snapshot = recommendation.decision.inputSnapshot as {
     onboarding?: unknown;
   };
