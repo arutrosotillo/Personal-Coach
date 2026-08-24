@@ -33,8 +33,8 @@ export default async function ProgramPage() {
           </p>
           <p className="text-muted-foreground mb-6 text-sm">
             {overview
-              ? "Aún no tienes un programa activo."
-              : "Genera un plan a tu medida o crea el tuyo desde cero."}
+              ? "Genera un plan a tu medida o crea el tuyo desde cero."
+              : "Genera un plan a tu medida para empezar."}
           </p>
           <div className="mx-auto flex max-w-xs flex-col gap-2">
             <Button

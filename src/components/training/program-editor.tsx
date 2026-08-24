@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import type { SubstitutionExercise } from "@/components/training/session-runner";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ export interface EditorTemplate {
 export function ProgramEditor({
   templates,
   substitutionOptions,
-  canRestore = true,
+  canRestore = false,
 }: {
   templates: EditorTemplate[];
   substitutionOptions: SubstitutionExercise[];
@@ -142,6 +143,7 @@ export function ProgramEditor({
 
       {editing ? (
         <AddDay
+          nextNumber={templates.length + 1}
           pending={pending}
           substitutionOptions={substitutionOptions}
           run={run}
@@ -230,17 +232,24 @@ function DayHeader({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={() => {
-            if (dirty) run(() => renameDayAction(template.id, name.trim()));
+            if (name.trim().length === 0) {
+              setName(template.name); // no permitir vaciar el nombre
+              return;
+            }
+            if (dirty) {
+              run(() => renameDayAction(template.id, name.trim()));
+              toast.success("Día renombrado");
+            }
           }}
           aria-label={`Nombre del día ${template.ordinal}`}
-          className="border-border bg-background min-h-9 min-w-0 flex-1 rounded-md border px-2 text-sm"
+          className="border-border bg-background min-h-11 min-w-0 flex-1 rounded-md border px-2 text-sm"
         />
         <Button
           type="button"
           variant="secondary"
           size="sm"
           aria-label="Subir día"
-          className="min-h-9 min-w-9 px-1"
+          className="min-h-11 min-w-11 px-1"
           disabled={pending || isFirst}
           onClick={() => run(() => reorderDayAction(template.id, "up"))}
         >
@@ -251,7 +260,7 @@ function DayHeader({
           variant="secondary"
           size="sm"
           aria-label="Bajar día"
-          className="min-h-9 min-w-9 px-1"
+          className="min-h-11 min-w-11 px-1"
           disabled={pending || isLast}
           onClick={() => run(() => reorderDayAction(template.id, "down"))}
         >
@@ -299,10 +308,12 @@ function DayHeader({
 }
 
 function AddDay({
+  nextNumber,
   pending,
   substitutionOptions,
   run,
 }: {
+  nextNumber: number;
   pending: boolean;
   substitutionOptions: SubstitutionExercise[];
   run: (a: () => Promise<{ ok: boolean; error?: string }>) => void;
@@ -320,7 +331,7 @@ function AddDay({
             disabled={pending}
             onPick={(variantId) => {
               setOpen(false);
-              run(() => addDayAction("Día nuevo", variantId));
+              run(() => addDayAction(`Día ${nextNumber}`, variantId));
             }}
           />
         </div>

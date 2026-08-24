@@ -116,6 +116,8 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
       [copy[idx], copy[j]] = [copy[j], copy[idx]];
       return copy;
     });
+    // El día abierto sigue a su nueva posición.
+    setOpenDay((o) => (o === idx ? idx + dir : o === idx + dir ? idx : o));
   }
   function addExercise(di: number, v: BuilderVariant) {
     setDays((prev) =>
@@ -224,7 +226,10 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
       <div className="border-border bg-background fixed inset-x-0 bottom-0 z-40 border-t p-3">
         <div className="mx-auto flex max-w-lg items-center gap-3">
           <span
-            className="text-muted-foreground flex-1 text-xs"
+            className={cn(
+              "flex-1 text-xs",
+              valid ? "text-muted-foreground" : "text-destructive font-medium",
+            )}
             aria-live="polite"
           >
             {valid ? `${days.length} día(s)` : invalidReason}
@@ -244,6 +249,12 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
       <PickerSheet
         open={pickerFor !== null}
         catalog={catalog}
+        dayName={pickerFor !== null ? days[pickerFor]?.name : undefined}
+        existing={
+          pickerFor !== null
+            ? new Set(days[pickerFor]?.exercises.map((e) => e.variantId))
+            : new Set()
+        }
         onOpenChange={(o) => setPickerFor(o ? pickerFor : null)}
         onPick={(v) => {
           if (pickerFor !== null) addExercise(pickerFor, v);
@@ -296,7 +307,7 @@ function DayCard({
             aria-expanded={isOpen}
           >
             <span className="font-medium">
-              {day.name || `Día ${index + 1}`}
+              {isOpen ? `Día ${index + 1}` : day.name || `Día ${index + 1}`}
             </span>
             <span className="text-muted-foreground ml-2 text-xs">
               {day.exercises.length} ejercicio(s)
@@ -427,7 +438,7 @@ function ExerciseRow({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="min-h-9 min-w-0 flex-1 text-left"
+          className="min-h-11 min-w-0 flex-1 text-left"
           aria-expanded={open}
         >
           <span className="block truncate text-sm font-medium">{ex.label}</span>
@@ -441,7 +452,7 @@ function ExerciseRow({
             variant="secondary"
             size="sm"
             aria-label="Subir ejercicio"
-            className="min-h-9 min-w-9 px-1"
+            className="min-h-11 min-w-11 px-1"
             disabled={isFirst}
             onClick={() => onMove(-1)}
           >
@@ -452,7 +463,7 @@ function ExerciseRow({
             variant="secondary"
             size="sm"
             aria-label="Bajar ejercicio"
-            className="min-h-9 min-w-9 px-1"
+            className="min-h-11 min-w-11 px-1"
             disabled={isLast}
             onClick={() => onMove(1)}
           >
@@ -545,11 +556,15 @@ function ExerciseRow({
 function PickerSheet({
   open,
   catalog,
+  dayName,
+  existing,
   onOpenChange,
   onPick,
 }: {
   open: boolean;
   catalog: BuilderVariant[];
+  dayName?: string;
+  existing: Set<string>;
   onOpenChange: (open: boolean) => void;
   onPick: (v: BuilderVariant) => void;
 }) {
@@ -570,8 +585,19 @@ function PickerSheet({
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent>
-        <DrawerHeader>
-          <DrawerTitle>Añadir ejercicio</DrawerTitle>
+        <DrawerHeader className="flex flex-row items-center justify-between gap-2">
+          <DrawerTitle>
+            {dayName ? `Añadir a ${dayName}` : "Añadir ejercicio"}
+          </DrawerTitle>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="min-h-9"
+            onClick={() => onOpenChange(false)}
+          >
+            Hecho
+          </Button>
         </DrawerHeader>
         <div className="space-y-2 px-4 pb-8">
           <input
@@ -600,23 +626,32 @@ function PickerSheet({
             ))}
           </div>
           <ul className="max-h-72 space-y-1 overflow-y-auto">
-            {filtered.map((v) => (
-              <li key={v.variantId}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onPick(v);
-                    toast.success("Añadido", { duration: 900 });
-                  }}
-                  className="hover:bg-accent flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-sm"
-                >
-                  <span className="min-w-0 truncate">{v.label}</span>
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {v.equipment}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {filtered.map((v) => {
+              const added = existing.has(v.variantId);
+              return (
+                <li key={v.variantId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPick(v);
+                      toast.success("Añadido", { duration: 900 });
+                    }}
+                    className="hover:bg-accent flex min-h-11 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-sm"
+                  >
+                    <span className="min-w-0 truncate">{v.label}</span>
+                    <span className="shrink-0 text-xs">
+                      {added ? (
+                        <span className="text-primary">✓ añadido</span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {v.equipment}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
             {filtered.length === 0 ? (
               <li className="text-muted-foreground px-2 py-3 text-sm">
                 Sin resultados.

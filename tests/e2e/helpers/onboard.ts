@@ -36,7 +36,9 @@ export async function onboard(page: Page) {
   await page.getByRole("button", { name: "Continuar" }).click(); // restricciones
 
   await expect(page.getByRole("heading", { name: "Revisión" })).toBeVisible();
-  await page.getByRole("button", { name: /Confirmar y crear mi plan/i }).click();
+  await page
+    .getByRole("button", { name: /Confirmar y crear mi plan/i })
+    .click();
   await expect(page.getByRole("heading", { name: "Hoy" })).toBeVisible({
     timeout: 15_000,
   });

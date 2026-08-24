@@ -190,7 +190,15 @@ export async function restoreInitialProgram(
   const snapshot = recommendation.decision.inputSnapshot as {
     onboarding?: unknown;
   };
-  const data = onboardingSchema.parse(snapshot.onboarding);
+  // Snapshot de una versión antigua puede no validar contra el schema actual:
+  // fallo CONTROLADO en vez de un error Zod crudo.
+  const parsedOnboarding = onboardingSchema.safeParse(snapshot.onboarding);
+  if (!parsedOnboarding.success) {
+    throw new Error(
+      "No se puede restaurar: el plan inicial es de una versión anterior.",
+    );
+  }
+  const data = parsedOnboarding.data;
 
   const catalog = await loadCatalog();
   const regenerated = generateInitialProgram({
@@ -215,8 +223,13 @@ export async function restoreInitialProgram(
     // Las plantillas con historial se conservan (soft-delete). Su `ordinal` se
     // mueve a un valor negativo distinto: @@unique([mesocycleId, ordinal]) NO
     // excluye filas borradas en SQLite, así que hay que liberar los ordinales
-    // 1..N antes de recrear el plan.
-    let archivedOrdinal = -1;
+    // 1..N antes de recrear el plan. El contador arranca POR DEBAJO de todos los
+    // ordinales existentes (incluidos días ya soft-borrados por removeDay).
+    const minOrd = await tx.workoutTemplate.aggregate({
+      where: { mesocycleId: mesocycle.id },
+      _min: { ordinal: true },
+    });
+    let archivedOrdinal = Math.min(-1, (minOrd._min.ordinal ?? 0) - 1);
     for (const t of templates) {
       if (t._count.sessions > 0) {
         await tx.workoutTemplate.update({
@@ -248,6 +261,8 @@ export async function restoreInitialProgram(
         },
       });
     }
+    // Mantiene daysPerWeek en sync (restore puede cambiar el nº de días vivos).
+    await syncDaysPerWeek(tx, mesocycle.id);
   });
 
   function toLocalDateNow(d: Date) {
@@ -402,10 +417,18 @@ export async function reorderDay(
   const swapIdx = direction === "up" ? idx - 1 : idx + 1;
   if (swapIdx < 0 || swapIdx >= siblings.length) return;
   const other = siblings[swapIdx];
+  // Ordinal temporal por debajo de TODOS los existentes (incluidos los días
+  // soft-borrados aparcados en negativo): un `-1` fijo colisionaría con un día
+  // borrado que removeDay dejó en -1 (@@unique no filtra deletedAt en SQLite).
+  const { _min } = await prisma.workoutTemplate.aggregate({
+    where: { mesocycleId: template.mesocycleId },
+    _min: { ordinal: true },
+  });
+  const temp = Math.min(-1, (_min.ordinal ?? 0) - 1);
   await prisma.$transaction([
     prisma.workoutTemplate.update({
       where: { id: template.id },
-      data: { ordinal: -1 },
+      data: { ordinal: temp },
     }),
     prisma.workoutTemplate.update({
       where: { id: other.id },
