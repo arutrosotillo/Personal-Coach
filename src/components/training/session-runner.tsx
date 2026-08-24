@@ -162,20 +162,33 @@ export function SessionRunner({
     });
   }
 
-  /** Aplica la carga/reps sugeridas a la primera serie no completada (prefill;
-   * no persiste ni cambia el programa). */
+  /** Aplica la carga y los objetivos por serie sugeridos a todas las series
+   * pendientes (prefill; no persiste ni cambia el programa). */
   function applySuggestion() {
     if (!suggestion || suggestion.suggestedWeightKg == null) return;
     const arr = rows[ex.id] ?? [];
-    const idx = arr.findIndex((r) => !r.done);
-    if (idx < 0) return;
-    updateRow(ex.id, idx, {
-      weight: suggestion.suggestedWeightKg.toString(),
-      ...(suggestion.suggestedReps != null
-        ? { reps: suggestion.suggestedReps }
-        : {}),
-    });
-    toast.success(`Serie ${idx + 1}: ${suggestion.suggestedWeightKg} kg`);
+    const weight = suggestion.suggestedWeightKg.toString();
+    const targets = suggestion.setTargets;
+    const pending = arr.filter((r) => !r.done).length;
+    if (pending === 0) return;
+    setRows((prev) => ({
+      ...prev,
+      [ex.id]: (prev[ex.id] ?? []).map((r, i) =>
+        r.done
+          ? r
+          : {
+              ...r,
+              weight,
+              reps: targets?.[i] ?? suggestion.suggestedReps ?? r.reps,
+            },
+      ),
+    }));
+    const plan = (targets ?? []).filter((_, i) => !arr[i]?.done);
+    toast.success(
+      plan.length > 0
+        ? `${suggestion.suggestedWeightKg} kg · ${plan.join("/")} reps`
+        : `${suggestion.suggestedWeightKg} kg`,
+    );
   }
 
   /** Copia peso/reps/RIR de la "última vez" de esta serie (o de la serie
@@ -448,19 +461,20 @@ function SuggestionBadge({
 }) {
   const [open, setOpen] = useState(false);
   const canApply =
-    suggestion.suggestedWeightKg != null &&
-    (suggestion.action === "INCREASE_LOAD" || suggestion.action === "ADD_REP");
+    suggestion.suggestedWeightKg != null && suggestion.action !== "START";
   const tentative = suggestion.confidence !== "HIGH";
 
   const explanationId = `sug-why-${suggestion.reasonCode}`;
   const label =
     suggestion.action === "INCREASE_LOAD"
       ? `${tentative ? "Prueba" : "Sube"} ${suggestion.suggestedWeightKg} kg`
-      : suggestion.action === "ADD_REP"
-        ? `Prueba ${suggestion.suggestedReps} reps`
-        : suggestion.action === "START"
-          ? "Primera vez"
-          : "Mantén";
+      : suggestion.action === "DECREASE_LOAD"
+        ? `Baja a ${suggestion.suggestedWeightKg} kg`
+        : suggestion.action === "ADD_REP"
+          ? `Prueba ${suggestion.suggestedReps} reps`
+          : suggestion.action === "START"
+            ? "Primera vez"
+            : "Mantén";
 
   return (
     <div className="flex max-w-[45%] shrink-0 flex-col items-end gap-1">
@@ -485,19 +499,24 @@ function SuggestionBadge({
           size="sm"
           variant="secondary"
           className="min-h-11"
-          aria-label={`Rellenar la primera serie con ${suggestion.suggestedWeightKg} kg (no guarda el cambio)`}
+          aria-label={`Rellenar las series pendientes con ${suggestion.suggestedWeightKg} kg (no guarda el cambio)`}
           onClick={onApply}
         >
           Aplicar
         </Button>
       ) : null}
       {open ? (
-        <p
+        <div
           id={explanationId}
           className="text-muted-foreground max-w-full text-right text-xs"
         >
-          {suggestion.explanation}
-        </p>
+          <p>{suggestion.explanation}</p>
+          {suggestion.signals.map((signal) => (
+            <p key={signal.code} className="mt-1 italic">
+              {signal.message}
+            </p>
+          ))}
+        </div>
       ) : null}
     </div>
   );

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { onboardingSchema } from "@/core/schemas/onboarding";
+import { equivalentReps } from "@/core/training/progression";
 
 import { createTestDatabase } from "./helpers/test-db";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
@@ -103,8 +104,16 @@ describe("sugerencia de progresión (efímera)", () => {
     const s = suggestions[target.id];
 
     expect(s.action).toBe("INCREASE_LOAD");
+    expect(s.reasonCode).toBe("RANGE_CLOSED");
     expect(s.suggestedWeightKg).toBeCloseTo(80 + step, 6);
-    expect(s.suggestedReps).toBe(te.repRangeMin);
+    // El objetivo de reps sale de la equivalencia carga↔reps, no de repRangeMin:
+    // subir de peso ya no tira el estímulo al suelo del rango.
+    const predicted = Math.floor(
+      equivalentReps(80, te.repRangeMax, 80 + step) + 1e-6,
+    );
+    expect(s.suggestedReps).toBe(Math.min(predicted, te.repRangeMax));
+    expect(s.suggestedReps!).toBeGreaterThanOrEqual(te.repRangeMin);
+    expect(s.setTargets).toHaveLength(te.baseSets);
 
     // Efímera: calcularla no crea ninguna AlgorithmDecision/Recommendation.
     expect(await prisma.algorithmDecision.count()).toBe(decisionsBefore);

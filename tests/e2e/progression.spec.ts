@@ -69,8 +69,11 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   await expect(page.getByText(/Última vez \(/)).toBeVisible();
   await expect(page.getByText(/últ 50×/).first()).toBeVisible();
 
-  // Badge de sugerencia visible (Sube/Prueba/Mantén) y "Aplicar" rellena la carga.
-  const apply = page.getByRole("button", { name: /Rellenar la primera serie/ });
+  // Badge de sugerencia visible (Sube/Prueba/Baja/Mantén) y "Aplicar" rellena
+  // TODAS las series pendientes con la carga y los objetivos por serie.
+  const apply = page.getByRole("button", {
+    name: /Rellenar las series pendientes/,
+  });
   await expect(apply).toBeVisible();
   // Cambiamos el peso a otro valor y comprobamos que "Aplicar" lo restablece a 50.
   await (await weightBox(page)).fill("30");

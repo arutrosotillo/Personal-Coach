@@ -1,25 +1,40 @@
+import { PROGRESSION } from "@/core/config/training-config";
 import { prisma } from "@/server/db";
 
-export interface LastComparable {
+export interface VariantExposureRow {
+  setNumber: number;
+  weightKg: number;
+  reps: number;
+  rir: number | null;
+}
+
+export interface VariantExposure {
   localDate: string;
-  sets: Array<{
-    setNumber: number;
-    weightKg: number;
-    reps: number;
-    rir: number | null;
-  }>;
-  /** Nº de sesiones válidas de la variante en el historial (para la confianza). */
-  comparableSessions: number;
+  sets: VariantExposureRow[];
 }
 
 /**
- * Para cada variante, los sets de TRABAJO (WORKING, completados) de su última
- * sesión COMPLETED anterior a `excludeSessionId`. Una sola query + agrupación en
- * memoria (evita el N+1 de pedir la última sesión por ejercicio). Ignora WARMUP
+ * Contexto histórico de una variante para la pantalla de ejecución y el motor
+ * de progresión: la última exposición (contexto "última vez") y las últimas
+ * `PROGRESSION.HISTORY_WINDOW` exposiciones, de la MÁS ANTIGUA a la MÁS
+ * RECIENTE (el motor necesita memoria mínima, no solo la última sesión).
+ */
+export interface LastComparable {
+  localDate: string;
+  sets: VariantExposureRow[];
+  /** Nº de sesiones válidas de la variante en el historial (para la confianza). */
+  comparableSessions: number;
+  exposures: VariantExposure[];
+}
+
+/**
+ * Para cada variante, los sets de TRABAJO (WORKING, completados) de sus últimas
+ * sesiones COMPLETED anteriores a `excludeSessionId`. Una sola query + agrupación
+ * en memoria (evita el N+1 de pedir el historial por ejercicio). Ignora WARMUP
  * y sesiones no completadas: es el contexto "última vez" y la base del motor de
  * progresión, que nunca deben contar calentamientos.
  */
-async function lastWorkingSetsForVariants(
+async function recentWorkingSetsForVariants(
   profileId: string,
   variantIds: string[],
   excludeSessionId: string,
@@ -61,41 +76,45 @@ async function lastWorkingSetsForVariants(
     },
   });
 
-  // Por variante: la sesión (sessionId) más reciente = "última vez", y el nº de
-  // sesiones distintas = sesiones comparables (por sessionId, NO por
-  // workoutExercise: una variante repetida en la misma sesión cuenta una vez).
-  const chosenSessionId = new Map<string, string>();
-  const sessionsByVariant = new Map<string, Set<string>>();
+  // Agrupa por variante → sesión, conservando el orden de la query (más
+  // reciente primero). Una variante repetida en la misma sesión cuenta como
+  // UNA exposición, no dos.
+  const byVariant = new Map<string, Map<string, VariantExposure>>();
   for (const r of rows) {
     const sessionId = r.workoutExercise.sessionId;
-    if (!chosenSessionId.has(r.exerciseVariantId)) {
-      chosenSessionId.set(r.exerciseVariantId, sessionId);
+    let sessions = byVariant.get(r.exerciseVariantId);
+    if (!sessions) {
+      sessions = new Map<string, VariantExposure>();
+      byVariant.set(r.exerciseVariantId, sessions);
     }
-    const set = sessionsByVariant.get(r.exerciseVariantId) ?? new Set<string>();
-    set.add(sessionId);
-    sessionsByVariant.set(r.exerciseVariantId, set);
-  }
-  for (const r of rows) {
-    if (
-      r.workoutExercise.sessionId !== chosenSessionId.get(r.exerciseVariantId)
-    )
-      continue;
-    const entry = result.get(r.exerciseVariantId) ?? {
-      localDate: r.localDate,
-      sets: [],
-      comparableSessions: sessionsByVariant.get(r.exerciseVariantId)?.size ?? 1,
-    };
-    entry.sets.push({
+    let exposure = sessions.get(sessionId);
+    if (!exposure) {
+      exposure = { localDate: r.localDate, sets: [] };
+      sessions.set(sessionId, exposure);
+    }
+    exposure.sets.push({
       setNumber: r.setNumber,
       weightKg: r.weightKg,
       reps: r.reps,
       rir: r.rir,
     });
-    result.set(r.exerciseVariantId, entry);
   }
-  // Orden estable por número de serie dentro de cada variante.
-  for (const entry of result.values()) {
-    entry.sets.sort((a, b) => a.setNumber - b.setNumber);
+
+  for (const [variantId, sessions] of byVariant) {
+    const ordered = [...sessions.values()];
+    for (const exposure of ordered) {
+      exposure.sets.sort((a, b) => a.setNumber - b.setNumber);
+    }
+    const last = ordered[0];
+    if (!last) continue;
+    // De la más antigua a la más reciente, acotado a la ventana del motor.
+    const exposures = ordered.slice(0, PROGRESSION.HISTORY_WINDOW).reverse();
+    result.set(variantId, {
+      localDate: last.localDate,
+      sets: last.sets,
+      comparableSessions: ordered.length,
+      exposures,
+    });
   }
   return result;
 }
@@ -151,7 +170,7 @@ export async function getExecutionSession(
   });
   if (!session) return null;
 
-  const lastByVariant = await lastWorkingSetsForVariants(
+  const lastByVariant = await recentWorkingSetsForVariants(
     profileId,
     session.exercises.map((we) => we.exerciseVariantId),
     session.id,

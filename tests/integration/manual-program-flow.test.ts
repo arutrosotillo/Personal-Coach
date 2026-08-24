@@ -29,6 +29,7 @@ const ws = await import("@/server/services/workout-session.service");
 
 let profileId: string;
 let variantIds: string[];
+let bandVariantId: string;
 
 beforeAll(async () => {
   await runSeed(prisma);
@@ -49,12 +50,20 @@ beforeAll(async () => {
   });
   const r = await completeOnboarding(data, new Date("2026-07-14T10:00:00Z"));
   profileId = r.profileId;
+  // Variantes CON incremento de carga: las que no lo tienen (bandas) progresan
+  // solo por repeticiones y se cubren aparte, más abajo.
   const variants = await prisma.exerciseVariant.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, loadStepKg: { gt: 0 } },
     take: 4,
     orderBy: { name: "asc" },
   });
   variantIds = variants.map((v) => v.id);
+  bandVariantId = (
+    await prisma.exerciseVariant.findFirstOrThrow({
+      where: { deletedAt: null, loadStepKg: 0 },
+      orderBy: { name: "asc" },
+    })
+  ).id;
 });
 
 afterAll(async () => {
@@ -138,6 +147,55 @@ describe("programa manual usa el mismo motor (Caso A backend)", () => {
     const suggestion = buildSuggestions(exec!)[target.id];
     expect(suggestion.action).toBe("INCREASE_LOAD");
     expect(target.lastTime?.sets[0].weightKg).toBe(100);
+    await ws.discardSession(profileId, next.sessionId);
+  });
+
+  it("variante sin carga cuantificable (loadStepKg 0) nunca sugiere kilos", async () => {
+    await createManualProgram(profileId, manual("Banda manual", bandVariantId));
+    const template = await prisma.workoutTemplate.findFirstOrThrow({
+      where: {
+        mesocycle: { program: { profileId, isActive: true } },
+        deletedAt: null,
+      },
+      orderBy: { ordinal: "asc" },
+    });
+    const started = await ws.startOrResumeSession(
+      profileId,
+      template.id,
+      new Date("2026-07-27T10:00:00Z"),
+    );
+    const we = await prisma.workoutExercise.findFirstOrThrow({
+      where: { sessionId: started.sessionId },
+    });
+    for (let n = 1; n <= we.plannedSets; n++) {
+      await ws.logSet(profileId, {
+        workoutExerciseId: we.id,
+        setNumber: n,
+        setType: "WORKING",
+        weightKg: 0,
+        reps: 8,
+        rir: 2,
+      });
+    }
+    await ws.finishSession(
+      profileId,
+      started.sessionId,
+      {},
+      new Date("2026-07-27T11:00:00Z"),
+    );
+
+    const next = await ws.startOrResumeSession(
+      profileId,
+      template.id,
+      new Date("2026-07-30T10:00:00Z"),
+    );
+    const exec = await getExecutionSession(profileId, next.sessionId);
+    const target = exec!.exercises.find((e) => e.variantId === bandVariantId)!;
+    const suggestion = buildSuggestions(exec!)[target.id];
+    expect(suggestion.action).toBe("ADD_REP");
+    expect(suggestion.reasonCode).toBe("NO_LOAD_STEP");
+    expect(suggestion.suggestedWeightKg).toBe(0);
+    expect(suggestion.explanation).not.toMatch(/sube a 0 kg/i);
     await ws.discardSession(profileId, next.sessionId);
   });
 });

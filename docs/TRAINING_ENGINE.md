@@ -36,23 +36,70 @@ Implementada en `src/core/program/generate-initial-program.ts` (versión **3.0.0
 
 Volumen inicial conservador con margen de progresión y rendimientos decrecientes del volumen: Schoenfeld et al. 2017 (meta-análisis dosis-respuesta), Baz-Valle et al. 2022 (revisión de volumen). Rangos amplios de repeticiones válidos para hipertrofia (~5–30 con proximidad al fallo): Schoenfeld et al. 2021. Cercanía al fallo sin fallo sistemático (RIR 1–3): Refalo et al. 2023. Frecuencia como vehículo para distribuir volumen, sin efecto independiente grande a volumen igualado: Schoenfeld et al. 2019. Series indirectas cuentan pero menos que las directas: base para la contabilidad fraccional. Los números concretos son puntos de partida operativos, no verdades fisiológicas (ver COACH_PHILOSOPHY.md §7).
 
-## 1b. Motor de progresión
+## 1b. Motor de progresión (implementado — v2.0.0, Fase 3.2b)
 
-Lo siguiente (§2–§9) especifica el motor de entrenamiento adaptativo **completo de Fase 3** (D0–D10,
-modos, deload, mesociclos). La **Fase 2B implementa un subconjunto honesto y solo-sugerencia** de la
-cola de double progression, sin persistir ni modificar el programa. Ver `docs/PHASE_2B_PLAN.md`.
+`src/core/training/progression.ts`. Puro, determinista y **solo-sugerencia**: nunca modifica el
+programa, ni el volumen, ni recomienda deload. Umbrales en `PROGRESSION` (`training-config.ts`).
+Diseño y justificación completos en `docs/TRAINING_ENGINE_FINAL_AUDIT.md`.
 
-**Implementado en 2B** (`src/core/training/progression.ts`, puro y determinista, sugerencia efímera):
-`INCREASE_LOAD` (≈D6, subir un `loadStepKg` al completar el tope del rango con RIR ≥ objetivo),
-`ADD_REP` (≈D7, dentro del rango), `HOLD` (≈D9/D10 + fallo/cerca del fallo/sesión inutilizable),
-`START` (primera vez: no inventa peso). Reglas transparentes, ancladas a `exerciseVariantId`,
-prescripción del snapshot vigente, filtrando WARMUP y sesiones no válidas, con RIR imputado a objetivo
-cuando falta y confianza en 3 niveles (nunca porcentajes). El historial por ejercicio (mejor set,
-e1RM~, tendencia) se calcula on-demand en `src/core/training/history.ts`.
+**Filosofía**: double progression (primero repeticiones dentro del rango, después carga), decidida
+sobre **tendencia** y no sobre una sesión aislada. Una mala sesión no baja la carga; dos
+exposiciones comparables sí. Nunca exige un PR.
 
-**Reservado a F3** (NO en 2B): D0 completo (sueño/energía/duración/eventos), D1 CALIBRACION,
-D2 sustituir por dolor, D4/D5 **bajar carga**/estancamiento por regresión, D6a rango extendido,
-modos NORMAL/CALIBRACION/RECONSTRUCCION, deload y mesociclos. **2B nunca baja el peso.**
+**Entrada**: prescripción del snapshot vigente + **las últimas `HISTORY_WINDOW` (6) exposiciones**
+válidas de la variante (series WORKING completadas de sesiones COMPLETED), de la más antigua a la
+más reciente.
+
+**Banda de RIR**: un esfuerzo es COMPATIBLE si `rir ≥ targetRir − RIR_BAND` (1), y claramente MÁS
+DURO si `rir < targetRir − RIR_BAND` o `rir = 0` con objetivo ≥ 1. Motivo: el error típico de
+estimación del RIR es ~1 repetición (Halperin 2022), así que exigir igualdad estricta decide dentro
+del ruido. Se conserva la distinción: `8/8/8 @0` **no** recibe el mismo trato que `8/8/8 @2`.
+
+**RIR ausente (`null`)**: NUNCA se imputa al objetivo ni cuenta como evidencia positiva. No veta la
+evidencia de repeticiones, pero degrada la confianza y bloquea el salto doble.
+
+**Rango cerrado** = `n−1` series en `repRangeMax` y ninguna por debajo de `repRangeMax − 1`
+(3 series: `8/8/8` y `8/8/7` sí; `8/8/6` y `8/7/7` no).
+
+**Escalera de decisión** (la primera regla que aplica gana):
+
+| #   | Condición                                                                                          | Acción · `reasonCode`                                                                               |
+| --- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 0   | Sin exposiciones                                                                                   | `START` · `NO_HISTORY` (no inventa peso)                                                            |
+| 1   | `n < ceil(plannedSets × 0,5)`                                                                      | `HOLD` · `SESSION_INCOMPLETE`                                                                       |
+| 2   | 2 exposiciones con mediana de reps `< repMin`, pesos no decrecientes y sin pararse lejos del fallo | `DECREASE_LOAD` · `REPEATED_UNDERPERFORMANCE` (−1 incremento, anclado al peso MÁS BAJO de la racha) |
+| 3a  | Rango cerrado con esfuerzo mayor del prescrito, 1ª vez                                             | `HOLD` · `CLOSED_RANGE_AT_FAILURE`                                                                  |
+| 3b  | Rango cerrado y `loadStepKg = 0`                                                                   | `ADD_REP` · `NO_LOAD_STEP` / `HOLD` · `NO_LOAD_STEP_CAPPED`                                         |
+| 3c  | Rango cerrado y el salto cabe en el rango                                                          | `INCREASE_LOAD` · `RANGE_CLOSED` / `RANGE_CLOSED_AFTER_FAILURE` / `LOAD_CLEARLY_TOO_LIGHT`          |
+| 3d  | Rango cerrado y el salto NO cabe                                                                   | `ADD_REP` · `EXTEND_RANGE` (o `INCREASE_LOAD` · `STEP_TOO_BIG_ACCEPTED`)                            |
+| 4   | Mediana de reps `< repMin` (1ª vez)                                                                | `HOLD` · `ONE_OFF_UNDERPERFORMANCE`                                                                 |
+| 5   | Fallo o casi sin cerrar el rango                                                                   | `HOLD` · `NEAR_FAILURE_HOLD`                                                                        |
+| 6   | Alguna serie bajo el techo                                                                         | `ADD_REP` · `ADD_REP` (sube la **serie más floja**)                                                 |
+| 7   | Resto                                                                                              | `HOLD` · `HOLD_DEFAULT`                                                                             |
+
+**Tamaño del salto**: normalmente **un** incremento del material. **Dos** solo si la mediana supera
+el techo del rango en ≥3 reps, con esfuerzo compatible y RIR registrado, y sin pasar del 10 % de la
+carga. **Nunca** un salto grande para igualar el e1RM matemáticamente.
+
+**Objetivo de reps tras subir**: `floor(equivalentReps(pesoRef, medianaReps, pesoNuevo))`, acotado
+al rango — Epley usado como modelo **relativo intra-variante**, jamás como afirmación de 1RM. Si ese
+valor queda por debajo de `repMin`, el incremento mínimo del material no cabe en el rango y se
+**extiende el techo** (hasta `repMax + 5`) hasta que quepa.
+
+**Salida**: `action`, `reasonCode`, `suggestedWeightKg`, `suggestedReps`, **`setTargets`** (objetivo
+por serie, longitud `plannedSets`), `confidence` (3 niveles), `explanation` con los números, y
+**`signals`** informativas.
+
+**`PLATEAU_SIGNAL`**: 3 exposiciones al mismo peso sin batir el mejor total de repeticiones. Es
+**solo informativa** — viaja en `signals`, nunca cambia la acción y nunca dispara volumen, deload,
+cambio de ejercicio ni de mesociclo. Es input para F3.3/F3.4 y Coach AI.
+
+**Confianza**: `HIGH` = ≥3 exposiciones válidas + RIR completo + sesión completa · `MEDIUM` = ≥2
+exposiciones o datos parciales · `LOW` = 1 exposición, sesión incompleta o **ningún RIR registrado**.
+
+**Fuera de alcance del motor (F3.3/F3.4)**: fatiga sistémica, deload, mesociclos, `ADD_SET`/
+`REMOVE_SET`, sustitución por dolor, y la regla de técnica (hoy `technique` no se captura, así que
+ninguna regla depende de ella).
 
 ## 2. Progressive overload — double progression (F3)
 

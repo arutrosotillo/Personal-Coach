@@ -32,16 +32,14 @@ export function buildSuggestions(
         loadStepKg: ex.loadStepKg,
         plannedSets: ex.plannedSets,
       },
-      lastSession: ex.lastTime
-        ? {
-            sets: ex.lastTime.sets.map((s) => ({
-              weightKg: s.weightKg,
-              reps: s.reps,
-              rir: s.rir,
-            })),
-            comparableSessions: ex.lastTime.comparableSessions,
-          }
-        : null,
+      history: (ex.lastTime?.exposures ?? []).map((e) => ({
+        localDate: e.localDate,
+        sets: e.sets.map((s) => ({
+          weightKg: s.weightKg,
+          reps: s.reps,
+          rir: s.rir,
+        })),
+      })),
     });
   }
   return out;

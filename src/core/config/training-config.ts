@@ -144,17 +144,60 @@ export const TARGET_RIR = {
 } as const;
 
 /**
- * Umbrales del motor de sugerencia de progresión de Fase 2B (double progression
- * solo-sugerencia; ver docs/PHASE_2B_PLAN.md y TRAINING_ENGINE.md §1b). Nunca
- * hardcodear en la lógica: la fuente de verdad está aquí.
+ * Umbrales del motor de progresión (`src/core/training/progression.ts`, v2 —
+ * Fase 3.2b). Fuente de verdad única: nunca hardcodear estos números en la
+ * lógica. Justificación de cada uno en docs/TRAINING_ENGINE_FINAL_AUDIT.md.
  */
-export const PROGRESSION_2B = {
-  /** La última sesión se considera inutilizable si registró menos de esta
-   * fracción de las series previstas (datos parciales → no ajustar). */
-  UNUSABLE_SESSION_FRACTION: 0.7,
-  /** rirEff ≤ targetRir − este margen = fallo o casi (consolidar, no subir). */
-  NEAR_FAILURE_MARGIN: 2,
+export const PROGRESSION = {
+  /**
+   * Banda de tolerancia del RIR. Un esfuerzo es COMPATIBLE con la prescripción
+   * si `rir >= targetRir - RIR_BAND`. Motivo: el error típico de estimación del
+   * RIR es de ~1 repetición (Halperin 2022, meta-análisis), así que exigir
+   * `rir >= targetRir` con igualdad estricta decide dentro del ruido del dato.
+   * [HEURÍSTICA derivada de EVIDENCIA FUERTE]
+   */
+  RIR_BAND: 1,
+  /** Fracción mínima de las series previstas para que la sesión sea utilizable. */
+  MIN_USABLE_SET_FRACTION: 0.5,
+  /** Nº de exposiciones recientes de la variante que mira el motor. */
+  HISTORY_WINDOW: 6,
+  /**
+   * Exposiciones consecutivas al MISMO peso por debajo del mínimo del rango
+   * (con esfuerzo alto) antes de bajar la carga. Nunca por una sola sesión.
+   */
+  DECREASE_AFTER_EXPOSURES: 2,
+  /** Bajada de carga, en incrementos del material. Conservador: uno. */
+  DECREASE_STEPS: 1,
+  /**
+   * Exposiciones consecutivas al mismo peso cerrando el rango con esfuerzo
+   * mayor del prescrito tras las que se sube igualmente (evita el estado
+   * absorbente de quedarse indefinidamente en el mismo peso).
+   */
+  FAILURE_PATIENCE_EXPOSURES: 2,
+  /**
+   * Exposiciones al mismo peso sin batir el mejor total de reps para emitir la
+   * señal informativa de meseta. La señal NO cambia la acción.
+   */
+  PLATEAU_EXPOSURES: 3,
+  /**
+   * Reps por encima del techo del rango a partir de las cuales la carga se
+   * considera claramente corta y se permite un salto doble. [HEURÍSTICA]
+   */
+  DOUBLE_STEP_OVERSHOOT_REPS: 3,
+  /** Nunca más de este nº de incrementos en una sola subida. */
+  MAX_STEPS_PER_INCREASE: 2,
+  /**
+   * Salto relativo máximo por subida respecto al peso de trabajo. Solo recorta
+   * el salto DOBLE: un único incremento del material siempre está permitido
+   * (si no cabe en el rango, se extiende el rango en vez de subir). [HEURÍSTICA]
+   */
+  MAX_RELATIVE_STEP: 0.1,
+  /** Repeticiones que se pueden añadir por encima del techo del rango. */
+  RANGE_EXTENSION_CAP: 5,
 } as const;
+
+/** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
+export const PROGRESSION_ENGINE_VERSION = "2.0.0";
 
 /** Patrones de movimiento considerados "compuestos" (multiarticulares). */
 export const COMPOUND_PATTERNS: ReadonlySet<string> = new Set([
