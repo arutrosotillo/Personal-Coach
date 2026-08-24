@@ -3,10 +3,15 @@
 import { revalidatePath } from "next/cache";
 
 import {
+  manualProgramSchema,
+  type ManualProgramInput,
+} from "@/core/schemas/manual-program";
+import {
   templateExerciseEditSchema,
   type TemplateExerciseEdit,
 } from "@/core/schemas/template-edit";
 import { requireProfileId } from "@/server/repositories/profile.repo";
+import { createManualProgram } from "@/server/services/manual-program.service";
 import {
   addTemplateExercise,
   changeTemplateVariant,
@@ -24,6 +29,33 @@ export interface ActionResult {
 function fail(context: string, error: unknown): ActionResult {
   console.error(context, error);
   return { ok: false, error: "No se pudo guardar el cambio del programa." };
+}
+
+/** Crea un programa manual (archiva el activo previo). Valida Zod → service. */
+export async function createManualProgramAction(
+  input: ManualProgramInput,
+): Promise<ActionResult & { programId?: string }> {
+  const parsed = manualProgramSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Programa inválido.",
+    };
+  }
+  try {
+    const profileId = await requireProfileId();
+    const { programId } = await createManualProgram(profileId, parsed.data);
+    revalidatePath("/program");
+    revalidatePath("/train");
+    return { ok: true, programId };
+  } catch (error) {
+    console.error("createManualProgramAction", error);
+    const message =
+      error instanceof Error && error.message.includes("disponible")
+        ? error.message
+        : "No se pudo crear el programa.";
+    return { ok: false, error: message };
+  }
 }
 
 export async function editTemplateExerciseAction(
