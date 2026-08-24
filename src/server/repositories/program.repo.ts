@@ -11,6 +11,44 @@ export interface ProgramRationale {
   output: ProgramRationaleOutput;
 }
 
+export interface ArchivedProgram {
+  id: string;
+  name: string;
+  daysPerWeek: number;
+  createdAt: Date;
+  isGenerated: boolean;
+}
+
+/**
+ * Programas archivados del perfil (isActive:false, no borrados), del más reciente
+ * al más antiguo, con el origen derivado (¿existe su INITIAL_PROGRAM?) en una sola
+ * query en lote — no N+1.
+ */
+export async function listArchivedPrograms(
+  profileId: string,
+): Promise<ArchivedProgram[]> {
+  const programs = await prisma.trainingProgram.findMany({
+    where: { profileId, isActive: false, deletedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, daysPerWeek: true, createdAt: true },
+  });
+  if (programs.length === 0) return [];
+
+  const generated = await prisma.recommendation.findMany({
+    where: {
+      type: "INITIAL_PROGRAM",
+      scopeId: { in: programs.map((p) => p.id) },
+    },
+    select: { scopeId: true },
+  });
+  const generatedIds = new Set(generated.map((r) => r.scopeId));
+
+  return programs.map((p) => ({
+    ...p,
+    isGenerated: generatedIds.has(p.id),
+  }));
+}
+
 /**
  * Recupera la decisión del generador (versión, ruleId, explicación y datos
  * derivados) que produjo un programa, para el bloque "Por qué este programa".

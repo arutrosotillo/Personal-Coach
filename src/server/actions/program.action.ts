@@ -17,6 +17,7 @@ import {
   addTemplateExercise,
   changeTemplateVariant,
   editTemplateExercise,
+  reactivateProgram,
   removeDay,
   removeTemplateExercise,
   renameDay,
@@ -195,6 +196,22 @@ export async function reorderDayAction(
     return { ok: true };
   } catch (error) {
     return fail("reorderDayAction", error);
+  }
+}
+
+export async function reactivateProgramAction(
+  programId: string,
+): Promise<ActionResult> {
+  try {
+    const profileId = await requireProfileId();
+    await reactivateProgram(profileId, programId);
+    revalidatePath("/program");
+    revalidatePath("/program/history");
+    revalidatePath("/train");
+    return { ok: true };
+  } catch (error) {
+    console.error("reactivateProgramAction", error);
+    return { ok: false, error: "No se pudo reactivar el programa." };
   }
 }
 

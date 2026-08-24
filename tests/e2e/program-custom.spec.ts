@@ -76,4 +76,22 @@ test("crear un programa manual y entrenar con él (Casos A y C)", async ({
   // Aparece en el historial.
   await page.goto("/train/history");
   await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
+
+  // ── Reactivar un programa archivado (el generado del onboarding) ──────────
+  await page.goto("/program/history");
+  await expect(
+    page.getByRole("heading", { name: "Programas anteriores" }),
+  ).toBeVisible();
+  // El generado del onboarding está archivado y marcado como "Generado".
+  await expect(page.getByText(/Generado/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Reactivar" }).first().click();
+  await expect(page.getByText(/Tu programa actual se archivará/)).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar reactivar" }).click();
+
+  // Vuelve a /program con el generado activo (ofrece "Restaurar plan inicial").
+  await expect(page).toHaveURL(/\/program$/, { timeout: 15_000 });
+  await page.getByRole("button", { name: "Editar" }).click();
+  await expect(
+    page.getByRole("button", { name: "Restaurar plan inicial" }),
+  ).toBeVisible();
 });

@@ -272,6 +272,34 @@ export async function restoreInitialProgram(
   }
 }
 
+/**
+ * Reactiva un programa ARCHIVADO del perfil: archiva el activo actual y activa
+ * el elegido, en una transacción. NO crea un programa nuevo, NO regenera
+ * plantillas, NO toca sesiones/snapshots/SetLogs (el modelo no tiene @@unique
+ * sobre isActive; la unicidad del activo la garantiza esta operación). El
+ * historial por variante sigue funcionando (scoped a perfil).
+ */
+export async function reactivateProgram(profileId: string, programId: string) {
+  const target = await prisma.trainingProgram.findFirst({
+    where: { id: programId, profileId, deletedAt: null },
+  });
+  if (!target) {
+    throw new Error("El programa no existe o no es tuyo.");
+  }
+  if (target.isActive) return; // ya activo: no-op
+
+  await prisma.$transaction([
+    prisma.trainingProgram.updateMany({
+      where: { profileId, isActive: true },
+      data: { isActive: false },
+    }),
+    prisma.trainingProgram.update({
+      where: { id: target.id },
+      data: { isActive: true },
+    }),
+  ]);
+}
+
 // ============ OPERACIONES DE DÍA (Fase 3.1) ============
 // Un "día" = un WorkoutTemplate. Funcionan sobre el programa ACTIVO del perfil
 // (manual o generado). @@unique([mesocycleId, ordinal]) obliga a la misma danza

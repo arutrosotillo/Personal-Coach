@@ -85,15 +85,24 @@ export default async function ProgramPage() {
         </Card>
       ) : null}
 
-      <div className="mb-4">
+      <div className="mb-4 flex gap-2">
         <Button
           nativeButton={false}
           render={<Link href="/program/new" />}
           variant="secondary"
           size="sm"
-          className="min-h-11 w-full"
+          className="min-h-11 flex-1"
         >
           Crear un programa nuevo
+        </Button>
+        <Button
+          nativeButton={false}
+          render={<Link href="/program/history" />}
+          variant="secondary"
+          size="sm"
+          className="min-h-11 flex-1"
+        >
+          Programas anteriores
         </Button>
       </div>
 
