@@ -34,7 +34,13 @@ export interface SubstitutionExercise {
 interface RowState {
   weight: string;
   reps: number;
-  rir: number;
+  /**
+   * RIR REALMENTE registrado por el usuario. `null` = "no lo sé" / sin
+   * registrar. NUNCA se prerrellena con `targetRir`: el objetivo es una
+   * prescripción, no un dato reportado, y confundirlos contamina el historial
+   * y sesga al motor de progresión (docs/TRAINING_ENGINE_FINAL_AUDIT.md §2.6).
+   */
+  rir: number | null;
   done: boolean;
 }
 
@@ -58,7 +64,7 @@ function initRows(session: ExecutionSession): RowsMap {
           logged?.weightKg?.toString() ??
           (last ? last.weightKg.toString() : ""),
         reps: logged?.reps ?? last?.reps ?? ex.repRangeMin,
-        rir: logged?.rir ?? last?.rir ?? ex.targetRir,
+        rir: logged?.rir ?? null,
         done: !!logged,
       });
     }
@@ -109,16 +115,13 @@ export function SessionRunner({
     });
   }
 
-  function completeSet(idx: number) {
-    const row = exRows[idx];
+  /** Guarda (upsert idempotente) el estado actual de una serie. */
+  function persistSet(idx: number, row: RowState, markDone: boolean) {
     const weightKg = row.weight === "" ? 0 : Number(row.weight);
     if (Number.isNaN(weightKg)) {
       toast.error("Peso no válido");
-      return;
+      return false;
     }
-    // Optimista: marcar hecho y arrancar el descanso al instante.
-    updateRow(ex.id, idx, { done: true });
-    setRestEndsAt(nowMs() + ex.restSeconds * 1000);
     startTransition(async () => {
       const res = await logSetAction({
         workoutExerciseId: ex.id,
@@ -128,10 +131,30 @@ export function SessionRunner({
         rir: row.rir,
       });
       if (!res.ok) {
-        updateRow(ex.id, idx, { done: false });
+        if (markDone) updateRow(ex.id, idx, { done: false });
         toast.error(res.error ?? "No se pudo guardar");
       }
     });
+    return true;
+  }
+
+  function completeSet(idx: number) {
+    const row = exRows[idx];
+    // Optimista: marcar hecho y arrancar el descanso al instante.
+    if (!persistSet(idx, row, true)) return;
+    updateRow(ex.id, idx, { done: true });
+    setRestEndsAt(nowMs() + ex.restSeconds * 1000);
+  }
+
+  /**
+   * Edita una serie. Si ya estaba completada, RE-GUARDA: corregir el RIR (o el
+   * peso/reps) después de darle a "Completar" tiene que quedar registrado, no
+   * perderse en silencio.
+   */
+  function editRow(idx: number, patch: Partial<RowState>) {
+    const current = exRows[idx];
+    updateRow(ex.id, idx, patch);
+    if (current?.done) persistSet(idx, { ...current, ...patch }, false);
   }
 
   function addSet() {
@@ -196,14 +219,16 @@ export function SessionRunner({
   function repeatRow(idx: number) {
     const lastSet = ex.lastTime?.sets[idx];
     const prev = idx > 0 ? (rows[ex.id] ?? [])[idx - 1] : undefined;
+    // Copia el PLAN (peso y repeticiones), nunca el RIR: el esfuerzo es un
+    // dato de HOY y se registra a mano (o se deja sin registrar).
     const source = lastSet
       ? {
           weight: lastSet.weightKg.toString(),
           reps: lastSet.reps,
-          rir: lastSet.rir ?? ex.targetRir,
+          rir: null,
         }
       : prev
-        ? { weight: prev.weight, reps: prev.reps, rir: prev.rir }
+        ? { weight: prev.weight, reps: prev.reps, rir: null }
         : null;
     if (!source) return;
     updateRow(ex.id, idx, source);
@@ -299,8 +324,8 @@ export function SessionRunner({
             <div className="min-w-0">
               <h1 className="text-xl font-semibold">{ex.exerciseName}</h1>
               <p className="text-muted-foreground text-sm">
-                {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps · RIR{" "}
-                {ex.targetRir}
+                {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps ·
+                objetivo {ex.targetRir} RIR
               </p>
               <button
                 type="button"
@@ -341,8 +366,9 @@ export function SessionRunner({
               index={idx}
               row={row}
               loadStepKg={ex.loadStepKg}
+              targetRir={ex.targetRir}
               lastSet={ex.lastTime?.sets[idx] ?? null}
-              onChange={(patch) => updateRow(ex.id, idx, patch)}
+              onChange={(patch) => editRow(idx, patch)}
               onComplete={() => completeSet(idx)}
               onRepeat={() => repeatRow(idx)}
               disabled={pending}
@@ -634,6 +660,7 @@ function SetRow({
   index,
   row,
   loadStepKg,
+  targetRir,
   lastSet,
   onChange,
   onComplete,
@@ -643,6 +670,7 @@ function SetRow({
   index: number;
   row: RowState;
   loadStepKg: number;
+  targetRir: number;
   lastSet: { weightKg: number; reps: number; rir: number | null } | null;
   onChange: (patch: Partial<RowState>) => void;
   onComplete: () => void;
@@ -711,18 +739,19 @@ function SetRow({
           }
         />
       </div>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground w-6 shrink-0 text-xs">RIR</span>
         <div
-          className="flex gap-1"
+          className="flex flex-wrap gap-1"
           role="group"
-          aria-label={`RIR serie ${index + 1}`}
+          aria-label={`RIR de la serie ${index + 1} (objetivo ${targetRir})`}
         >
           {[0, 1, 2, 3, 4].map((r) => (
             <button
               key={r}
               type="button"
               aria-pressed={row.rir === r}
+              aria-label={`RIR ${r === 4 ? "4 o más" : r}`}
               onClick={() => onChange({ rir: r })}
               className={cn(
                 "tnum min-h-9 min-w-9 rounded-md border text-sm",
@@ -734,6 +763,20 @@ function SetRow({
               {r === 4 ? "4+" : r}
             </button>
           ))}
+          <button
+            type="button"
+            aria-pressed={row.rir === null}
+            aria-label="RIR: no lo sé"
+            onClick={() => onChange({ rir: null })}
+            className={cn(
+              "min-h-9 rounded-md border px-2 text-xs",
+              row.rir === null
+                ? "border-primary bg-primary/15 text-foreground"
+                : "border-border text-muted-foreground",
+            )}
+          >
+            No lo sé
+          </button>
         </div>
         <Button
           type="button"

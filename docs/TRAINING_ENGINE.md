@@ -101,6 +101,30 @@ exposiciones o datos parciales · `LOW` = 1 exposición, sesión incompleta o **
 `REMOVE_SET`, sustitución por dolor, y la regla de técnica (hoy `technique` no se captura, así que
 ninguna regla depende de ella).
 
+## 1c. Calidad del dato de RIR (Fase 3.2c)
+
+**Objetivo ≠ registrado.** `WorkoutExercise.targetRir` es la prescripción; `SetLog.rir` es lo que el
+usuario reportó. La pantalla de ejecución muestra el objetivo (`objetivo N RIR`) y deja el valor
+registrado **sin rellenar**: los chips 0–4 conviven con **"No lo sé"**, que es el estado por defecto
+y se persiste como `null`. "Repetir" copia el PLAN (peso y repeticiones), **nunca** el esfuerzo.
+Corregir el RIR de una serie ya completada vuelve a guardarla (upsert idempotente).
+
+**`rir = null` en el motor**: no se imputa al objetivo ni cuenta como evidencia positiva. No veta la
+evidencia de repeticiones (progresar por reps sigue siendo válido), pero degrada la confianza a
+`LOW` cuando falta en toda la sesión y **bloquea el salto doble de carga**. Un RIR de fallo
+REGISTRADO manda sobre las series sin registrar.
+
+**Límite histórico**: antes de esta fase la UI prerrellenaba el campo con `targetRir`. Las filas
+anteriores **no permiten distinguir un valor elegido de un valor por defecto** y no se corrigen
+retrospectivamente. **Los datos de RIR fiables empiezan en la Fase 3.2c** (ver DATA_MODEL.md).
+
+**Técnica**: `SetLog.technique` no se captura en ninguna pantalla, así que **ninguna regla del motor
+depende de ella** (se descarta la regla D3 de §2 hasta que exista la captura).
+
+**Fuera de alcance**: `fatigue`, `jointPain`, `motivation`, `pump` y `perceivedPerformance` se
+guardan al finalizar la sesión pero **no alimentan ninguna decisión automática**. Quedan preparados
+para F3.3.
+
 ## 2. Progressive overload — double progression (F3)
 
 ### Inputs

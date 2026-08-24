@@ -40,6 +40,11 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 
 - `TrainingProgram` → `Mesocycle` (estado, semanas, semana actual) → `WorkoutTemplate` (día) → `TemplateExercise` (variante, series base, rango de reps, RIR objetivo, descanso).
 - `WorkoutSession` / `WorkoutExercise` / `SetLog` — definidos en el schema desde F1 (estables y centrales), operativos en F2. `SetLog` denormaliza `exerciseVariantId` + `localDate` con índice compuesto: historial y gráfica e1RM en una query.
+
+  **`SetLog.rir` — semántica y límite histórico (Fase 3.2c).** `rir` es el esfuerzo que **el usuario reportó**, y es distinto de `WorkoutExercise.targetRir`, que es la **prescripción**. `null` significa **"no lo sé" / sin registrar**, y NUNCA se rellena solo: ni la UI lo prerrellena con el objetivo, ni el motor lo imputa. **Límite conocido:** antes de la Fase 3.2c la pantalla de ejecución prerrellenaba el campo con `targetRir`, de modo que en las filas anteriores a ese cambio **no se puede distinguir un RIR elegido de un valor por defecto**. No se corrigen retrospectivamente (no se inventa información): las filas antiguas se conservan tal cual y se consideran de menor calidad. **Los datos de RIR fiables empiezan en la Fase 3.2c.**
+
+  **`SetLog.technique`** existe en el schema pero **no se captura en ninguna pantalla**, así que **ningún motor tiene reglas que dependan de ella** (decisión explícita de F3.2c: no queremos una regla "científica" imposible de disparar). Si algún día se captura, la regla de técnica se añade entonces.
+
 - `RecoveryCheckIn` — feedback post-sesión por grupo muscular (escala 1–5), operativo en F2/F3.
 
 **Nutrición**
