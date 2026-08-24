@@ -6,10 +6,14 @@ import type { SubstitutionExercise } from "@/components/training/session-runner"
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  addDayAction,
   addTemplateExerciseAction,
   changeTemplateVariantAction,
   editTemplateExerciseAction,
+  removeDayAction,
   removeTemplateExerciseAction,
+  renameDayAction,
+  reorderDayAction,
   reorderTemplateExerciseAction,
   restoreInitialProgramAction,
 } from "@/server/actions/program.action";
@@ -86,12 +90,23 @@ export function ProgramEditor({
         </p>
       ) : null}
 
-      {templates.map((template) => (
+      {templates.map((template, ti) => (
         <Card key={template.id}>
           <CardHeader>
-            <CardTitle className="text-base">
-              Día {template.ordinal} — {template.name}
-            </CardTitle>
+            {editing ? (
+              <DayHeader
+                template={template}
+                isFirst={ti === 0}
+                isLast={ti === templates.length - 1}
+                canRemove={templates.length > 1}
+                pending={pending}
+                run={run}
+              />
+            ) : (
+              <CardTitle className="text-base">
+                Día {template.ordinal} — {template.name}
+              </CardTitle>
+            )}
           </CardHeader>
           <CardContent>
             <ul className="divide-border divide-y">
@@ -124,6 +139,14 @@ export function ProgramEditor({
           </CardContent>
         </Card>
       ))}
+
+      {editing ? (
+        <AddDay
+          pending={pending}
+          substitutionOptions={substitutionOptions}
+          run={run}
+        />
+      ) : null}
 
       {editing && canRestore ? (
         <div className="border-border rounded-lg border border-dashed p-4">
@@ -175,6 +198,144 @@ export function ProgramEditor({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function DayHeader({
+  template,
+  isFirst,
+  isLast,
+  canRemove,
+  pending,
+  run,
+}: {
+  template: EditorTemplate;
+  isFirst: boolean;
+  isLast: boolean;
+  canRemove: boolean;
+  pending: boolean;
+  run: (a: () => Promise<{ ok: boolean; error?: string }>) => void;
+}) {
+  const [name, setName] = useState(template.name);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const dirty = name.trim() !== template.name && name.trim().length > 0;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground shrink-0 text-sm">
+          Día {template.ordinal}
+        </span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => {
+            if (dirty) run(() => renameDayAction(template.id, name.trim()));
+          }}
+          aria-label={`Nombre del día ${template.ordinal}`}
+          className="border-border bg-background min-h-9 min-w-0 flex-1 rounded-md border px-2 text-sm"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-label="Subir día"
+          className="min-h-9 min-w-9 px-1"
+          disabled={pending || isFirst}
+          onClick={() => run(() => reorderDayAction(template.id, "up"))}
+        >
+          ↑
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          aria-label="Bajar día"
+          className="min-h-9 min-w-9 px-1"
+          disabled={pending || isLast}
+          onClick={() => run(() => reorderDayAction(template.id, "down"))}
+        >
+          ↓
+        </Button>
+      </div>
+      {canRemove ? (
+        confirmRemove ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="min-h-9"
+              disabled={pending}
+              onClick={() => run(() => removeDayAction(template.id))}
+            >
+              Confirmar quitar día
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="min-h-9"
+              onClick={() => setConfirmRemove(false)}
+            >
+              Cancelar
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-destructive min-h-9"
+            disabled={pending}
+            onClick={() => setConfirmRemove(true)}
+          >
+            Quitar día
+          </Button>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function AddDay({
+  pending,
+  substitutionOptions,
+  run,
+}: {
+  pending: boolean;
+  substitutionOptions: SubstitutionExercise[];
+  run: (a: () => Promise<{ ok: boolean; error?: string }>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      {open ? (
+        <div className="border-border rounded-lg border p-2">
+          <p className="text-muted-foreground mb-2 text-sm">
+            Elige el primer ejercicio del nuevo día:
+          </p>
+          <VariantPicker
+            substitutionOptions={substitutionOptions}
+            disabled={pending}
+            onPick={(variantId) => {
+              setOpen(false);
+              run(() => addDayAction("Día nuevo", variantId));
+            }}
+          />
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="min-h-11 w-full"
+          disabled={pending}
+          onClick={() => setOpen(true)}
+        >
+          + Añadir día
+        </Button>
+      )}
     </div>
   );
 }
