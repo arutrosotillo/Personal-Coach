@@ -28,14 +28,33 @@ export default async function ProgramPage() {
     return (
       <AppShell>
         <div className="pt-16 text-center">
-          <p className="text-muted-foreground">Todavía no hay programa.</p>
-          <Button
-            nativeButton={false}
-            render={<Link href="/onboarding" />}
-            className="mt-4 min-h-11"
-          >
-            Crear mi plan
-          </Button>
+          <p className="text-muted-foreground mb-1 text-lg font-medium">
+            ¿Cómo quieres empezar?
+          </p>
+          <p className="text-muted-foreground mb-6 text-sm">
+            {overview
+              ? "Aún no tienes un programa activo."
+              : "Genera un plan a tu medida o crea el tuyo desde cero."}
+          </p>
+          <div className="mx-auto flex max-w-xs flex-col gap-2">
+            <Button
+              nativeButton={false}
+              render={<Link href="/onboarding" />}
+              className="min-h-11"
+            >
+              Generar mi plan
+            </Button>
+            {overview ? (
+              <Button
+                nativeButton={false}
+                render={<Link href="/program/new" />}
+                variant="secondary"
+                className="min-h-11"
+              >
+                Crear mi programa
+              </Button>
+            ) : null}
+          </div>
         </div>
       </AppShell>
     );
@@ -65,6 +84,18 @@ export default async function ProgramPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <div className="mb-4">
+        <Button
+          nativeButton={false}
+          render={<Link href="/program/new" />}
+          variant="secondary"
+          size="sm"
+          className="min-h-11 w-full"
+        >
+          Crear un programa nuevo
+        </Button>
+      </div>
 
       <ProgramEditor
         templates={mesocycle.templates.map((template) => ({
