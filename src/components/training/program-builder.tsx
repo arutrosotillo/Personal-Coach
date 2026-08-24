@@ -174,7 +174,7 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg px-4 pt-4 pb-28">
+    <div className="pt-2 pb-28">
       <label className="mb-3 block">
         <span className="text-muted-foreground mb-1 block text-xs">
           Nombre del programa
