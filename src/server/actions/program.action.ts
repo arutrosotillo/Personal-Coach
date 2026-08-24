@@ -13,10 +13,14 @@ import {
 import { requireProfileId } from "@/server/repositories/profile.repo";
 import { createManualProgram } from "@/server/services/manual-program.service";
 import {
+  addDay,
   addTemplateExercise,
   changeTemplateVariant,
   editTemplateExercise,
+  removeDay,
   removeTemplateExercise,
+  renameDay,
+  reorderDay,
   reorderTemplateExercise,
   restoreInitialProgram,
 } from "@/server/services/program-edit.service";
@@ -131,6 +135,66 @@ export async function addTemplateExerciseAction(
     return { ok: true };
   } catch (error) {
     return fail("addTemplateExerciseAction", error);
+  }
+}
+
+export async function addDayAction(
+  name: string,
+  firstVariantId: string,
+): Promise<ActionResult> {
+  try {
+    const profileId = await requireProfileId();
+    await addDay(profileId, name, firstVariantId);
+    revalidatePath("/program");
+    return { ok: true };
+  } catch (error) {
+    return fail("addDayAction", error);
+  }
+}
+
+export async function renameDayAction(
+  templateId: string,
+  name: string,
+): Promise<ActionResult> {
+  try {
+    const profileId = await requireProfileId();
+    await renameDay(profileId, templateId, name);
+    revalidatePath("/program");
+    return { ok: true };
+  } catch (error) {
+    return fail("renameDayAction", error);
+  }
+}
+
+export async function removeDayAction(
+  templateId: string,
+): Promise<ActionResult> {
+  try {
+    const profileId = await requireProfileId();
+    await removeDay(profileId, templateId);
+    revalidatePath("/program");
+    return { ok: true };
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.includes("al menos un día")
+        ? error.message
+        : "No se pudo eliminar el día.";
+    console.error("removeDayAction", error);
+    return { ok: false, error: message };
+  }
+}
+
+export async function reorderDayAction(
+  templateId: string,
+  direction: "up" | "down",
+): Promise<ActionResult> {
+  try {
+    const profileId = await requireProfileId();
+    await reorderDay(profileId, templateId, direction);
+    revalidatePath("/program");
+    return { ok: true };
+  } catch (error) {
+    return fail("reorderDayAction", error);
   }
 }
 

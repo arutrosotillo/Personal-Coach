@@ -249,3 +249,182 @@ export async function restoreInitialProgram(
     return d;
   }
 }
+
+// ============ OPERACIONES DE DÍA (Fase 3.1) ============
+// Un "día" = un WorkoutTemplate. Funcionan sobre el programa ACTIVO del perfil
+// (manual o generado). @@unique([mesocycleId, ordinal]) obliga a la misma danza
+// de ordinales que la edición de ejercicios.
+
+/** Plantilla propiedad del perfil en su programa activo (no borrada). */
+async function assertTemplateOwned(profileId: string, templateId: string) {
+  return prisma.workoutTemplate.findFirstOrThrow({
+    where: {
+      id: templateId,
+      deletedAt: null,
+      mesocycle: { program: { profileId, isActive: true } },
+    },
+  });
+}
+
+/** Mesociclo activo del perfil (el primero del programa activo). */
+async function activeMesocycle(profileId: string) {
+  return prisma.mesocycle.findFirstOrThrow({
+    where: { program: { profileId, isActive: true, deletedAt: null } },
+    orderBy: { ordinal: "asc" },
+  });
+}
+
+/** Añade un día (plantilla) al final del programa activo, con un ejercicio inicial. */
+export async function addDay(
+  profileId: string,
+  name: string,
+  firstVariantId: string,
+) {
+  const mesocycle = await activeMesocycle(profileId);
+  const variant = await prisma.exerciseVariant.findFirstOrThrow({
+    where: { id: firstVariantId, deletedAt: null },
+  });
+  const max = await prisma.workoutTemplate.aggregate({
+    where: { mesocycleId: mesocycle.id, deletedAt: null },
+    _max: { ordinal: true },
+  });
+  await prisma.$transaction(async (tx) => {
+    await tx.workoutTemplate.create({
+      data: {
+        mesocycleId: mesocycle.id,
+        name: name.trim() || "Día nuevo",
+        ordinal: (max._max.ordinal ?? 0) + 1,
+        exercises: {
+          create: {
+            exerciseVariantId: variant.id,
+            ordinal: 1,
+            baseSets: 3,
+            repRangeMin: variant.repRangeMin,
+            repRangeMax: variant.repRangeMax,
+            targetRir: 2,
+            restSeconds: variant.defaultRestSeconds,
+          },
+        },
+      },
+    });
+    await syncDaysPerWeek(tx, mesocycle.id);
+  });
+}
+
+/** Renombra un día. */
+export async function renameDay(
+  profileId: string,
+  templateId: string,
+  name: string,
+) {
+  await assertTemplateOwned(profileId, templateId);
+  await prisma.workoutTemplate.update({
+    where: { id: templateId },
+    data: { name: name.trim() || "Día nuevo" },
+  });
+}
+
+/**
+ * Elimina un día. Si tiene sesiones, se soft-borra y se mueve a un ordinal
+ * negativo (el @@unique NO filtra deletedAt); si no, se borra en firme y se
+ * compactan ordinales. Rechaza borrar el ÚLTIMO día vivo (invariante ≥1 día).
+ */
+export async function removeDay(profileId: string, templateId: string) {
+  const template = await assertTemplateOwned(profileId, templateId);
+  const alive = await prisma.workoutTemplate.findMany({
+    where: { mesocycleId: template.mesocycleId, deletedAt: null },
+    orderBy: { ordinal: "asc" },
+  });
+  if (alive.length <= 1) {
+    throw new Error("Un programa necesita al menos un día.");
+  }
+  const sessionCount = await prisma.workoutSession.count({
+    where: { templateId },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    if (sessionCount > 0) {
+      // Libera su ordinal moviéndolo a negativo (único) y soft-borra.
+      const min = await tx.workoutTemplate.aggregate({
+        where: { mesocycleId: template.mesocycleId },
+        _min: { ordinal: true },
+      });
+      const parked = Math.min(-1, (min._min.ordinal ?? 0) - 1);
+      await tx.workoutTemplate.update({
+        where: { id: templateId },
+        data: { deletedAt: new Date(), ordinal: parked },
+      });
+    } else {
+      await tx.templateExercise.deleteMany({ where: { templateId } });
+      await tx.workoutTemplate.delete({ where: { id: templateId } });
+    }
+    // Compacta los vivos a 1..N.
+    const rest = await tx.workoutTemplate.findMany({
+      where: { mesocycleId: template.mesocycleId, deletedAt: null },
+      orderBy: { ordinal: "asc" },
+    });
+    // Mueve todos a un rango temporal negativo para evitar choques de @@unique.
+    for (let i = 0; i < rest.length; i++) {
+      await tx.workoutTemplate.update({
+        where: { id: rest[i].id },
+        data: { ordinal: -(1000 + i) },
+      });
+    }
+    for (let i = 0; i < rest.length; i++) {
+      await tx.workoutTemplate.update({
+        where: { id: rest[i].id },
+        data: { ordinal: i + 1 },
+      });
+    }
+    await syncDaysPerWeek(tx, template.mesocycleId);
+  });
+}
+
+/** Sube o baja un día en el orden (intercambia ordinales con temporal). */
+export async function reorderDay(
+  profileId: string,
+  templateId: string,
+  direction: "up" | "down",
+) {
+  const template = await assertTemplateOwned(profileId, templateId);
+  const siblings = await prisma.workoutTemplate.findMany({
+    where: { mesocycleId: template.mesocycleId, deletedAt: null },
+    orderBy: { ordinal: "asc" },
+  });
+  const idx = siblings.findIndex((s) => s.id === template.id);
+  const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= siblings.length) return;
+  const other = siblings[swapIdx];
+  await prisma.$transaction([
+    prisma.workoutTemplate.update({
+      where: { id: template.id },
+      data: { ordinal: -1 },
+    }),
+    prisma.workoutTemplate.update({
+      where: { id: other.id },
+      data: { ordinal: template.ordinal },
+    }),
+    prisma.workoutTemplate.update({
+      where: { id: template.id },
+      data: { ordinal: other.ordinal },
+    }),
+  ]);
+}
+
+/** Mantiene TrainingProgram.daysPerWeek = nº de plantillas vivas. */
+async function syncDaysPerWeek(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  mesocycleId: string,
+) {
+  const meso = await tx.mesocycle.findUniqueOrThrow({
+    where: { id: mesocycleId },
+    select: { programId: true },
+  });
+  const count = await tx.workoutTemplate.count({
+    where: { mesocycleId, deletedAt: null },
+  });
+  await tx.trainingProgram.update({
+    where: { id: meso.programId },
+    data: { daysPerWeek: count },
+  });
+}
