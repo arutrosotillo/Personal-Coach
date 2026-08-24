@@ -35,7 +35,9 @@ export async function submitOnboarding(
     return {
       ok: false,
       error:
-        "No se pudo crear el plan. No se ha guardado nada; inténtalo de nuevo.",
+        error instanceof Error && error.message.includes("sesión en curso")
+          ? error.message
+          : "No se pudo crear el plan. No se ha guardado nada; inténtalo de nuevo.",
     };
   }
 

@@ -75,6 +75,20 @@ export async function completeOnboarding(
     const existing = await tx.userProfile.findFirst({
       orderBy: { createdAt: "asc" },
     });
+    if (existing) {
+      const inProgress = await tx.workoutSession.findFirst({
+        where: {
+          status: "IN_PROGRESS",
+          mesocycle: { program: { profileId: existing.id } },
+        },
+        select: { id: true },
+      });
+      if (inProgress) {
+        throw new Error(
+          "Finaliza o descarta la sesión en curso antes de cambiar de programa.",
+        );
+      }
+    }
 
     const profileFields = {
       sex: data.sex,

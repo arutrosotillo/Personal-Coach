@@ -56,7 +56,9 @@ export async function createManualProgramAction(
   } catch (error) {
     console.error("createManualProgramAction", error);
     const message =
-      error instanceof Error && error.message.includes("disponible")
+      error instanceof Error &&
+      (error.message.includes("disponible") ||
+        error.message.includes("sesión en curso"))
         ? error.message
         : "No se pudo crear el programa.";
     return { ok: false, error: message };
@@ -211,7 +213,11 @@ export async function reactivateProgramAction(
     return { ok: true };
   } catch (error) {
     console.error("reactivateProgramAction", error);
-    return { ok: false, error: "No se pudo reactivar el programa." };
+    const message =
+      error instanceof Error && error.message.includes("sesión en curso")
+        ? error.message
+        : "No se pudo reactivar el programa.";
+    return { ok: false, error: message };
   }
 }
 

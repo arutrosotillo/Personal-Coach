@@ -24,6 +24,7 @@ const { isGeneratedProgram, canRestoreProgram } =
   await import("@/server/services/program-source.service");
 const { restoreInitialProgram } =
   await import("@/server/services/program-edit.service");
+const workout = await import("@/server/services/workout-session.service");
 
 let profileId: string;
 let generatedProgramId: string;
@@ -240,5 +241,37 @@ describe("createManualProgram", () => {
       where: { profileId, isActive: true },
     });
     expect(activeAfter.id).toBe(activeBefore.id);
+  });
+
+  it("no cambia de programa mientras hay una sesión en curso", async () => {
+    const activeBefore = await prisma.trainingProgram.findFirstOrThrow({
+      where: { profileId, isActive: true },
+      include: { mesocycles: { include: { templates: true } } },
+    });
+    const started = await workout.startOrResumeSession(
+      profileId,
+      activeBefore.mesocycles[0].templates[0].id,
+    );
+    const programCount = await prisma.trainingProgram.count({
+      where: { profileId },
+    });
+
+    await expect(
+      createManualProgram(profileId, {
+        ...manualInput(),
+        name: "No debe crearse",
+      }),
+    ).rejects.toThrow(/sesión en curso/);
+    expect(await prisma.trainingProgram.count({ where: { profileId } })).toBe(
+      programCount,
+    );
+    expect(
+      (
+        await prisma.trainingProgram.findFirstOrThrow({
+          where: { profileId, isActive: true },
+        })
+      ).id,
+    ).toBe(activeBefore.id);
+    await workout.discardSession(profileId, started.sessionId);
   });
 });

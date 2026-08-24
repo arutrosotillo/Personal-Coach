@@ -110,7 +110,18 @@ export default async function TrainPage() {
               </p>
             </div>
             {t.done ? (
-              <Badge variant="outline">Hecha ✓</Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">Hecha ✓</Badge>
+                {!overview.active ? (
+                  <div className="w-24">
+                    <StartSessionButton
+                      templateId={t.id}
+                      label="Repetir"
+                      variant="secondary"
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : overview.active ? (
               <span className="text-muted-foreground text-xs">Pendiente</span>
             ) : (

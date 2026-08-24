@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -16,6 +16,9 @@ const dbFile = join(dataDir, "e2e.db");
 for (const suffix of ["", "-journal", "-wal", "-shm"]) {
   rmSync(dbFile + suffix, { force: true });
 }
+
+// Prisma 7.8's schema engine expects the SQLite file to exist already.
+closeSync(openSync(dbFile, "a"));
 
 const env = { ...process.env, DATABASE_URL: "file:./data/e2e.db" };
 execFileSync("pnpm", ["exec", "prisma", "migrate", "deploy"], {

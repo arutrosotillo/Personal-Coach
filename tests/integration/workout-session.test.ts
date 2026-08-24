@@ -114,6 +114,28 @@ describe("startOrResumeSession", () => {
     expect(b.sessionId).toBe(a.sessionId);
     expect(await prisma.workoutSession.count()).toBe(1);
   });
+
+  it("rechaza una plantilla de un programa archivado", async () => {
+    await cleanupSessions();
+    const template = await firstTemplate();
+    const mesocycle = await prisma.mesocycle.findUniqueOrThrow({
+      where: { id: template.mesocycleId },
+    });
+    await prisma.trainingProgram.update({
+      where: { id: mesocycle.programId },
+      data: { isActive: false },
+    });
+
+    await expect(
+      session.startOrResumeSession(profileId, template.id),
+    ).rejects.toThrow();
+    expect(await prisma.workoutSession.count()).toBe(0);
+
+    await prisma.trainingProgram.update({
+      where: { id: mesocycle.programId },
+      data: { isActive: true },
+    });
+  });
 });
 
 describe("logSet (idempotencia)", () => {
@@ -219,6 +241,98 @@ describe("substituteExercise", () => {
     expect(
       await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),
     ).toBe(0);
+  });
+
+  it("elegir la variante actual es un no-op y conserva sus series", async () => {
+    await cleanupSessions();
+    const template = await firstTemplate();
+    const { sessionId } = await session.startOrResumeSession(
+      profileId,
+      template.id,
+    );
+    const we = await prisma.workoutExercise.findFirstOrThrow({
+      where: { sessionId },
+      orderBy: { ordinal: "asc" },
+    });
+    await session.logSet(profileId, {
+      workoutExerciseId: we.id,
+      setNumber: 1,
+      setType: "WORKING",
+      weightKg: 40,
+      reps: 10,
+      rir: 2,
+    });
+
+    await session.substituteExercise(profileId, we.id, we.exerciseVariantId);
+
+    expect(
+      await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),
+    ).toBe(1);
+  });
+});
+
+describe("setPlannedSets (integridad)", () => {
+  it("no permite que otro perfil borre series", async () => {
+    await cleanupSessions();
+    const template = await firstTemplate();
+    const { sessionId } = await session.startOrResumeSession(
+      profileId,
+      template.id,
+    );
+    const we = await prisma.workoutExercise.findFirstOrThrow({
+      where: { sessionId },
+      orderBy: { ordinal: "asc" },
+    });
+    for (let setNumber = 1; setNumber <= 3; setNumber++) {
+      await session.logSet(profileId, {
+        workoutExerciseId: we.id,
+        setNumber,
+        setType: "WORKING",
+        weightKg: 40,
+        reps: 10,
+        rir: 2,
+      });
+    }
+
+    await expect(
+      session.setPlannedSets("otro-perfil", we.id, 1),
+    ).rejects.toThrow();
+    expect(
+      await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),
+    ).toBe(3);
+  });
+
+  it("no modifica el snapshot ni las series de una sesión completada", async () => {
+    await cleanupSessions();
+    const template = await firstTemplate();
+    const { sessionId } = await session.startOrResumeSession(
+      profileId,
+      template.id,
+    );
+    const we = await prisma.workoutExercise.findFirstOrThrow({
+      where: { sessionId },
+      orderBy: { ordinal: "asc" },
+    });
+    for (let setNumber = 1; setNumber <= 3; setNumber++) {
+      await session.logSet(profileId, {
+        workoutExerciseId: we.id,
+        setNumber,
+        setType: "WORKING",
+        weightKg: 40,
+        reps: 10,
+        rir: 2,
+      });
+    }
+    await session.finishSession(profileId, sessionId, {});
+
+    await expect(session.setPlannedSets(profileId, we.id, 1)).rejects.toThrow();
+    const unchanged = await prisma.workoutExercise.findUniqueOrThrow({
+      where: { id: we.id },
+    });
+    expect(unchanged.plannedSets).toBe(we.plannedSets);
+    expect(
+      await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),
+    ).toBe(3);
   });
 });
 

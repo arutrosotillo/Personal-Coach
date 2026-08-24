@@ -22,6 +22,7 @@ export default async function SessionPage({
   const suggestions = buildSuggestions(session);
   return (
     <SessionRunner
+      key={session.exercises.map((exercise) => exercise.variantId).join("|")}
       session={session}
       substitution={substitution}
       suggestions={suggestions}

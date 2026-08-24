@@ -58,10 +58,8 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   await logCurrentExercise(page, "50");
   await finishSession(page);
 
-  // ── Sesión 2 (mismo programa determinista) ───────────────────────────────
-  await onboard(page);
-  await page.goto("/train");
-  await page.getByRole("button", { name: "Empezar entrenamiento" }).click();
+  // ── Sesión 2 (repetir la misma plantilla) ────────────────────────────────
+  await page.getByRole("button", { name: "Repetir" }).click();
   await expect(page.getByText(/Ejercicio 1\//)).toBeVisible();
 
   // Mismo primer ejercicio (generador determinista) y contexto "última vez".

@@ -275,29 +275,39 @@ export async function restoreInitialProgram(
 /**
  * Reactiva un programa ARCHIVADO del perfil: archiva el activo actual y activa
  * el elegido, en una transacción. NO crea un programa nuevo, NO regenera
- * plantillas, NO toca sesiones/snapshots/SetLogs (el modelo no tiene @@unique
- * sobre isActive; la unicidad del activo la garantiza esta operación). El
+ * plantillas, NO toca sesiones/snapshots/SetLogs. La transacción realiza el
+ * cambio y un índice parcial de DB impide dos programas activos vivos. El
  * historial por variante sigue funcionando (scoped a perfil).
  */
 export async function reactivateProgram(profileId: string, programId: string) {
-  const target = await prisma.trainingProgram.findFirst({
-    where: { id: programId, profileId, deletedAt: null },
-  });
-  if (!target) {
-    throw new Error("El programa no existe o no es tuyo.");
-  }
-  if (target.isActive) return; // ya activo: no-op
+  await prisma.$transaction(async (tx) => {
+    const target = await tx.trainingProgram.findFirst({
+      where: { id: programId, profileId, deletedAt: null },
+    });
+    if (!target) {
+      throw new Error("El programa no existe o no es tuyo.");
+    }
+    if (target.isActive) return; // ya activo: no-op
 
-  await prisma.$transaction([
-    prisma.trainingProgram.updateMany({
+    const inProgress = await tx.workoutSession.findFirst({
+      where: { status: "IN_PROGRESS", mesocycle: { program: { profileId } } },
+      select: { id: true },
+    });
+    if (inProgress) {
+      throw new Error(
+        "Finaliza o descarta la sesión en curso antes de cambiar de programa.",
+      );
+    }
+
+    await tx.trainingProgram.updateMany({
       where: { profileId, isActive: true },
       data: { isActive: false },
-    }),
-    prisma.trainingProgram.update({
+    });
+    await tx.trainingProgram.update({
       where: { id: target.id },
       data: { isActive: true },
-    }),
-  ]);
+    });
+  });
 }
 
 // ============ OPERACIONES DE DÍA (Fase 3.1) ============

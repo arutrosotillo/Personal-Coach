@@ -29,6 +29,16 @@ export async function createManualProgram(
   }
 
   return prisma.$transaction(async (tx) => {
+    const inProgress = await tx.workoutSession.findFirst({
+      where: { status: "IN_PROGRESS", mesocycle: { program: { profileId } } },
+      select: { id: true },
+    });
+    if (inProgress) {
+      throw new Error(
+        "Finaliza o descarta la sesión en curso antes de cambiar de programa.",
+      );
+    }
+
     // Archiva el activo anterior (no se borra).
     await tx.trainingProgram.updateMany({
       where: { profileId, isActive: true },

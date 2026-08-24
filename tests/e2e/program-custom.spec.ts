@@ -94,4 +94,21 @@ test("crear un programa manual y entrenar con él (Casos A y C)", async ({
   await expect(
     page.getByRole("button", { name: "Restaurar plan inicial" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Hecho" }).click();
+
+  // Vuelta completa generado → manual: el manual reaparece archivado, se puede
+  // reactivar y conserva tanto su origen (sin Restore) como su historial.
+  await page.goto("/program/history");
+  const manualCard = page
+    .getByText("Mi programa", { exact: true })
+    .locator("..");
+  await manualCard.getByRole("button", { name: "Reactivar" }).click();
+  await manualCard.getByRole("button", { name: "Confirmar reactivar" }).click();
+  await expect(page).toHaveURL(/\/program$/, { timeout: 15_000 });
+  await page.getByRole("button", { name: "Editar" }).click();
+  await expect(
+    page.getByRole("button", { name: "Restaurar plan inicial" }),
+  ).toHaveCount(0);
+  await page.goto("/train/history");
+  await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
 });

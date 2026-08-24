@@ -19,6 +19,7 @@ const { prisma } = await import("@/server/db");
 const { runSeed } = await import("../../prisma/seed/run-seed");
 const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
+const workout = await import("@/server/services/workout-session.service");
 
 const VALID: OnboardingData = onboardingSchema.parse({
   sex: "MALE",
@@ -202,5 +203,30 @@ describe("completeOnboarding", () => {
     });
     // Recomposición: kcal = TDEE estimado (sin déficit)
     expect(target.kcal).toBeGreaterThan(1200);
+  });
+
+  it("no re-genera el plan mientras hay una sesión en curso", async () => {
+    const active = await prisma.trainingProgram.findFirstOrThrow({
+      where: { isActive: true },
+      include: { mesocycles: { include: { templates: true } } },
+    });
+    const started = await workout.startOrResumeSession(
+      active.profileId,
+      active.mesocycles[0].templates[0].id,
+    );
+    const programsBefore = await prisma.trainingProgram.count();
+    const decisionsBefore = await prisma.algorithmDecision.count();
+
+    await expect(completeOnboarding(VALID)).rejects.toThrow(/sesión en curso/);
+    expect(await prisma.trainingProgram.count()).toBe(programsBefore);
+    expect(await prisma.algorithmDecision.count()).toBe(decisionsBefore);
+    expect(
+      (
+        await prisma.trainingProgram.findFirstOrThrow({
+          where: { profileId: active.profileId, isActive: true },
+        })
+      ).id,
+    ).toBe(active.id);
+    await workout.discardSession(active.profileId, started.sessionId);
   });
 });

@@ -104,13 +104,17 @@ foco inicial en "Cancelar".
 
 **Tras guardar**: se reutiliza el mismo editor (F2A + controles de día) para toda edición.
 
-### Archivado *(decisión aprobada: A — copy honesto, sin reactivación aún)*
+### Archivado y reactivación *(F3.1b implementada)*
+
 Crear un programa **archiva** el activo (`isActive:false`, **no** se borra; historial intacto).
 El aviso dirá exactamente: *"Tu programa actual se archiva (no se borra) y tu historial se
-conserva"*, **sin** prometer reactivación en un tap. "Reactivar programa archivado" queda
-como **fast-follow** (fuera de F3.1). La elección "generar vs crear" vive en **`/program`**
-(dos CTAs en vacío; "Crear un programa nuevo" con programa activo); la elección dentro del
-onboarding se aplaza (no se toca la transacción de `completeOnboarding`).
+conserva"*. F3.1b añade `/program/history`: reactivar un programa archiva el activo actual
+y activa el elegido en una transacción, sin regenerar plantillas ni tocar sesiones,
+`WorkoutExercise`, `SetLog`, `AlgorithmDecision` o `Recommendation`. La base de datos
+impide más de un programa activo vivo por perfil. Si hay una sesión `IN_PROGRESS`, el
+cambio se rechaza hasta finalizarla o descartarla para no mezclar programa y sesión.
+La elección "generar vs crear" vive en **`/program`** (dos CTAs en vacío; "Crear un
+programa nuevo" con programa activo); la elección dentro del onboarding se aplaza.
 
 ## 4. Defaults inteligentes (derivable vs heurística)
 
@@ -127,13 +131,17 @@ Al añadir un ejercicio (una variante del catálogo):
   migración) y un pequeño helper puro `defaultTargetRir(movementPattern, systemicFatigue)` en
   core. Editable.
 
-## 5. Migración: **NINGUNA** (verificado)
+## 5. Migración de modelo: **NINGUNA** (verificado)
 
 Todo usa columnas existentes. El discriminante "manual vs generado" se **deriva** de la
 existencia de la `Recommendation` `INITIAL_PROGRAM` (lo que ya computa `getProgramRationale`).
 Un `TrainingProgram.source` sería redundante → **no**. Si en el futuro se derivara en muchos
 sitios, la única migración mínima sería `source String @default("GENERATED")` (sin backfill),
 pero **no es necesaria para F3.1**.
+
+F3.1b tampoco añade columnas: incorpora únicamente un índice parcial de integridad en
+SQLite (`TrainingProgram_one_live_active_per_profile`) para garantizar como máximo un
+programa activo no borrado por perfil, incluso ante escrituras concurrentes.
 
 ## 6. Reemplazar / cambiar programa
 

@@ -45,7 +45,9 @@ export async function startOrResumeSession(
       where: {
         id: templateId,
         deletedAt: null,
-        mesocycle: { program: { profileId } },
+        mesocycle: {
+          program: { profileId, isActive: true, deletedAt: null },
+        },
       },
       include: {
         mesocycle: true,
@@ -165,16 +167,25 @@ export async function setPlannedSets(
   plannedSets: number,
 ) {
   const bounded = Math.max(1, Math.min(plannedSets, 20));
-  await prisma.workoutExercise.updateMany({
-    where: {
-      id: workoutExerciseId,
-      session: { status: "IN_PROGRESS", mesocycle: { program: { profileId } } },
-    },
-    data: { plannedSets: bounded },
-  });
-  // Si se reduce, se limpian las series por encima del nuevo tope.
-  await prisma.setLog.deleteMany({
-    where: { workoutExerciseId, setNumber: { gt: bounded } },
+  await prisma.$transaction(async (tx) => {
+    const exercise = await tx.workoutExercise.findFirstOrThrow({
+      where: {
+        id: workoutExerciseId,
+        session: {
+          status: "IN_PROGRESS",
+          mesocycle: { program: { profileId } },
+        },
+      },
+      select: { id: true },
+    });
+    await tx.workoutExercise.update({
+      where: { id: exercise.id },
+      data: { plannedSets: bounded },
+    });
+    // Si se reduce, se limpian las series por encima del nuevo tope.
+    await tx.setLog.deleteMany({
+      where: { workoutExerciseId: exercise.id, setNumber: { gt: bounded } },
+    });
   });
 }
 
@@ -198,6 +209,7 @@ export async function substituteExercise(
         },
       },
     });
+    if (we.exerciseVariantId === newVariantId) return;
     const variant = await tx.exerciseVariant.findFirstOrThrow({
       where: { id: newVariantId, deletedAt: null },
     });

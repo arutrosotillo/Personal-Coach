@@ -87,6 +87,23 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
     page.getByRole("button", { name: "✓ Hecha" }).first(),
   ).toBeVisible();
 
+  // Sustituir tras haber registrado una serie elimina la serie anterior en DB
+  // y debe reinicializar también el estado cliente (sin "hechas" fantasma).
+  await page.getByRole("button", { name: "Sustituir ejercicio" }).click();
+  await page
+    .getByRole("searchbox", { name: "Buscar ejercicio para sustituir" })
+    .fill("Curl con barra");
+  await page
+    .getByRole("button", { name: /Curl con barra/ })
+    .first()
+    .click();
+  await expect(page.getByText("Ejercicio sustituido")).toBeVisible();
+  await expect(page.getByRole("button", { name: "✓ Hecha" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Completar" }).first().click();
+  await expect(
+    page.getByRole("button", { name: "✓ Hecha" }).first(),
+  ).toBeVisible();
+
   // Volver a Entrenar → hay sesión en curso reanudable
   await page.goto("/train");
   await expect(page.getByText("Sesión en curso")).toBeVisible();

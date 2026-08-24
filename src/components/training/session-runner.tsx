@@ -139,7 +139,13 @@ export function SessionRunner({
     const last = arr[arr.length - 1];
     const next = [...arr, { ...last, done: false }];
     setRows((prev) => ({ ...prev, [ex.id]: next }));
-    void setPlannedSetsAction(ex.id, next.length);
+    startTransition(async () => {
+      const res = await setPlannedSetsAction(ex.id, next.length);
+      if (!res.ok) {
+        setRows((prev) => ({ ...prev, [ex.id]: arr }));
+        toast.error(res.error ?? "No se pudo añadir la serie");
+      }
+    });
   }
 
   function removeSet() {
@@ -147,7 +153,13 @@ export function SessionRunner({
     if (arr.length <= 1) return;
     const next = arr.slice(0, -1);
     setRows((prev) => ({ ...prev, [ex.id]: next }));
-    void setPlannedSetsAction(ex.id, next.length);
+    startTransition(async () => {
+      const res = await setPlannedSetsAction(ex.id, next.length);
+      if (!res.ok) {
+        setRows((prev) => ({ ...prev, [ex.id]: arr }));
+        toast.error(res.error ?? "No se pudo quitar la serie");
+      }
+    });
   }
 
   /** Aplica la carga/reps sugeridas a la primera serie no completada (prefill;
@@ -331,6 +343,7 @@ export function SessionRunner({
             variant="secondary"
             size="sm"
             className="min-h-9"
+            disabled={pending}
             onClick={addSet}
           >
             + Añadir serie
@@ -341,6 +354,7 @@ export function SessionRunner({
               variant="secondary"
               size="sm"
               className="min-h-9"
+              disabled={pending}
               onClick={removeSet}
             >
               − Quitar serie
