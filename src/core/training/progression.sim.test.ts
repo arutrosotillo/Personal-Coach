@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { PROGRESSION } from "@/core/config/training-config";
+
 import {
   suggestProgression,
   type ProgressionExposure,
@@ -315,9 +317,11 @@ describe("simulación 12 semanas · el motor no sobrerreacciona ni se atasca", (
     const decreases = sim.rows.filter((r) => r.action === "DECREASE_LOAD");
     expect(decreases.length, sim.trace).toBeGreaterThanOrEqual(1);
     for (const row of decreases) {
-      expect(row.weightKg - row.suggestedWeightKg!, sim.trace).toBeCloseTo(
-        BENCH.loadStepKg,
-        6,
+      // Al menos un incremento, nunca más del tope de bajada por corrección.
+      const drop = row.weightKg - row.suggestedWeightKg!;
+      expect(drop, sim.trace).toBeGreaterThanOrEqual(BENCH.loadStepKg - 1e-9);
+      expect(drop / row.weightKg, sim.trace).toBeLessThanOrEqual(
+        PROGRESSION.MAX_DECREASE_FRACTION + 1e-9,
       );
     }
     // Nunca dos bajadas consecutivas: tras bajar hay que volver a acumular

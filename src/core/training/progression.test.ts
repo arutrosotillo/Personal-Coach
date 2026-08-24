@@ -84,11 +84,12 @@ describe("1 · sesión incompleta", () => {
     expect(r.explanation).toContain("1 de 3");
   });
 
-  it("2 de 3 series SÍ es utilizable (el 70 % antiguo era un 100 % encubierto)", () => {
+  it("2 de 3 series es utilizable para decidir, pero NO para subir la carga", () => {
     const r = run([s(80, [8, 8], [2, 2])]);
-    expect(r.action).toBe("INCREASE_LOAD");
-    expect(r.reasonCode).toBe("RANGE_CLOSED");
+    expect(r.action).toBe("ADD_REP");
+    expect(r.reasonCode).toBe("INCOMPLETE_FOR_INCREASE");
     expect(r.numbers.n).toBe(2);
+    expect(r.explanation).toContain("2 de 3 series");
   });
 });
 
@@ -119,7 +120,7 @@ describe("2 · banda de RIR (targetRir ± 1)", () => {
     expect(r.action).toBe("HOLD");
     expect(r.reasonCode).toBe("CLOSED_RANGE_AT_FAILURE");
     expect(r.suggestedWeightKg).toBe(80);
-    expect(r.explanation).toMatch(/al fallo o casi/i);
+    expect(r.explanation).toMatch(/llegaste al fallo/i);
     expect(r.explanation).toMatch(/subimos igualmente/i);
   });
 
@@ -131,13 +132,23 @@ describe("2 · banda de RIR (targetRir ± 1)", () => {
     expect(r.explanation).toMatch(/dos veces seguidas/i);
   });
 
-  it("aislamiento con objetivo 1: RIR 0 sigue siendo 'más duro'", () => {
+  it("aislamiento con objetivo 1: llegar al fallo NO se penaliza (0 permitido, nunca exigido)", () => {
+    // Con `targetRir 1` la cláusula de fallo cancelaría exactamente la banda y
+    // dejaría la zona muerta intacta para la mitad del catálogo. El fallo
+    // voluntario en un aislamiento tiene coste de fatiga bajo y el RIR se
+    // estima MEJOR cerca del fallo (Halperin 2022): no hay motivo para frenar.
     const r = run([s(30, [15, 15, 15], 0)], {
       repRangeMin: 10,
       repRangeMax: 15,
       targetRir: 1,
-      loadStepKg: 5,
+      loadStepKg: 2.5,
     });
+    expect(r.action).toBe("INCREASE_LOAD");
+    expect(r.reasonCode).toBe("RANGE_CLOSED");
+  });
+
+  it("compuesto con objetivo 2: llegar al fallo SÍ frena la primera vez", () => {
+    const r = run([s(100, [8, 8, 8], 0)], { targetRir: 2 });
     expect(r.action).toBe("HOLD");
     expect(r.reasonCode).toBe("CLOSED_RANGE_AT_FAILURE");
   });
@@ -179,6 +190,19 @@ describe("3 · double progression: ADD_REP sobre la serie más floja", () => {
     const r = run([s(80, [7, 6, 6], 2)]);
     expect(r.action).toBe("ADD_REP");
     expect(r.suggestedReps).toBe(7);
+    expect(r.setTargets).toEqual([7, 7, 7]);
+  });
+
+  it("trinquete: un día flojo NO rebaja el objetivo ya consolidado a ese peso", () => {
+    const r = run([s(80, [8, 7, 7], 2), s(80, [7, 6, 6], 2)]);
+    expect(r.action).toBe("ADD_REP");
+    // Ya habías hecho 8/7/7 en 80 kg: el objetivo no retrocede a 7/7/7.
+    expect(r.setTargets).toEqual([8, 7, 7]);
+  });
+
+  it("trinquete: solo cuenta la racha al MISMO peso (subir de carga lo reinicia)", () => {
+    const r = run([s(80, [8, 8, 8], 2), s(82.5, [6, 6, 6], 2)]);
+    expect(r.action).toBe("ADD_REP");
     expect(r.setTargets).toEqual([7, 7, 7]);
   });
 
@@ -236,7 +260,7 @@ describe("4 · INCREASE_LOAD y tamaño del salto", () => {
     expect((r.suggestedWeightKg! - 40) / 5).toBe(1);
   });
 
-  it("peso de referencia = mediana (series ascendentes 75/80/85 → 80, nunca 75)", () => {
+  it("series ascendentes: referencia = mediana, y NUNCA propone menos de lo ya movido", () => {
     const r = run([
       {
         sets: [
@@ -246,8 +270,28 @@ describe("4 · INCREASE_LOAD y tamaño del salto", () => {
         ],
       },
     ]);
-    expect(r.numbers.pesoRef).toBe(80);
-    expect(r.suggestedWeightKg).toBe(82.5);
+    expect(r.numbers.pesoRef).toBe(80); // mediana, no el mínimo (75)
+    // Subir un incremento sobre 80 daría 82,5 kg: menos de los 85 que ya
+    // movió. El motor no finge entender el esquema y no descarga a nadie.
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("MIXED_LOADS");
+    expect(r.suggestedWeightKg).toBe(85);
+    expect(r.signals.map((x) => x.code)).toContain("MIXED_LOADS");
+  });
+
+  it("drop-sets: un 'INCREASE' nunca puede acabar descargando al usuario", () => {
+    // 75/67,5/60 cada sesión: la mediana es 67,5 y subir daría 70 < 75.
+    const r = run([
+      {
+        sets: [
+          { weightKg: 75, reps: 10, rir: 2 },
+          { weightKg: 67.5, reps: 10, rir: 3 },
+          { weightKg: 60, reps: 10, rir: 4 },
+        ],
+      },
+    ]);
+    expect(r.action).not.toBe("INCREASE_LOAD");
+    expect(r.suggestedWeightKg!).toBeGreaterThanOrEqual(75);
   });
 });
 
@@ -292,7 +336,7 @@ describe("5 · saltos incompatibles con el rango → EXTEND_RANGE", () => {
     expect(r.suggestedReps).toBe(10);
   });
 
-  it("si ni extendiendo el rango cabe el salto, sube avisando (nunca se queda atascado)", () => {
+  it("si ni extendiendo el rango cabe el salto, lo dice en vez de proponer un objetivo absurdo", () => {
     // Paso de 5 kg sobre 10 kg (+50 %) con rango estrecho: la extensión no basta.
     const r = run([s(10, [8, 8, 8], 1)], {
       repRangeMin: 6,
@@ -300,9 +344,11 @@ describe("5 · saltos incompatibles con el rango → EXTEND_RANGE", () => {
       targetRir: 1,
       loadStepKg: 5,
     });
-    expect(r.action).toBe("INCREASE_LOAD");
-    expect(r.reasonCode).toBe("STEP_TOO_BIG_ACCEPTED");
-    expect(r.suggestedWeightKg).toBe(15);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("STEP_TOO_BIG_FOR_RANGE");
+    expect(r.suggestedWeightKg).toBe(10);
+    // Nunca propone "15 kg × 1 rep".
+    expect(r.suggestedReps!).toBeGreaterThanOrEqual(6);
     expect(r.explanation).toMatch(/fraccionales/i);
   });
 });
@@ -386,7 +432,7 @@ describe("7 · bajo rendimiento: una sesión no baja la carga, dos sí", () => {
     expect(r.reasonCode).toBe("REPEATED_UNDERPERFORMANCE");
     expect(r.suggestedWeightKg).toBe(77.5);
     expect(r.suggestedReps).toBe(6);
-    expect(r.explanation).toMatch(/no te deja hacer el rango/i);
+    expect(r.explanation).toMatch(/la carga que sí te deja el rango/i);
   });
 
   it("bajar exige la MEDIANA por debajo del mínimo: 6/6/5 dos veces NO baja", () => {
@@ -414,6 +460,43 @@ describe("7 · bajo rendimiento: una sesión no baja la carga, dos sí", () => {
     const r = run([s(80, [5, 4, 4], 4), s(80, [5, 4, 4], 4)]);
     expect(r.action).toBe("HOLD");
     expect(r.reasonCode).toBe("ONE_OFF_UNDERPERFORMANCE");
+  });
+
+  it("RIR alto NO puede atrapar al usuario: 4 exposiciones cortas bajan igual", () => {
+    // Quien teclea siempre un RIR alto (o corta las series por dolor) quedaba
+    // bloqueado para siempre: el guardia anti-sandbagging nunca dejaba bajar.
+    const bad = s(85, [3, 3, 2], 4);
+    const r = run([bad, bad, bad, bad]);
+    expect(r.action).toBe("DECREASE_LOAD");
+    expect(r.reasonCode).toBe("STUCK_BELOW_RANGE");
+    expect(r.suggestedWeightKg!).toBeLessThan(85);
+    expect(r.explanation).toMatch(/Da igual cómo se sienta el esfuerzo/i);
+  });
+
+  it("con RIR alto sigue habiendo paciencia: 3 exposiciones aún no bajan", () => {
+    const bad = s(85, [3, 3, 2], 4);
+    const r = run([bad, bad, bad]);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("ONE_OFF_UNDERPERFORMANCE");
+  });
+
+  it("un error de tecleo no reancla el ejercicio: carga atípica → HOLD", () => {
+    // 75 kg → 7,5 kg con esfuerzo de sobra: es un dedo gordo, no una sesión.
+    const r = run([s(75, [8, 8, 8], 2), s(7.5, [8, 8, 8], 4)]);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("ATYPICAL_LOAD_DROP");
+    expect(r.suggestedWeightKg).toBe(75);
+    expect(r.explanation).toMatch(/error de registro/i);
+  });
+
+  it("una descarga propia confirmada SÍ pasa a ser la referencia", () => {
+    const r = run([
+      s(75, [8, 8, 8], 2),
+      s(57.5, [8, 8, 8], 4),
+      s(57.5, [8, 8, 8], 4),
+    ]);
+    expect(r.reasonCode).not.toBe("ATYPICAL_LOAD_DROP");
+    expect(r.numbers.pesoRef).toBe(57.5);
   });
 
   it("la bajada nunca deja un peso ≤ 0", () => {
@@ -469,7 +552,7 @@ describe("8 · señal de meseta (informativa, nunca interviene)", () => {
 
 // ───────────────────────────────────────────────────────────────────────────
 describe("9 · RIR ausente: nunca es evidencia positiva", () => {
-  it("sin ningún RIR registrado la confianza es BAJA aunque suba por repeticiones", () => {
+  it("sin ningún RIR registrado la confianza es BAJA aunque progrese por repeticiones", () => {
     const r = run([s(80, [8, 8, 8], null), s(80, [8, 8, 8], null)]);
     expect(r.action).toBe("INCREASE_LOAD");
     expect(r.confidence).toBe("LOW");
@@ -482,11 +565,20 @@ describe("9 · RIR ausente: nunca es evidencia positiva", () => {
     expect(r.reasonCode).toBe("CLOSED_RANGE_AT_FAILURE");
   });
 
-  it("sin RIR nunca se concede el salto doble", () => {
+  it("sin ningún RIR, la primera vez pide confirmación en vez de subir", () => {
     const r = run([s(80, [12, 12, 12], null)]);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("NEEDS_RIR_CONFIRMATION");
+    expect(r.suggestedWeightKg).toBe(80);
+    expect(r.explanation).toMatch(/sin RIR registrado/i);
+  });
+
+  it("sin RIR pero confirmado dos veces: sube, y nunca con salto doble", () => {
+    const r = run([s(80, [12, 12, 12], null), s(80, [12, 12, 12], null)]);
     expect(r.action).toBe("INCREASE_LOAD");
     expect(r.reasonCode).toBe("RANGE_CLOSED");
-    expect(r.suggestedWeightKg).toBe(82.5); // un solo incremento
+    expect(r.suggestedWeightKg).toBe(82.5); // un solo incremento, no 85
+    expect(r.explanation).not.toMatch(/esfuerzo previsto/i);
   });
 
   it("RIR parcial → confianza MEDIA como mucho", () => {
@@ -584,9 +676,19 @@ describe("11 · invariantes (rejilla determinista)", () => {
       } else {
         const k = delta / c.step;
         expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-9);
-        expect(Math.abs(k)).toBeLessThanOrEqual(
-          PROGRESSION.MAX_STEPS_PER_INCREASE,
-        );
+        if (k > 0) {
+          // Subir: como mucho el nº de incrementos permitido.
+          expect(k).toBeLessThanOrEqual(PROGRESSION.MAX_STEPS_PER_INCREASE);
+        } else {
+          // Bajar: se dimensiona con la equivalencia, acotada por fracción.
+          // Un ÚNICO incremento del material siempre está permitido aunque
+          // supere esa fracción (en cargas ligeras es inevitable).
+          const drop = -delta / r.numbers.pesoRef!;
+          const oneStep = c.step / r.numbers.pesoRef!;
+          expect(drop).toBeLessThanOrEqual(
+            Math.max(PROGRESSION.MAX_DECREASE_FRACTION, oneStep) + 1e-9,
+          );
+        }
       }
     }
   });
@@ -647,6 +749,22 @@ describe("11 · invariantes (rejilla determinista)", () => {
         "DECREASE_LOAD",
       ]).toContain(r.action);
       expect(JSON.stringify(r)).not.toMatch(/deload|descarga|añade una serie/i);
+    }
+  });
+
+  it("P8 · HOLD_DEFAULT es una red de seguridad inalcanzable: ninguna rejilla lo produce", () => {
+    for (const c of cases()) {
+      const r = run(c.history, { ...c.rx, loadStepKg: c.step });
+      expect(r.reasonCode).not.toBe("HOLD_DEFAULT");
+    }
+  });
+
+  it("P9 · el titular `suggestedReps` nunca contradice al plan `setTargets`", () => {
+    for (const c of cases()) {
+      const r = run(c.history, { ...c.rx, loadStepKg: c.step });
+      if (r.setTargets === null || r.suggestedReps === null) continue;
+      expect(r.suggestedReps).toBeGreaterThanOrEqual(Math.min(...r.setTargets));
+      expect(r.suggestedReps).toBeLessThanOrEqual(Math.max(...r.setTargets));
     }
   });
 

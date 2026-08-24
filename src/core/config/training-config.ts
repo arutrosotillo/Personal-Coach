@@ -162,12 +162,33 @@ export const PROGRESSION = {
   /** Nº de exposiciones recientes de la variante que mira el motor. */
   HISTORY_WINDOW: 6,
   /**
+   * Una carga por debajo de esta fracción de la exposición anterior se trata
+   * como ATÍPICA (error de tecleo o descarga puntual), no como la nueva
+   * referencia. Sin esto, un solo dedo gordo reancla el ejercicio para siempre.
+   */
+  ATYPICAL_DROP_FRACTION: 0.75,
+  /**
    * Exposiciones consecutivas al MISMO peso por debajo del mínimo del rango
    * (con esfuerzo alto) antes de bajar la carga. Nunca por una sola sesión.
    */
   DECREASE_AFTER_EXPOSURES: 2,
-  /** Bajada de carga, en incrementos del material. Conservador: uno. */
+  /** Bajada mínima de carga, en incrementos del material. */
   DECREASE_STEPS: 1,
+  /**
+   * Exposiciones consecutivas al mismo peso por debajo del mínimo del rango
+   * tras las que se baja la carga IGNORANDO el RIR. Sin esta salida, un
+   * usuario que teclea habitualmente un RIR alto (o que corta las series por
+   * dolor) queda atrapado para siempre: el guardia anti-sandbagging nunca deja
+   * bajar. La evidencia de repeticiones, repetida, manda sobre el dato
+   * subjetivo.
+   */
+  STUCK_EXPOSURES: 4,
+  /**
+   * Tope de la bajada por corrección. La bajada se dimensiona con la
+   * equivalencia carga↔reps (para que UNA corrección devuelva al rango en vez
+   * de encadenar siete de 2,5 kg), pero nunca recorta más de esta fracción.
+   */
+  MAX_DECREASE_FRACTION: 0.15,
   /**
    * Exposiciones consecutivas al mismo peso cerrando el rango con esfuerzo
    * mayor del prescrito tras las que se sube igualmente (evita el estado
@@ -194,6 +215,12 @@ export const PROGRESSION = {
   MAX_RELATIVE_STEP: 0.1,
   /** Repeticiones que se pueden añadir por encima del techo del rango. */
   RANGE_EXTENSION_CAP: 5,
+  /**
+   * Repeticiones por debajo del mínimo del rango que se aceptan al subir carga
+   * cuando ya no tiene sentido esperar más (rango cerrado al fallo dos veces).
+   * Aterrizar 1–2 reps por debajo un par de sesiones es normal; 5 no.
+   */
+  ACCEPTABLE_SHORTFALL_REPS: 2,
 } as const;
 
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */

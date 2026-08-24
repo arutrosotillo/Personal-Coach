@@ -200,14 +200,40 @@ describe("integridad del RIR registrado (Fase 3.2c)", () => {
     const target = exec2!.exercises.find((e) => e.variantId === variantId)!;
     const s = buildSuggestions(exec2!)[target.id];
 
-    // Progresa por REPETICIONES, pero la falta de RIR nunca es evidencia
-    // positiva: confianza BAJA y jamás un salto doble.
-    expect(s.action).toBe("INCREASE_LOAD");
+    // Sin ningún RIR no se puede valorar el esfuerzo: la evidencia de
+    // repeticiones vale, pero hay que verla dos veces antes de mover la carga.
+    expect(s.action).toBe("HOLD");
+    expect(s.reasonCode).toBe("NEEDS_RIR_CONFIRMATION");
     expect(s.confidence).toBe("LOW");
     expect(s.numbers.missingRir).toBe(target.plannedSets);
-    expect(s.suggestedWeightKg).toBeCloseTo(60 + target.loadStepKg, 6);
-
+    expect(s.suggestedWeightKg).toBe(60);
     await wsService.discardSession(profileId, next.sessionId);
+
+    // Repetida la misma sesión sin RIR, ya sí sube — con confianza BAJA.
+    await seedCompletedSessionWithSets(prisma, {
+      mesocycleId,
+      variantId,
+      localDate: "2026-08-05",
+      plannedSets: we.plannedSets,
+      sets: Array.from({ length: we.plannedSets }, (_, i) => ({
+        setNumber: i + 1,
+        weightKg: 60,
+        reps: te.repRangeMax,
+        rir: null,
+      })),
+    });
+    const third = await wsService.startOrResumeSession(
+      profileId,
+      templateId,
+      new Date("2026-08-07T10:00:00Z"),
+    );
+    const exec3 = await getExecutionSession(profileId, third.sessionId);
+    const target3 = exec3!.exercises.find((e) => e.variantId === variantId)!;
+    const s3 = buildSuggestions(exec3!)[target3.id];
+    expect(s3.action).toBe("INCREASE_LOAD");
+    expect(s3.confidence).toBe("LOW");
+    expect(s3.suggestedWeightKg).toBeCloseTo(60 + target3.loadStepKg, 6);
+    await wsService.discardSession(profileId, third.sessionId);
   });
 
   it("un RIR de fallo REGISTRADO manda sobre las series sin registrar", async () => {

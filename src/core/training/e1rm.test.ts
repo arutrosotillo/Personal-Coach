@@ -33,10 +33,12 @@ describe("estimateOneRepMax (Epley con reps efectivas)", () => {
     expect(estimateOneRepMax(-50, 5, 0)).toBeNull();
   });
 
-  it("trata RIR nulo/indefinido como 0", () => {
-    expect(estimateOneRepMax(80, 8, null)).toBe(estimateOneRepMax(80, 8, 0));
-    expect(estimateOneRepMax(80, 8, undefined)).toBe(
-      estimateOneRepMax(80, 8, 0),
-    );
+  it("sin RIR registrado NO estima: no lo sé ≠ fallo", () => {
+    // Tratar `null` como 0 equivaldría a suponer que la serie fue al fallo,
+    // que es el sesgo más optimista posible (y falsearía la tendencia en
+    // cuanto el usuario deja de registrar el RIR).
+    expect(estimateOneRepMax(80, 8, null)).toBeNull();
+    expect(estimateOneRepMax(80, 8, undefined)).toBeNull();
+    expect(estimateOneRepMax(80, 8, 0)).toBe(101.3);
   });
 });

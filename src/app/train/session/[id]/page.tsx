@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { SessionRunner } from "@/components/training/session-runner";
-import { getExecutionSession } from "@/server/repositories/workout.repo";
+import {
+  getExecutionSession,
+  toClientSession,
+} from "@/server/repositories/workout.repo";
 import { requireProfileId } from "@/server/repositories/profile.repo";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
 import { buildSuggestions } from "@/server/services/progression.service";
@@ -23,7 +26,7 @@ export default async function SessionPage({
   return (
     <SessionRunner
       key={session.exercises.map((exercise) => exercise.variantId).join("|")}
-      session={session}
+      session={toClientSession(session)}
       substitution={substitution}
       suggestions={suggestions}
     />

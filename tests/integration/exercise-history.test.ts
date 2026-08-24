@@ -135,7 +135,7 @@ describe("última vez (contexto in-session)", () => {
     expect(target?.lastTime?.localDate).toBe("2026-07-20");
     expect(target?.lastTime?.sets[0].weightKg).toBe(90);
     // Dos sesiones comparables distintas.
-    expect(target?.lastTime?.comparableSessions).toBe(2);
+    expect(target?.lastTime?.exposures).toHaveLength(2);
 
     await wsService.discardSession(profileId, today.sessionId);
   });

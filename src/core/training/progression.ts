@@ -39,11 +39,16 @@ export type ProgressionReasonCode =
   | "SESSION_INCOMPLETE"
   | "REPEATED_UNDERPERFORMANCE"
   | "CLOSED_RANGE_AT_FAILURE"
+  | "INCOMPLETE_FOR_INCREASE"
+  | "NEEDS_RIR_CONFIRMATION"
+  | "ATYPICAL_LOAD_DROP"
+  | "MIXED_LOADS"
+  | "STUCK_BELOW_RANGE"
   | "RANGE_CLOSED"
   | "RANGE_CLOSED_AFTER_FAILURE"
   | "LOAD_CLEARLY_TOO_LIGHT"
   | "EXTEND_RANGE"
-  | "STEP_TOO_BIG_ACCEPTED"
+  | "STEP_TOO_BIG_FOR_RANGE"
   | "NO_LOAD_STEP"
   | "NO_LOAD_STEP_CAPPED"
   | "ONE_OFF_UNDERPERFORMANCE"
@@ -51,7 +56,7 @@ export type ProgressionReasonCode =
   | "ADD_REP"
   | "HOLD_DEFAULT";
 
-export type ProgressionSignalCode = "PLATEAU_SIGNAL";
+export type ProgressionSignalCode = "PLATEAU_SIGNAL" | "MIXED_LOADS";
 
 export interface ProgressionSignal {
   code: ProgressionSignalCode;
@@ -148,6 +153,10 @@ interface ExposureSummary {
   sets: ProgressionSet[];
   n: number;
   weight: number;
+  /** Peso máximo movido en la exposición (top set). */
+  maxWeight: number;
+  /** Las series NO se hicieron todas a la misma carga (top set + back-off…). */
+  mixedLoads: boolean;
   reps: number[];
   minReps: number;
   medianReps: number;
@@ -179,7 +188,7 @@ function summarize(
   // absoluto cuando la prescripción pedía reserva. El RIR ausente NO cuenta:
   // no saber no es evidencia ni a favor ni en contra.
   const harder = knownRir.some(
-    (r) => r < rx.targetRir - config.RIR_BAND || (r === 0 && rx.targetRir >= 1),
+    (r) => r < rx.targetRir - config.RIR_BAND || (r === 0 && rx.targetRir >= 2),
   );
 
   const atTop = reps.filter((r) => r >= rx.repRangeMax).length;
@@ -188,10 +197,13 @@ function summarize(
     atTop >= Math.max(n - 1, 1) &&
     Math.min(...reps) >= rx.repRangeMax - 1;
 
+  const weights = sets.map((s) => s.weightKg);
   return {
     sets,
     n,
-    weight: n > 0 ? lowerMedian(sets.map((s) => s.weightKg)) : 0,
+    weight: n > 0 ? lowerMedian(weights) : 0,
+    maxWeight: n > 0 ? Math.max(...weights) : 0,
+    mixedLoads: new Set(weights).size > 1,
     reps,
     minReps: n > 0 ? Math.min(...reps) : 0,
     medianReps: n > 0 ? lowerMedian(reps) : 0,
@@ -210,6 +222,34 @@ function padTargets(values: number[], plannedSets: number): number[] {
   const out = values.slice(0, plannedSets);
   while (out.length < plannedSets) out.push(values[values.length - 1]);
   return out;
+}
+
+/**
+ * Objetivos por serie con TRINQUETE: ninguna serie pide menos de lo que ya
+ * lograste en ese hueco con esta misma carga. Sin esto, un día flojo rebajaría
+ * el objetivo de todas las series y se perdería el progreso ya consolidado
+ * (además de disparar falsas mesetas).
+ */
+function ratchetTargets(
+  run: ExposureSummary[],
+  weakestTarget: number,
+  cap: number,
+  plannedSets: number,
+): number[] {
+  // Suelo = la MEJOR exposición realmente ejecutada de la racha (más reps
+  // totales; en empate, la más reciente). Nunca un máximo por hueco: componer
+  // el récord de cada serie por separado pediría una sesión que jamás ocurrió.
+  let best: ExposureSummary | null = null;
+  for (const e of run) {
+    if (best === null || e.totalReps >= best.totalReps) best = e;
+  }
+  const floors = best ? best.reps : [];
+  return padTargets(
+    (floors.length > 0 ? floors : [weakestTarget]).map((f) =>
+      Math.min(Math.max(f, weakestTarget), cap),
+    ),
+    plannedSets,
+  );
 }
 
 function uniformTargets(value: number, plannedSets: number): number[] {
@@ -289,7 +329,7 @@ export function suggestProgression(
       explanation: `Tu última sesión registró ${last.n} de ${plannedSets} series: con media sesión no ajusto nada. Repite ${last.weight} kg y complétala.`,
       signals: [],
       engineVersion: PROGRESSION_ENGINE_VERSION,
-      numbers: numbersFor(last, 1),
+      numbers: numbersFor(last, 0),
     };
   }
 
@@ -307,7 +347,10 @@ export function suggestProgression(
   const confidence: Confidence =
     last.missingRir === last.n
       ? "LOW"
-      : usable.length >= 3 && last.missingRir === 0 && last.n >= plannedSets
+      : usable.length >= 3 &&
+          last.missingRir === 0 &&
+          last.n >= plannedSets &&
+          last.n >= 2
         ? "HIGH"
         : usable.length >= 2
           ? "MEDIUM"
@@ -316,12 +359,24 @@ export function suggestProgression(
   // Señal informativa de meseta: N exposiciones al mismo peso sin batir el
   // mejor total de repeticiones alcanzado a ese peso. No altera la acción.
   const signals: ProgressionSignal[] = [];
+
+  // Aviso de esquema con cargas mezcladas (top set + back-off, drop-sets): el
+  // motor razona sobre UNA carga de trabajo, así que su lectura es parcial.
+  if (last.mixedLoads) {
+    signals.push({
+      code: "MIXED_LOADS",
+      message: `Las series no fueron todas al mismo peso (${last.sets.map((x) => `${x.weightKg}×${x.reps}`).join(" · ")}). Razono sobre ${last.weight} kg; en esquemas de serie top + descarga la sugerencia es solo orientativa.`,
+      numbers: { pesoRef: last.weight, pesoMax: last.maxWeight, n: last.n },
+    });
+  }
+
   if (sameWeightRun.length >= config.PLATEAU_EXPOSURES) {
     const totals = sameWeightRun.map((s) => s.totalReps);
     const best = Math.max(...totals);
     const sinceBest = totals.length - 1 - totals.indexOf(best);
-    if (sinceBest >= config.PLATEAU_EXPOSURES - 1) {
-      const shown = totals.slice(-config.PLATEAU_EXPOSURES);
+    const shown = totals.slice(-config.PLATEAU_EXPOSURES);
+    const improvingWindow = shown[shown.length - 1] > shown[0];
+    if (sinceBest >= config.PLATEAU_EXPOSURES - 1 && !improvingWindow) {
       signals.push({
         code: "PLATEAU_SIGNAL",
         message: `En las últimas ${shown.length} exposiciones con ${last.weight} kg: ${shown.join(" → ")} repeticiones totales. No has superado tu mejor registro reciente.`,
@@ -348,12 +403,35 @@ export function suggestProgression(
     numbers,
   });
 
+  // ── 1b. ATYPICAL_LOAD_DROP: la última carga cae muy por debajo de la
+  //     anterior y encima con esfuerzo sobrado. Puede ser un error de tecleo o
+  //     una descarga puntual; en ningún caso es evidencia para reanclar el
+  //     ejercicio ahí. Se pide confirmarlo repitiéndolo.
+  const previous = usable.length >= 2 ? usable[usable.length - 2] : null;
+  if (
+    previous !== null &&
+    previous.weight > 0 &&
+    last.weight > 0 &&
+    last.weight < previous.weight * config.ATYPICAL_DROP_FRACTION &&
+    (last.minKnownRir === null || last.minKnownRir > targetRir)
+  ) {
+    const dropPct = Math.round((1 - last.weight / previous.weight) * 100);
+    return done({
+      action: "HOLD",
+      reasonCode: "ATYPICAL_LOAD_DROP",
+      suggestedWeightKg: previous.weight,
+      suggestedReps: repRangeMin,
+      setTargets: uniformTargets(repRangeMin, plannedSets),
+      explanation: `Registraste ${last.weight} kg, un ${dropPct} % menos que la sesión anterior (${previous.weight} kg), y con esfuerzo de sobra. Si fue un error de registro, corrígelo; si bajaste a propósito, repítelo y lo tomo como tu nueva referencia. De momento sigo con ${previous.weight} kg.`,
+    });
+  }
+
   // ── 2. REPEATED_UNDERPERFORMANCE → DECREASE_LOAD ────────────────────────
   // Dos exposiciones consecutivas al mismo peso con la MEDIANA por debajo del
   // mínimo del rango y sin señales de haberse guardado (RIR conocido > objetivo
   // = se paró lejos, eso no es un problema de carga).
   const notSandbagging = (s: ExposureSummary) =>
-    s.minKnownRir === null || s.minKnownRir <= targetRir;
+    s.minKnownRir === null || s.minKnownRir <= targetRir + config.RIR_BAND;
   const underRun: ExposureSummary[] = [];
   let underRef = last.weight;
   for (let i = usable.length - 1; i >= 0; i--) {
@@ -364,32 +442,66 @@ export function suggestProgression(
     underRef = s.weight;
   }
 
-  if (underRun.length >= config.DECREASE_AFTER_EXPOSURES) {
-    const medians = underRun
-      .slice(-config.DECREASE_AFTER_EXPOSURES)
-      .map((s) => s.medianReps);
-    const sameLoadRun = underRun.every((s) => s.weight === last.weight);
-    if (loadable) {
-      const anchor = Math.min(...underRun.map((s) => s.weight));
-      const newWeight = round3(anchor - config.DECREASE_STEPS * loadStepKg);
+  // Racha al mismo peso por debajo del mínimo, IGNORANDO el RIR: es la salida
+  // que impide que un RIR alto (mal calibrado, o por dolor) atrape al usuario.
+  const stuckBelowRun: ExposureSummary[] = [];
+  for (let i = sameWeightRun.length - 1; i >= 0; i--) {
+    if (sameWeightRun[i].medianReps >= repRangeMin) break;
+    stuckBelowRun.unshift(sameWeightRun[i]);
+  }
+  const stuckBelow = stuckBelowRun.length >= config.STUCK_EXPOSURES;
+
+  if (underRun.length >= config.DECREASE_AFTER_EXPOSURES || stuckBelow) {
+    const run =
+      underRun.length >= config.DECREASE_AFTER_EXPOSURES
+        ? underRun
+        : stuckBelowRun;
+    const reasonCode: ProgressionReasonCode =
+      underRun.length >= config.DECREASE_AFTER_EXPOSURES
+        ? "REPEATED_UNDERPERFORMANCE"
+        : "STUCK_BELOW_RANGE";
+    const medians = run.map((s) => s.medianReps);
+    const sameLoadRun = run.every((s) => s.weight === last.weight);
+    const anchor = Math.min(...run.map((s) => s.weight));
+    const worstMedian = Math.min(...medians);
+    const where = sameLoadRun ? ` en ${last.weight} kg` : "";
+    const detail =
+      reasonCode === "STUCK_BELOW_RANGE"
+        ? `${run.length} sesiones seguidas${where} sin llegar a ${repRangeMin} reps (mediana ${medians.join(", ")}). Da igual cómo se sienta el esfuerzo: la carga no permite el rango`
+        : `${run.length} ${run.length === 1 ? "sesión" : "sesiones"} seguidas por debajo de ${repRangeMin} reps${where} (mediana ${medians.join(", ")})`;
+    if (loadable && anchor > loadStepKg) {
+      // La bajada se dimensiona con la equivalencia carga↔reps: la carga que
+      // SÍ dejaría el mínimo del rango. Nunca menos de un incremento, nunca
+      // más de MAX_DECREASE_FRACTION.
+      const equivalent =
+        (anchor * (1 + worstMedian / 30)) / (1 + repRangeMin / 30);
+      const floorLimit = anchor * (1 - config.MAX_DECREASE_FRACTION);
+      const targetWeight = Math.max(equivalent, floorLimit);
+      const steps = Math.max(
+        config.DECREASE_STEPS,
+        Math.floor((anchor - targetWeight) / loadStepKg + 1e-9),
+      );
+      const newWeight = round3(anchor - steps * loadStepKg);
       if (newWeight > 0) {
         return done({
           action: "DECREASE_LOAD",
-          reasonCode: "REPEATED_UNDERPERFORMANCE",
+          reasonCode,
           suggestedWeightKg: newWeight,
           suggestedReps: repRangeMin,
           setTargets: uniformTargets(repRangeMin, plannedSets),
-          explanation: `${underRun.length} sesiones seguidas por debajo de ${repRangeMin} reps${sameLoadRun ? ` en ${last.weight} kg` : ""} (mediana ${medians.join(" y ")}). La carga no te deja hacer el rango: baja a ${newWeight} kg y reconstruye desde ahí.`,
+          explanation: `${detail}. Con esas repeticiones, la carga que sí te deja el rango ronda los ${newWeight} kg: baja ahí y reconstruye.`,
         });
       }
     }
     return done({
       action: "HOLD",
-      reasonCode: "REPEATED_UNDERPERFORMANCE",
+      reasonCode,
       suggestedWeightKg: last.weight,
       suggestedReps: repRangeMin,
       setTargets: uniformTargets(repRangeMin, plannedSets),
-      explanation: `${underRun.length} sesiones seguidas por debajo de ${repRangeMin} reps (mediana ${medians.join(" y ")}). Aquí no puedo bajar la carga: usa una variante más fácil o menos recorrido, y vuelve al rango.`,
+      explanation: loadable
+        ? `${detail}. Ya estás en el escalón más bajo que puedo proponerte con incrementos de ${loadStepKg} kg: usa una variante más fácil o recorta el recorrido.`
+        : `${detail}. Este ejercicio no tiene carga externa que quitar: usa una variante más fácil (menos recorrido, una banda más suave o versión asistida).`,
     });
   }
 
@@ -411,25 +523,31 @@ export function suggestProgression(
         suggestedWeightKg: last.weight,
         suggestedReps: repRangeMax,
         setTargets: uniformTargets(repRangeMax, plannedSets),
-        explanation: `Cerraste el rango (${last.topReps} reps) pero al fallo o casi (RIR ${last.minKnownRir}, objetivo ${targetRir}). Repite ${last.weight} kg buscando dejar ${targetRir} en reserva; si vuelves a cerrarlo así, subimos igualmente.`,
+        explanation: `Cerraste el rango (${last.topReps} reps) con más esfuerzo del previsto: ${last.minKnownRir === 0 ? "llegaste al fallo" : `te quedaste a ${last.minKnownRir} en reserva`}, y el objetivo es ${targetRir}. Repite ${last.weight} kg buscando dejar ${targetRir}; si vuelves a cerrarlo así, subimos igualmente.`,
       });
     }
 
     // 3b. Sin carga externa cuantificable: se progresa por repeticiones.
     if (!loadable) {
       const cap = repRangeMax + config.RANGE_EXTENSION_CAP;
-      if (last.topReps < cap) {
+      const plateauedAtTop =
+        signals.some((x) => x.code === "PLATEAU_SIGNAL") &&
+        last.minReps >= repRangeMax;
+      if (last.minReps < cap && !plateauedAtTop) {
         const target = Math.min(last.minReps + 1, cap);
+        const setTargets = ratchetTargets(
+          sameWeightRun,
+          target,
+          cap,
+          plannedSets,
+        );
         return done({
           action: "ADD_REP",
           reasonCode: "NO_LOAD_STEP",
           suggestedWeightKg: last.weight,
-          suggestedReps: target,
-          setTargets: padTargets(
-            last.reps.map((r) => Math.min(Math.max(r, target), cap)),
-            plannedSets,
-          ),
-          explanation: `Este ejercicio no tiene carga externa que pueda cuantificar: se progresa con repeticiones y recorrido. Cerraste ${repRangeMax}: busca ${target} manteniendo la técnica.`,
+          suggestedReps: Math.min(...setTargets),
+          setTargets,
+          explanation: `Este ejercicio no tiene carga externa que pueda cuantificar: se progresa con repeticiones y recorrido. Hiciste ${last.reps.join("/")}: busca ${setTargets.join("/")} manteniendo la técnica.`,
         });
       }
       return done({
@@ -438,7 +556,7 @@ export function suggestProgression(
         suggestedWeightKg: last.weight,
         suggestedReps: cap,
         setTargets: uniformTargets(cap, plannedSets),
-        explanation: `Ya estás en ${last.topReps} reps y sin carga externa que añadir. Seguir sumando repeticiones aporta poco: pasa a una variante más difícil (más recorrido, una banda más dura o versión unilateral).`,
+        explanation: `Ya estás en ${last.minReps} reps y sin carga externa que añadir, y llevas varias sesiones sin sumar. Las repeticiones altas siguen sirviendo, pero a partir de aquí la serie la limita el ardor más que el músculo: pasa a una variante más difícil (más recorrido, una banda más dura o versión unilateral).`,
       });
     }
 
@@ -456,8 +574,42 @@ export function suggestProgression(
         suggestedWeightKg: loadStepKg,
         suggestedReps: target,
         setTargets: uniformTargets(target, plannedSets),
-        explanation: `Cerraste ${repRangeMax} reps a peso corporal: añade ${loadStepKg} kg de lastre y busca ${target} reps. Sin saber tu peso corporal no puedo afinar más el objetivo.`,
+        explanation: `Cerraste ${last.medianReps} reps a peso corporal: añade ${loadStepKg} kg de lastre y busca ${target} reps. Aquí solo cuento el lastre, así que el objetivo es aproximado.`,
       });
+    }
+
+    // 3b-ter. Media sesión no sube la carga. La serie que falta suele ser la
+    // última, que es justo la que más informa sobre si la carga aguanta.
+    if (last.n < plannedSets) {
+      const setTargets = uniformTargets(repRangeMax, plannedSets);
+      return done({
+        action: "ADD_REP",
+        reasonCode: "INCOMPLETE_FOR_INCREASE",
+        suggestedWeightKg: last.weight,
+        suggestedReps: repRangeMax,
+        setTargets,
+        explanation: `Cerraste el rango, pero solo con ${last.n} de ${plannedSets} series. Repite ${last.weight} kg completando las ${plannedSets}: si aguanta, subimos.`,
+      });
+    }
+
+    // 3b-quater. Sin ningún RIR registrado no hay forma de saber si el esfuerzo
+    // fue el previsto: las repeticiones bastan como evidencia, pero se pide
+    // verlo dos veces antes de mover la carga (es la misma exigencia de
+    // tendencia que el motor aplica para bajar).
+    if (last.missingRir === last.n) {
+      const confirmed =
+        sameWeightRun.length >= 2 &&
+        sameWeightRun[sameWeightRun.length - 2].rangeClosed;
+      if (!confirmed) {
+        return done({
+          action: "HOLD",
+          reasonCode: "NEEDS_RIR_CONFIRMATION",
+          suggestedWeightKg: last.weight,
+          suggestedReps: repRangeMax,
+          setTargets: uniformTargets(repRangeMax, plannedSets),
+          explanation: `Cerraste ${last.medianReps} reps en ${last.weight} kg, pero sin RIR registrado no puedo valorar el esfuerzo. Repítelo: si vuelve a salir, subimos. Registrando el RIR subo a la primera.`,
+        });
+      }
     }
 
     // 3c/3d. Tamaño del salto: normalmente 1 incremento; 2 solo con un exceso
@@ -480,12 +632,29 @@ export function suggestProgression(
     }
 
     const newWeight = round3(last.weight + steps * loadStepKg);
-    const predicted = Math.floor(
-      equivalentReps(last.weight, last.medianReps, newWeight) + 1e-6,
+    const refReps = Math.max(last.medianReps, repRangeMax);
+    const predicted = Math.round(
+      equivalentReps(last.weight, refReps, newWeight),
     );
+    // Tras cerrar el rango al fallo dos veces, aterrizar 1–2 reps por debajo
+    // del mínimo es aceptable: esperar más no aporta nada.
+    const acceptShortfall =
+      afterFailure &&
+      predicted >= repRangeMin - config.ACCEPTABLE_SHORTFALL_REPS;
 
-    if (predicted >= repRangeMin) {
-      const target = Math.min(predicted, repRangeMax);
+    if (last.mixedLoads && newWeight <= last.maxWeight) {
+      const setTargets = uniformTargets(repRangeMax, plannedSets);
+      return done({
+        action: "HOLD",
+        reasonCode: "MIXED_LOADS",
+        suggestedWeightKg: last.maxWeight,
+        suggestedReps: repRangeMax,
+        setTargets,
+        explanation: `Cerraste el rango, pero las series fueron a pesos distintos (${last.sets.map((x) => `${x.weightKg}×${x.reps}`).join(" · ")}) y subir sobre ${last.weight} kg daría ${newWeight} kg, menos de los ${last.maxWeight} que ya moviste. No te bajo la carga: repite el esquema y, si quieres que progrese solo, haz las series al mismo peso.`,
+      });
+    }
+
+    if (predicted >= repRangeMin || acceptShortfall) {
       const reasonCode: ProgressionReasonCode =
         steps > 1
           ? "LOAD_CLEARLY_TOO_LIGHT"
@@ -495,20 +664,23 @@ export function suggestProgression(
       const tail =
         predicted > repRangeMax
           ? ` Sigue quedándose corta: si vuelves a cerrar el rango, subimos otra vez.`
-          : "";
+          : predicted < repRangeMin
+            ? ` Puede que las primeras sesiones te quedes algo por debajo de ${repRangeMin}: es normal justo después de subir.`
+            : "";
+      const target2 = Math.max(Math.min(predicted, repRangeMax), 1);
       const head =
         reasonCode === "RANGE_CLOSED_AFTER_FAILURE"
-          ? `Has cerrado el rango dos veces seguidas llegando al fallo: quedarte en ${last.weight} kg ya no aporta.`
+          ? `Has cerrado el rango dos veces seguidas con más esfuerzo del previsto en ${last.weight} kg: toca subir.`
           : reasonCode === "LOAD_CLEARLY_TOO_LIGHT"
             ? `Hiciste ${last.medianReps} reps con un rango de ${repRangeMin}–${repRangeMax}: la carga se te ha quedado claramente corta.`
-            : `Cerraste ${repRangeMax} reps en ${last.weight} kg con el esfuerzo previsto.`;
+            : `Cerraste ${last.medianReps} reps en ${last.weight} kg${last.missingRir === last.n ? "" : " con el esfuerzo previsto"}.`;
       return done({
         action: "INCREASE_LOAD",
         reasonCode,
         suggestedWeightKg: newWeight,
-        suggestedReps: target,
-        setTargets: uniformTargets(target, plannedSets),
-        explanation: `${head} Sube a ${newWeight} kg: a esa carga te corresponden ~${predicted} reps, así que busca ${target}.${tail}`,
+        suggestedReps: target2,
+        setTargets: uniformTargets(target2, plannedSets),
+        explanation: `${head} Sube a ${newWeight} kg: a esa carga te corresponden ~${target2} reps, así que busca ${target2}.${tail}`,
       });
     }
 
@@ -521,77 +693,137 @@ export function suggestProgression(
     const jumpPct = Math.round((loadStepKg / last.weight) * 100);
     if (needed <= cap) {
       const target = Math.min(last.minReps + 1, needed);
+      const setTargets = ratchetTargets(
+        sameWeightRun,
+        target,
+        needed,
+        plannedSets,
+      );
       return done({
         action: "ADD_REP",
         reasonCode: "EXTEND_RANGE",
         suggestedWeightKg: last.weight,
-        suggestedReps: target,
-        setTargets: padTargets(
-          last.reps.map((r) => Math.min(Math.max(r, target), needed)),
-          plannedSets,
-        ),
-        explanation: `El salto mínimo aquí son ${loadStepKg} kg sobre ${last.weight} (${jumpPct} %), más de lo que absorbe el rango ${repRangeMin}–${repRangeMax}. Sigue en ${last.weight} kg hasta ${needed} reps: entonces ${newWeight} kg × ${repRangeMin} será alcanzable.`,
+        suggestedReps: Math.min(...setTargets),
+        setTargets,
+        explanation: `El salto mínimo aquí son ${loadStepKg} kg sobre ${last.weight} (${jumpPct} %), más de lo que absorbe el rango ${repRangeMin}–${repRangeMax}. Sigue en ${last.weight} kg y sube hasta ${needed} reps: entonces ${newWeight} kg × ${repRangeMin} será alcanzable. Hoy: ${setTargets.join("/")}.`,
       });
     }
+    // Ni extendiendo el rango cabe el salto: proponer una carga a la que solo
+    // se pueden hacer 1-2 reps sería un consejo inservible. Se dice la verdad y
+    // se ofrecen las salidas reales.
+    const insisted = sameWeightRun.length >= config.PLATEAU_EXPOSURES;
+    const stuckTargets = ratchetTargets(
+      sameWeightRun,
+      last.minReps,
+      cap,
+      plannedSets,
+    );
     return done({
-      action: "INCREASE_LOAD",
-      reasonCode: "STEP_TOO_BIG_ACCEPTED",
-      suggestedWeightKg: newWeight,
-      suggestedReps: Math.max(predicted, 1),
-      setTargets: uniformTargets(Math.max(predicted, 1), plannedSets),
-      explanation: `Sube a ${newWeight} kg aunque el salto sea grande (${jumpPct} %): esperamos ~${predicted} reps, por debajo de ${repRangeMin}. Es normal las primeras sesiones; con discos fraccionales el salto sería más suave.`,
+      action: "HOLD",
+      reasonCode: "STEP_TOO_BIG_FOR_RANGE",
+      suggestedWeightKg: last.weight,
+      suggestedReps: Math.min(...stuckTargets),
+      setTargets: stuckTargets,
+      explanation: insisted
+        ? `Llevas ${sameWeightRun.length} sesiones en ${last.weight} kg y el siguiente escalón (${loadStepKg} kg, ${jumpPct} %) sigue sin caber en un rango de ${repRangeMin}–${repRangeMax}. Este ejercicio ya no puede progresar aquí: cambia a una variante con incrementos más finos (mancuernas más juntas, polea, unilateral) o consigue discos fraccionales.`
+        : `El salto mínimo aquí son ${loadStepKg} kg sobre ${last.weight} (${jumpPct} %): demasiado para un rango de ${repRangeMin}–${repRangeMax}, ni siquiera sumando repeticiones. Opciones: discos fraccionales, una variante con incrementos más finos, o aceptar quedarte por debajo del rango unas sesiones.`,
     });
   }
 
   // ── 4. ONE_OFF_UNDERPERFORMANCE ─────────────────────────────────────────
   if (last.medianReps < repRangeMin) {
+    // ¿Es realmente la primera vez, o viene de una carga más alta que ya falló
+    // (bajada propia o sugerida por el motor)? El texto tiene que decir la
+    // verdad: prometer "si se repite ajustaremos" al cuarto fallo es mentir.
+    const recentHeavierFailure = usable
+      .slice(0, -1)
+      .slice(-2)
+      .some((s) => s.weight > last.weight && s.medianReps < repRangeMin);
     return done({
       action: "HOLD",
       reasonCode: "ONE_OFF_UNDERPERFORMANCE",
       suggestedWeightKg: last.weight,
       suggestedReps: repRangeMin,
       setTargets: uniformTargets(repRangeMin, plannedSets),
-      explanation: `El rendimiento quedó por debajo del rango (${last.reps.join("/")} reps, mínimo ${repRangeMin}). No cambio nada por una sesión: repite ${last.weight} kg. Si se repite, ajustaremos la carga.`,
+      explanation: recentHeavierFailure
+        ? `Aún por debajo del rango (${last.reps.join("/")} reps, mínimo ${repRangeMin}), pero ya vienes de una carga más alta. Doy una sesión a ${last.weight} kg para asentarla antes de tocar nada más.`
+        : `El rendimiento quedó por debajo del rango (${last.reps.join("/")} reps, mínimo ${repRangeMin}). No cambio nada por una sesión: repite ${last.weight} kg. Si se repite, ajustaremos la carga.`,
     });
   }
 
   // ── 5. NEAR_FAILURE_HOLD ────────────────────────────────────────────────
   if (last.harder) {
+    // Escape: si esto se repite al mismo peso sin sumar repeticiones, no es una
+    // cuestión de esfuerzo — la carga es demasiada. Mismo patrón de paciencia
+    // que la rama 3a, para no crear otro estado absorbente.
+    const stuckRun: ExposureSummary[] = [];
+    for (let i = sameWeightRun.length - 1; i >= 0; i--) {
+      const s = sameWeightRun[i];
+      if (!s.harder || s.rangeClosed) break;
+      stuckRun.unshift(s);
+    }
+    const noProgress =
+      stuckRun.length >= config.PLATEAU_EXPOSURES &&
+      stuckRun[stuckRun.length - 1].totalReps <= stuckRun[0].totalReps;
+    if (noProgress && loadable && last.weight > loadStepKg) {
+      const newWeight = round3(
+        last.weight - config.DECREASE_STEPS * loadStepKg,
+      );
+      if (newWeight > 0) {
+        return done({
+          action: "DECREASE_LOAD",
+          reasonCode: "REPEATED_UNDERPERFORMANCE",
+          suggestedWeightKg: newWeight,
+          suggestedReps: repRangeMin,
+          setTargets: uniformTargets(repRangeMin, plannedSets),
+          explanation: `${stuckRun.length} sesiones en ${last.weight} kg llegando al fallo sin cerrar ${repRangeMax} reps ni sumar repeticiones (${stuckRun.map((s) => s.totalReps).join(" → ")} en total). No es cuestión de apretar más: baja a ${newWeight} kg.`,
+        });
+      }
+    }
     const target = Math.max(
       repRangeMin,
       Math.min(last.minReps + 1, repRangeMax),
+    );
+    const setTargets = ratchetTargets(
+      sameWeightRun,
+      target,
+      repRangeMax,
+      plannedSets,
     );
     return done({
       action: "HOLD",
       reasonCode: "NEAR_FAILURE_HOLD",
       suggestedWeightKg: last.weight,
-      suggestedReps: target,
-      setTargets: padTargets(
-        last.reps.map((r) => Math.min(Math.max(r, target), repRangeMax)),
-        plannedSets,
-      ),
-      explanation: `Llegaste al fallo o casi (RIR ${last.minKnownRir}, objetivo ${targetRir}) sin cerrar ${repRangeMax} reps. Mantén ${last.weight} kg: el objetivo es sumar repeticiones con algo de reserva, no forzar.`,
+      suggestedReps: Math.min(...setTargets),
+      setTargets,
+      explanation: `${last.minKnownRir === 0 ? "Llegaste al fallo" : `Te quedaste a ${last.minKnownRir} en reserva (objetivo ${targetRir})`} sin cerrar ${repRangeMax} reps. Mantén ${last.weight} kg: el objetivo es sumar repeticiones con algo de reserva, no forzar.`,
     });
   }
 
   // ── 6. ADD_REP: sube la serie más floja ─────────────────────────────────
   if (last.minReps < repRangeMax) {
     const target = Math.min(last.minReps + 1, repRangeMax);
-    const setTargets = padTargets(
-      last.reps.map((r) => Math.min(Math.max(r, target), repRangeMax)),
+    const setTargets = ratchetTargets(
+      sameWeightRun,
+      target,
+      repRangeMax,
       plannedSets,
     );
     return done({
       action: "ADD_REP",
       reasonCode: "ADD_REP",
       suggestedWeightKg: last.weight,
-      suggestedReps: target,
+      suggestedReps: Math.min(...setTargets),
       setTargets,
-      explanation: `Dentro del rango en ${last.weight} kg (${last.reps.join("/")}). Mismo peso: mantén lo que ya hiciste y sube la serie más floja a ${target}. Objetivo de hoy: ${setTargets.join("/")}. Cuando todas lleguen a ${repRangeMax}, subimos carga.`,
+      explanation: `Dentro del rango en ${last.weight} kg (${last.reps.join("/")}). Mismo peso: mantén lo que ya hiciste y sube la serie más floja. Objetivo de hoy: ${setTargets.join("/")}. Cuando cierres ${repRangeMax} con algo de reserva, subimos carga.`,
     });
   }
 
-  // ── 7. HOLD_DEFAULT (no debería alcanzarse) ─────────────────────────────
+  // ── 7. HOLD_DEFAULT ─────────────────────────────────────────────────────
+  // Red de seguridad. Es INALCANZABLE por construcción: si todas las series
+  // llegaron al techo, `rangeClosed` ya era cierto y la regla 3 ganó. Se
+  // conserva para que la función sea total y para no romper si alguien cambia
+  // la definición de `rangeClosed`. Cubierto por la invariante P8 del test.
   return done({
     action: "HOLD",
     reasonCode: "HOLD_DEFAULT",

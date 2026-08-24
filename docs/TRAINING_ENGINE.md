@@ -63,23 +63,41 @@ evidencia de repeticiones, pero degrada la confianza y bloquea el salto doble.
 
 **Escalera de decisión** (la primera regla que aplica gana):
 
-| #   | Condición                                                                                          | Acción · `reasonCode`                                                                               |
-| --- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| 0   | Sin exposiciones                                                                                   | `START` · `NO_HISTORY` (no inventa peso)                                                            |
-| 1   | `n < ceil(plannedSets × 0,5)`                                                                      | `HOLD` · `SESSION_INCOMPLETE`                                                                       |
-| 2   | 2 exposiciones con mediana de reps `< repMin`, pesos no decrecientes y sin pararse lejos del fallo | `DECREASE_LOAD` · `REPEATED_UNDERPERFORMANCE` (−1 incremento, anclado al peso MÁS BAJO de la racha) |
-| 3a  | Rango cerrado con esfuerzo mayor del prescrito, 1ª vez                                             | `HOLD` · `CLOSED_RANGE_AT_FAILURE`                                                                  |
-| 3b  | Rango cerrado y `loadStepKg = 0`                                                                   | `ADD_REP` · `NO_LOAD_STEP` / `HOLD` · `NO_LOAD_STEP_CAPPED`                                         |
-| 3c  | Rango cerrado y el salto cabe en el rango                                                          | `INCREASE_LOAD` · `RANGE_CLOSED` / `RANGE_CLOSED_AFTER_FAILURE` / `LOAD_CLEARLY_TOO_LIGHT`          |
-| 3d  | Rango cerrado y el salto NO cabe                                                                   | `ADD_REP` · `EXTEND_RANGE` (o `INCREASE_LOAD` · `STEP_TOO_BIG_ACCEPTED`)                            |
-| 4   | Mediana de reps `< repMin` (1ª vez)                                                                | `HOLD` · `ONE_OFF_UNDERPERFORMANCE`                                                                 |
-| 5   | Fallo o casi sin cerrar el rango                                                                   | `HOLD` · `NEAR_FAILURE_HOLD`                                                                        |
-| 6   | Alguna serie bajo el techo                                                                         | `ADD_REP` · `ADD_REP` (sube la **serie más floja**)                                                 |
-| 7   | Resto                                                                                              | `HOLD` · `HOLD_DEFAULT`                                                                             |
+| #   | Condición                                                                                  | Acción · `reasonCode`                                                                      |
+| --- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 0   | Sin exposiciones                                                                           | `START` · `NO_HISTORY` (no inventa peso)                                                   |
+| 1   | `n < ceil(plannedSets × 0,5)`                                                              | `HOLD` · `SESSION_INCOMPLETE`                                                              |
+| 1b  | Carga < 75 % de la exposición anterior y con esfuerzo sobrado                              | `HOLD` · `ATYPICAL_LOAD_DROP` (un typo no reancla el ejercicio)                            |
+| 2   | 2 exposiciones con mediana `< repMin`, pesos no decrecientes y sin pararse lejos del fallo | `DECREASE_LOAD` · `REPEATED_UNDERPERFORMANCE`                                              |
+| 2b  | 4 exposiciones al mismo peso con mediana `< repMin`, **ignorando el RIR**                  | `DECREASE_LOAD` · `STUCK_BELOW_RANGE`                                                      |
+| 3a  | Rango cerrado con esfuerzo mayor del prescrito, 1ª vez                                     | `HOLD` · `CLOSED_RANGE_AT_FAILURE`                                                         |
+| 3b  | Rango cerrado y `loadStepKg = 0`                                                           | `ADD_REP` · `NO_LOAD_STEP` / `HOLD` · `NO_LOAD_STEP_CAPPED`                                |
+| 3c  | Rango cerrado con menos series de las previstas                                            | `ADD_REP` · `INCOMPLETE_FOR_INCREASE` (media sesión no sube la carga)                      |
+| 3d  | Rango cerrado sin ningún RIR registrado y sin confirmar dos veces                          | `HOLD` · `NEEDS_RIR_CONFIRMATION`                                                          |
+| 3e  | Rango cerrado con cargas mezcladas y el salto no supera el top set                         | `HOLD` · `MIXED_LOADS` (un "sube" nunca puede descargar)                                   |
+| 3f  | Rango cerrado y el salto cabe en el rango                                                  | `INCREASE_LOAD` · `RANGE_CLOSED` / `RANGE_CLOSED_AFTER_FAILURE` / `LOAD_CLEARLY_TOO_LIGHT` |
+| 3g  | Rango cerrado y el salto NO cabe                                                           | `ADD_REP` · `EXTEND_RANGE`, o `HOLD` · `STEP_TOO_BIG_FOR_RANGE`                            |
+| 4   | Mediana de reps `< repMin` (1ª vez)                                                        | `HOLD` · `ONE_OFF_UNDERPERFORMANCE`                                                        |
+| 5   | Fallo o casi sin cerrar el rango (con salida por estancamiento a `DECREASE_LOAD`)          | `HOLD` · `NEAR_FAILURE_HOLD`                                                               |
+| 6   | Alguna serie bajo el techo                                                                 | `ADD_REP` · `ADD_REP` (sube la **serie más floja**)                                        |
+| 7   | Resto                                                                                      | `HOLD` · `HOLD_DEFAULT` (red de seguridad inalcanzable)                                    |
+
+**Señales informativas** (`signals`, nunca cambian la acción): `PLATEAU_SIGNAL` (3 exposiciones al
+mismo peso sin batir el mejor total y sin mejorar en la ventana mostrada) y `MIXED_LOADS` (las
+series no fueron todas a la misma carga: la lectura del motor es parcial).
+
+**Estados absorbentes: prohibidos por diseño.** Toda rama de `HOLD` tiene salida — cerrar el rango
+al fallo sube a la segunda, quedarse corto baja a la segunda (o a la cuarta si el RIR lo bloquea),
+llegar al fallo sin cerrar el rango baja si se estanca, y el salto imposible escala a "cambia de
+variante". Fijado por las simulaciones longitudinales de `progression.sim.test.ts`.
 
 **Tamaño del salto**: normalmente **un** incremento del material. **Dos** solo si la mediana supera
 el techo del rango en ≥3 reps, con esfuerzo compatible y RIR registrado, y sin pasar del 10 % de la
 carga. **Nunca** un salto grande para igualar el e1RM matemáticamente.
+
+**Objetivos por serie (`setTargets`) con TRINQUETE**: ninguna serie pide menos de lo que ya
+lograste en ese hueco con esa misma carga, así que un día flojo no rebaja el plan consolidado
+(`8/7/7` seguido de `7/6/6` sigue apuntando a `8/7/7`). El trinquete se reinicia al cambiar de carga.
 
 **Objetivo de reps tras subir**: `floor(equivalentReps(pesoRef, medianaReps, pesoNuevo))`, acotado
 al rango — Epley usado como modelo **relativo intra-variante**, jamás como afirmación de 1RM. Si ese
@@ -114,8 +132,13 @@ evidencia de repeticiones (progresar por reps sigue siendo válido), pero degrad
 `LOW` cuando falta en toda la sesión y **bloquea el salto doble de carga**. Un RIR de fallo
 REGISTRADO manda sobre las series sin registrar.
 
-**Límite histórico**: antes de esta fase la UI prerrellenaba el campo con `targetRir`. Las filas
-anteriores **no permiten distinguir un valor elegido de un valor por defecto** y no se corrigen
+**e1RM**: sin RIR registrado **no se estima** (`estimateOneRepMax` devuelve `null`). Tratar `null`
+como 0 equivaldría a suponer que la serie fue al fallo — el sesgo más optimista posible — y haría
+que la tendencia cayera al dejar de registrar el RIR. `bestSet`/`currentE1rm`/`trend` ya caen a
+tonelaje cuando falta.
+
+**Límite histórico**: antes de esta fase la UI prerrellenaba el campo con `targetRir`. Esas filas se
+pueden localizar por `completedAt`, pero no se puede saber si su valor fue elegido; no se corrigen
 retrospectivamente. **Los datos de RIR fiables empiezan en la Fase 3.2c** (ver DATA_MODEL.md).
 
 **Técnica**: `SetLog.technique` no se captura en ninguna pantalla, así que **ninguna regla del motor

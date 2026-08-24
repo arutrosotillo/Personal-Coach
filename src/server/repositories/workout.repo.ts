@@ -14,16 +14,19 @@ export interface VariantExposure {
 }
 
 /**
- * Contexto histórico de una variante para la pantalla de ejecución y el motor
- * de progresión: la última exposición (contexto "última vez") y las últimas
- * `PROGRESSION.HISTORY_WINDOW` exposiciones, de la MÁS ANTIGUA a la MÁS
- * RECIENTE (el motor necesita memoria mínima, no solo la última sesión).
+ * Contexto histórico de una variante: la última exposición (contexto "última
+ * vez", que va al cliente) y las últimas `PROGRESSION.HISTORY_WINDOW`
+ * exposiciones de la MÁS ANTIGUA a la MÁS RECIENTE (memoria mínima del motor,
+ * solo servidor).
+ *
+ * Una sesión aporta como mucho UNA exposición. Si la misma variante aparece
+ * dos veces el mismo día (p. ej. serie principal + back-off), se toma la de
+ * menor `ordinal`: es lo comparable entre sesiones, y mezclar ambas daría un
+ * peso de referencia sin sentido.
  */
 export interface LastComparable {
   localDate: string;
   sets: VariantExposureRow[];
-  /** Nº de sesiones válidas de la variante en el historial (para la confianza). */
-  comparableSessions: number;
   exposures: VariantExposure[];
 }
 
@@ -72,27 +75,36 @@ async function recentWorkingSetsForVariants(
       weightKg: true,
       reps: true,
       rir: true,
-      workoutExercise: { select: { sessionId: true } },
+      workoutExercise: {
+        select: { sessionId: true, id: true, ordinal: true },
+      },
     },
   });
 
-  // Agrupa por variante → sesión, conservando el orden de la query (más
-  // reciente primero). Una variante repetida en la misma sesión cuenta como
-  // UNA exposición, no dos.
-  const byVariant = new Map<string, Map<string, VariantExposure>>();
+  // Agrupa por variante → sesión → workoutExercise, conservando el orden de la
+  // query (sesión más reciente primero).
+  interface Slot extends VariantExposure {
+    ordinal: number;
+  }
+  const byVariant = new Map<string, Map<string, Map<string, Slot>>>();
   for (const r of rows) {
-    const sessionId = r.workoutExercise.sessionId;
+    const { sessionId, id: weId, ordinal } = r.workoutExercise;
     let sessions = byVariant.get(r.exerciseVariantId);
     if (!sessions) {
-      sessions = new Map<string, VariantExposure>();
+      sessions = new Map();
       byVariant.set(r.exerciseVariantId, sessions);
     }
-    let exposure = sessions.get(sessionId);
-    if (!exposure) {
-      exposure = { localDate: r.localDate, sets: [] };
-      sessions.set(sessionId, exposure);
+    let slots = sessions.get(sessionId);
+    if (!slots) {
+      slots = new Map<string, Slot>();
+      sessions.set(sessionId, slots);
     }
-    exposure.sets.push({
+    let slot = slots.get(weId);
+    if (!slot) {
+      slot = { localDate: r.localDate, ordinal, sets: [] };
+      slots.set(weId, slot);
+    }
+    slot.sets.push({
       setNumber: r.setNumber,
       weightKg: r.weightKg,
       reps: r.reps,
@@ -101,9 +113,13 @@ async function recentWorkingSetsForVariants(
   }
 
   for (const [variantId, sessions] of byVariant) {
-    const ordered = [...sessions.values()];
-    for (const exposure of ordered) {
-      exposure.sets.sort((a, b) => a.setNumber - b.setNumber);
+    // Una exposición por sesión: la del `ordinal` más bajo (trabajo principal).
+    const ordered: VariantExposure[] = [];
+    for (const slots of sessions.values()) {
+      const chosen = [...slots.values()].sort((a, b) => a.ordinal - b.ordinal)[0];
+      if (!chosen) continue;
+      chosen.sets.sort((a, b) => a.setNumber - b.setNumber);
+      ordered.push({ localDate: chosen.localDate, sets: chosen.sets });
     }
     const last = ordered[0];
     if (!last) continue;
@@ -112,7 +128,6 @@ async function recentWorkingSetsForVariants(
     result.set(variantId, {
       localDate: last.localDate,
       sets: last.sets,
-      comparableSessions: ordered.length,
       exposures,
     });
   }
@@ -139,6 +154,35 @@ export interface ExecutionExercise {
     rir: number | null;
   }>;
   lastTime: LastComparable | null;
+}
+
+/** Vista de la sesión SIN los datos que solo necesita el servidor. */
+export type ClientExecutionExercise = Omit<ExecutionExercise, "lastTime"> & {
+  lastTime: Omit<LastComparable, "exposures"> | null;
+};
+export type ClientExecutionSession = Omit<ExecutionSession, "exercises"> & {
+  exercises: ClientExecutionExercise[];
+};
+
+/**
+ * Quita del payload lo que el cliente no usa: las exposiciones históricas solo
+ * alimentan al motor de progresión, que corre en el servidor.
+ */
+export function toClientSession(
+  session: ExecutionSession,
+): ClientExecutionSession {
+  return {
+    ...session,
+    exercises: session.exercises.map((exercise) => ({
+      ...exercise,
+      lastTime: exercise.lastTime
+        ? {
+            localDate: exercise.lastTime.localDate,
+            sets: exercise.lastTime.sets,
+          }
+        : null,
+    })),
+  };
 }
 
 export interface ExecutionSession {

@@ -21,7 +21,7 @@ import {
   setPlannedSetsAction,
   substituteExerciseAction,
 } from "@/server/actions/workout.action";
-import type { ExecutionSession } from "@/server/repositories/workout.repo";
+import type { ClientExecutionSession } from "@/server/repositories/workout.repo";
 import type { ExerciseHistorySummary } from "@/server/services/progression.service";
 import type { ProgressionSuggestion } from "@/core/training/progression";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,12 @@ interface RowState {
    * y sesga al motor de progresión (docs/TRAINING_ENGINE_FINAL_AUDIT.md §2.6).
    */
   rir: number | null;
+  /**
+   * ¿El usuario ha contestado al RIR (un número o "no lo sé")? Distingue
+   * "todavía no lo he tocado" de "he dicho que no lo sé". Ambos persisten
+   * igual (`rir: null`); es solo para no mostrar una respuesta que nadie dio.
+   */
+  rirAnswered: boolean;
   done: boolean;
 }
 
@@ -50,7 +56,7 @@ type RowsMap = Record<string, RowState[]>;
 // como impuro si aparece dentro del componente, aunque sea en un handler.
 const nowMs = () => Date.now();
 
-function initRows(session: ExecutionSession): RowsMap {
+function initRows(session: ClientExecutionSession): RowsMap {
   const map: RowsMap = {};
   for (const ex of session.exercises) {
     const rows: RowState[] = [];
@@ -65,6 +71,7 @@ function initRows(session: ExecutionSession): RowsMap {
           (last ? last.weightKg.toString() : ""),
         reps: logged?.reps ?? last?.reps ?? ex.repRangeMin,
         rir: logged?.rir ?? null,
+        rirAnswered: !!logged,
         done: !!logged,
       });
     }
@@ -78,7 +85,7 @@ export function SessionRunner({
   substitution,
   suggestions,
 }: {
-  session: ExecutionSession;
+  session: ClientExecutionSession;
   substitution: SubstitutionExercise[];
   suggestions: Record<string, ProgressionSuggestion>;
 }) {
@@ -115,25 +122,33 @@ export function SessionRunner({
     });
   }
 
-  /** Guarda (upsert idempotente) el estado actual de una serie. */
-  function persistSet(idx: number, row: RowState, markDone: boolean) {
+  /**
+   * Guarda (upsert idempotente) el estado actual de una serie. Si falla —
+   * incluida una caída de red, que en una app usada por LAN desde el móvil es
+   * lo normal, no lo excepcional — revierte la fila al estado previo para que
+   * la pantalla nunca muestre algo que no está guardado.
+   */
+  function persistSet(idx: number, row: RowState, previous: RowState) {
     const weightKg = row.weight === "" ? 0 : Number(row.weight);
     if (Number.isNaN(weightKg)) {
       toast.error("Peso no válido");
       return false;
     }
     startTransition(async () => {
-      const res = await logSetAction({
-        workoutExerciseId: ex.id,
-        setNumber: idx + 1,
-        weightKg,
-        reps: row.reps,
-        rir: row.rir,
-      });
-      if (!res.ok) {
-        if (markDone) updateRow(ex.id, idx, { done: false });
+      try {
+        const res = await logSetAction({
+          workoutExerciseId: ex.id,
+          setNumber: idx + 1,
+          weightKg,
+          reps: row.reps,
+          rir: row.rir,
+        });
+        if (res.ok) return;
         toast.error(res.error ?? "No se pudo guardar");
+      } catch {
+        toast.error("Sin conexión: la serie no se ha guardado");
       }
+      updateRow(ex.id, idx, previous);
     });
     return true;
   }
@@ -141,7 +156,7 @@ export function SessionRunner({
   function completeSet(idx: number) {
     const row = exRows[idx];
     // Optimista: marcar hecho y arrancar el descanso al instante.
-    if (!persistSet(idx, row, true)) return;
+    if (!persistSet(idx, { ...row, done: true }, row)) return;
     updateRow(ex.id, idx, { done: true });
     setRestEndsAt(nowMs() + ex.restSeconds * 1000);
   }
@@ -154,20 +169,31 @@ export function SessionRunner({
   function editRow(idx: number, patch: Partial<RowState>) {
     const current = exRows[idx];
     updateRow(ex.id, idx, patch);
-    if (current?.done) persistSet(idx, { ...current, ...patch }, false);
+    // Solo se re-guarda una serie YA completada, y nunca con el peso a medio
+    // teclear (el campo vacío persistiría un 0 real en la base de datos).
+    const next = { ...current, ...patch };
+    if (current?.done && next.weight !== "") persistSet(idx, next, current);
   }
 
   function addSet() {
     const arr = rows[ex.id] ?? [];
     const last = arr[arr.length - 1];
-    const next = [...arr, { ...last, done: false }];
+    // Se hereda el PLAN (peso y reps), nunca el RIR: la serie nueva todavía no
+    // se ha hecho, así que su esfuerzo está sin registrar.
+    const next = [
+      ...arr,
+      { ...last, rir: null, rirAnswered: false, done: false },
+    ];
     setRows((prev) => ({ ...prev, [ex.id]: next }));
     startTransition(async () => {
-      const res = await setPlannedSetsAction(ex.id, next.length);
-      if (!res.ok) {
-        setRows((prev) => ({ ...prev, [ex.id]: arr }));
+      try {
+        const res = await setPlannedSetsAction(ex.id, next.length);
+        if (res.ok) return;
         toast.error(res.error ?? "No se pudo añadir la serie");
+      } catch {
+        toast.error("Sin conexión: no se pudo añadir la serie");
       }
+      setRows((prev) => ({ ...prev, [ex.id]: arr }));
     });
   }
 
@@ -177,11 +203,14 @@ export function SessionRunner({
     const next = arr.slice(0, -1);
     setRows((prev) => ({ ...prev, [ex.id]: next }));
     startTransition(async () => {
-      const res = await setPlannedSetsAction(ex.id, next.length);
-      if (!res.ok) {
-        setRows((prev) => ({ ...prev, [ex.id]: arr }));
+      try {
+        const res = await setPlannedSetsAction(ex.id, next.length);
+        if (res.ok) return;
         toast.error(res.error ?? "No se pudo quitar la serie");
+      } catch {
+        toast.error("Sin conexión: no se pudo quitar la serie");
       }
+      setRows((prev) => ({ ...prev, [ex.id]: arr }));
     });
   }
 
@@ -206,7 +235,9 @@ export function SessionRunner({
             },
       ),
     }));
-    const plan = (targets ?? []).filter((_, i) => !arr[i]?.done);
+    const plan = (targets ?? [])
+      .slice(0, arr.length)
+      .filter((_, i) => !arr[i].done);
     toast.success(
       plan.length > 0
         ? `${suggestion.suggestedWeightKg} kg · ${plan.join("/")} reps`
@@ -226,9 +257,15 @@ export function SessionRunner({
           weight: lastSet.weightKg.toString(),
           reps: lastSet.reps,
           rir: null,
+          rirAnswered: false,
         }
       : prev
-        ? { weight: prev.weight, reps: prev.reps, rir: null }
+        ? {
+            weight: prev.weight,
+            reps: prev.reps,
+            rir: null,
+            rirAnswered: false,
+          }
         : null;
     if (!source) return;
     updateRow(ex.id, idx, source);
@@ -477,7 +514,8 @@ export function SessionRunner({
 }
 
 /** Badge discreto con la sugerencia de progresión. Un tap despliega el "por
- * qué"; "aplicar" solo rellena el primer set (no persiste, no toca el programa). */
+ * qué"; "aplicar" rellena las series pendientes (no persiste, no toca el
+ * programa) y las señales informativas se muestran bajo la explicación. */
 function SuggestionBadge({
   suggestion,
   onApply,
@@ -750,12 +788,12 @@ function SetRow({
             <button
               key={r}
               type="button"
-              aria-pressed={row.rir === r}
+              aria-pressed={row.rirAnswered && row.rir === r}
               aria-label={`RIR ${r === 4 ? "4 o más" : r}`}
-              onClick={() => onChange({ rir: r })}
+              onClick={() => onChange({ rir: r, rirAnswered: true })}
               className={cn(
-                "tnum min-h-9 min-w-9 rounded-md border text-sm",
-                row.rir === r
+                "tnum min-h-11 min-w-11 rounded-md border text-sm",
+                row.rirAnswered && row.rir === r
                   ? "border-primary bg-primary/15 text-foreground"
                   : "border-border text-muted-foreground",
               )}
@@ -765,12 +803,12 @@ function SetRow({
           ))}
           <button
             type="button"
-            aria-pressed={row.rir === null}
+            aria-pressed={row.rirAnswered && row.rir === null}
             aria-label="RIR: no lo sé"
-            onClick={() => onChange({ rir: null })}
+            onClick={() => onChange({ rir: null, rirAnswered: true })}
             className={cn(
-              "min-h-9 rounded-md border px-2 text-xs",
-              row.rir === null
+              "min-h-11 rounded-md border px-2 text-xs",
+              row.rirAnswered && row.rir === null
                 ? "border-primary bg-primary/15 text-foreground"
                 : "border-border text-muted-foreground",
             )}

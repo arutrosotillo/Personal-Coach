@@ -38,11 +38,12 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
     rirGroup(setIndex).getByRole("button", { name: "RIR: no lo sé" });
 
   // ── 2. El valor REGISTRADO empieza sin registrar ─────────────────────────
-  // Ningún número está seleccionado; el estado por defecto es "no lo sé".
+  // NADA está seleccionado: ni un número ni "No lo sé". Mostrar "No lo sé" ya
+  // marcado se leería como una respuesta dada y empujaría a no registrar.
   for (const value of [0, 1, 2, 3]) {
     await expect(rirChip(0, value)).toHaveAttribute("aria-pressed", "false");
   }
-  await expect(dontKnow(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(dontKnow(0)).toHaveAttribute("aria-pressed", "false");
 
   // ── 3. Se puede seleccionar un RIR concreto ──────────────────────────────
   await page
@@ -62,7 +63,7 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
     .getByRole("button", { name: /Repetir/i })
     .first()
     .click();
-  await expect(dontKnow(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(dontKnow(1)).toHaveAttribute("aria-pressed", "false");
   await expect(rirChip(1, 2)).toHaveAttribute("aria-pressed", "false");
   // Y se puede elegir "No lo sé" explícitamente.
   await dontKnow(1).click();
@@ -75,6 +76,12 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
   await expect(rirChip(0, 2)).toHaveAttribute("aria-pressed", "true");
   await expect(dontKnow(1)).toHaveAttribute("aria-pressed", "true");
   await expect(rirChip(1, 2)).toHaveAttribute("aria-pressed", "false");
+
+  // "+ Añadir serie" hereda el plan, nunca el esfuerzo de la serie anterior.
+  await page.getByRole("button", { name: /Añadir serie/i }).click();
+  await expect(dontKnow(2)).toHaveAttribute("aria-pressed", "false");
+  await expect(rirChip(2, 2)).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: /Quitar serie/i }).click();
 
   // Corregir el RIR de una serie YA completada también se guarda.
   await rirChip(0, 3).click();
