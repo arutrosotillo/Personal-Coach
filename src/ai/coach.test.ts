@@ -538,7 +538,7 @@ describe("guardrails · explicar la regla no es contradecir al motor", () => {
   /** Respuesta real de EXPLAIN sobre "Press inclinado", que se descartaba entera. */
   const EXPLAIN_REAL: CoachResponse = {
     headline:
-      "Press inclinado: 3×6–10 con 20 kg y objetivo de 2 RIR; hoy el motor pide 7/7/7.",
+      "Press banca: 3 series de 6–8 con 80 kg y objetivo de 2 RIR.",
     highlights: [
       {
         label: "RIR",
@@ -549,7 +549,7 @@ describe("guardrails · explicar la regla no es contradecir al motor", () => {
     ],
     fatigue: null,
     recommendation:
-      "Para subir carga, cierra 10 repeticiones en las 3 series con algo de reserva, manteniendo el objetivo de 2 RIR. Además, la fatiga alta y el dolor articular suspenden actualmente las subidas de carga.",
+      "Para subir carga, cierra 8 repeticiones en las 3 series con algo de reserva, manteniendo el objetivo de 2 RIR. Además, la fatiga alta y el dolor articular suspenden actualmente las subidas de carga.",
     hypotheses: [],
   };
 
