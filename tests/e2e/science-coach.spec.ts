@@ -60,6 +60,36 @@ test("Ciencia: filosofía, etiquetas de evidencia y bibliografía verificada", a
   await expect(page.getByText("RANGE_CLOSED").first()).toBeVisible();
 });
 
+test("Ciencia: se puede navegar en móvil sin scroll a ciegas", async ({
+  page,
+}) => {
+  await page.goto("/science");
+
+  // La página son ~11 pantallas de móvil. Las secciones tenían `id` pero no
+  // había un solo enlace que llevara a ellas.
+  const indice = page.getByRole("navigation", { name: "Secciones" });
+  await expect(indice).toBeVisible();
+  const chips = indice.getByRole("link");
+  expect(await chips.count()).toBeGreaterThanOrEqual(8);
+
+  // Regla propia del proyecto: cualquier objetivo táctil, ≥44 px.
+  for (const chip of await chips.all()) {
+    const box = await chip.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+
+  // El chip lleva de verdad a la sección, sin salir de la página.
+  await indice.getByRole("link", { name: "Bibliografía" }).click();
+  await expect(page).toHaveURL(/#bibliografia$/);
+  await expect(
+    page.getByRole("heading", { name: "Bibliografía" }),
+  ).toBeInViewport();
+
+  // Ningún ítem de la nav inferior corresponde a /science: hace falta salida.
+  await page.getByRole("link", { name: /Volver al coach/ }).click();
+  await expect(page).toHaveURL(/\/coach$/);
+});
+
 test("Coach: resumen semanal, pregunta libre y análisis por ejercicio", async ({
   page,
 }) => {

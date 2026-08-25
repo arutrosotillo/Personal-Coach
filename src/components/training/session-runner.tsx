@@ -85,10 +85,13 @@ export function SessionRunner({
   session,
   substitution,
   suggestions,
+  coachEnabled,
 }: {
   session: ClientExecutionSession;
   substitution: SubstitutionExercise[];
   suggestions: Record<string, ProgressionSuggestion>;
+  /** Si no hay OPENAI_API_KEY, los botones de IA no se pintan. */
+  coachEnabled: boolean;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<RowsMap>(() => initRows(session));
@@ -509,6 +512,7 @@ export function SessionRunner({
         onOpenChange={setHistoryOpen}
         variantId={ex.variantId}
         exerciseName={ex.exerciseName}
+        coachEnabled={coachEnabled}
       />
     </div>
   );
@@ -601,11 +605,13 @@ function ExerciseHistorySheet({
   onOpenChange,
   variantId,
   exerciseName,
+  coachEnabled,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   variantId: string;
   exerciseName: string;
+  coachEnabled: boolean;
 }) {
   // Solo se hace setState dentro del callback asíncrono (no de forma síncrona
   // en el efecto). `loading` se deriva comparando la variante ya cargada.
@@ -641,7 +647,10 @@ function ExerciseHistorySheet({
         <DrawerHeader>
           <DrawerTitle>{exerciseName}</DrawerTitle>
         </DrawerHeader>
-        <div className="space-y-3 px-4 pb-8 text-sm">
+        {/* `overflow-y-auto`: el popup tiene tope de altura y el contenedor
+            interno es `overflow-hidden`, así que sin esto una respuesta larga
+            del coach se recortaba sin posibilidad de hacer scroll. */}
+        <div className="space-y-3 overflow-y-auto px-4 pb-8 text-sm">
           {loading ? (
             <p className="text-muted-foreground">Cargando…</p>
           ) : loaded?.error ? (
@@ -681,17 +690,21 @@ function ExerciseHistorySheet({
             </>
           )}
 
-          {/* Coach AI, bajo demanda: una consulta por tap, nunca automática. */}
-          <div className="border-border space-y-3 border-t pt-3">
-            <CoachPanel
-              request={{ task: "EXERCISE", variantId }}
-              label="Analizar con AI Coach"
-            />
-            <CoachPanel
-              request={{ task: "EXPLAIN", variantId }}
-              label="¿Por qué hago esto?"
-            />
-          </div>
+          {/* Coach AI, bajo demanda: una consulta por tap, nunca automática.
+              Sin clave configurada no se pinta nada: dos botones que solo
+              devuelven "no configurado" en mitad del entrenamiento son ruido. */}
+          {coachEnabled ? (
+            <div className="border-border space-y-3 border-t pt-3">
+              <CoachPanel
+                request={{ task: "EXERCISE", variantId }}
+                label="Analizar con AI Coach"
+              />
+              <CoachPanel
+                request={{ task: "EXPLAIN", variantId }}
+                label="¿Por qué hago esto?"
+              />
+            </div>
+          ) : null}
         </div>
       </DrawerContent>
     </Drawer>
@@ -1032,7 +1045,7 @@ function SubstitutionSheet({
         <DrawerHeader>
           <DrawerTitle>Sustituir ejercicio</DrawerTitle>
         </DrawerHeader>
-        <div className="px-4 pb-6">
+        <div className="overflow-y-auto px-4 pb-6">
           <input
             type="search"
             value={query}

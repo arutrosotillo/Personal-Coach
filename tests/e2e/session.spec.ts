@@ -132,3 +132,23 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   // (La DB e2e es compartida: puede haber más de una sesión en el historial.)
   await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
 });
+
+test("la acción principal de /train se alcanza sin scroll", async ({
+  page,
+}) => {
+  // Regresión medida en revisión: la tarjeta de recuperación (634 px) se
+  // pintaba ENCIMA de "Hoy toca", así que en un Pixel 7 el botón primario caía
+  // por debajo de la nav fija — inalcanzable sin desplazarse.
+  await onboard(page);
+  await page.goto("/train");
+
+  const cta = page.getByRole("button", { name: "Empezar entrenamiento" });
+  await expect(cta).toBeVisible();
+  await expect(cta).toBeInViewport();
+
+  // Y por encima de la nav inferior, que es fija y taparía cualquier cosa.
+  const nav = page.getByRole("navigation").last();
+  const ctaBox = await cta.boundingBox();
+  const navBox = await nav.boundingBox();
+  expect(ctaBox!.y + ctaBox!.height).toBeLessThanOrEqual(navBox!.y);
+});

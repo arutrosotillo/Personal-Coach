@@ -15,9 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function TrainPage() {
   const profile = await getProfile();
   const overview = profile ? await getTodayOverview(profile.id) : null;
-  const analysis = profile ? await getTrainingAnalysis(profile.id) : null;
 
-  if (!overview) {
+  if (!profile || !overview) {
     return (
       <AppShell>
         <h1 className="mb-4 text-2xl font-semibold">Entrenar</h1>
@@ -35,6 +34,9 @@ export default async function TrainPage() {
     );
   }
 
+  // Después del early-return: sin programa, este análisis (8 consultas) se
+  // calculaba solo para tirarlo.
+  const analysis = await getTrainingAnalysis(profile.id);
   const nextTemplate = overview.templates.find((t) => !t.done);
 
   return (
@@ -45,8 +47,6 @@ export default async function TrainPage() {
         <span className="tnum">{overview.weekNumber}</span> de{" "}
         <span className="tnum">{overview.weeksPlanned}</span>
       </p>
-
-      {analysis ? <RecoveryCard fatigue={analysis.fatigue} /> : null}
 
       {overview.active ? (
         <Card className="mb-4">
@@ -96,6 +96,12 @@ export default async function TrainPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* El estado de recuperación es contexto, no la tarea del día: con la
+          tarjeta arriba, "Empezar entrenamiento" caía por debajo de la nav. */}
+      {analysis.context.sessions.length > 0 ? (
+        <RecoveryCard fatigue={analysis.fatigue} />
+      ) : null}
 
       <h2 className="text-muted-foreground mb-2 text-sm font-medium">
         Sesiones de la semana

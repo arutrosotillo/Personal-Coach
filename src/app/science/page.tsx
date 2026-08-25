@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -46,10 +47,28 @@ export default function SciencePage() {
   return (
     <AppShell>
       <h1 className="mb-1 text-2xl font-semibold">Ciencia</h1>
-      <p className="text-muted-foreground mb-4 text-sm">
+      <p className="text-muted-foreground mb-3 text-sm">
         Por qué esta app entrena como entrena — y qué parte es evidencia y qué
         parte es una decisión nuestra.
       </p>
+
+      {/* Índice. La página son ~11 pantallas en móvil: sin esto, llegar a la
+          bibliografía son diez gestos de scroll a ciegas. */}
+      <nav aria-label="Secciones" className="mb-5 flex flex-wrap gap-2">
+        {[
+          ...PHILOSOPHY.map((s) => ({ id: s.id, title: s.short ?? s.title })),
+          { id: "reglas", title: "Códigos" },
+          { id: "bibliografia", title: "Bibliografía" },
+        ].map((s) => (
+          <a
+            key={s.id}
+            href={`#${s.id}`}
+            className="border-border text-muted-foreground inline-flex min-h-11 items-center rounded-full border px-3 text-xs"
+          >
+            {s.title}
+          </a>
+        ))}
+      </nav>
 
       <Card className="mb-6">
         <CardContent className="pt-4">
@@ -68,7 +87,7 @@ export default function SciencePage() {
       </Card>
 
       {PHILOSOPHY.map((section) => (
-        <section key={section.id} className="mb-6" id={section.id}>
+        <section key={section.id} className="mb-6 scroll-mt-4" id={section.id}>
           <h2 className="mb-1 text-lg font-semibold">{section.title}</h2>
           <p className="text-muted-foreground mb-3 text-sm">{section.intro}</p>
           <ul className="space-y-3">
@@ -104,7 +123,7 @@ export default function SciencePage() {
         </section>
       ))}
 
-      <section className="mb-6" id="reglas">
+      <section className="mb-6 scroll-mt-4" id="reglas">
         <h2 className="mb-1 text-lg font-semibold">
           Qué significa cada decisión
         </h2>
@@ -125,7 +144,7 @@ export default function SciencePage() {
         </ul>
       </section>
 
-      <section id="bibliografia">
+      <section className="scroll-mt-4" id="bibliografia">
         <h2 className="mb-1 text-lg font-semibold">Bibliografía</h2>
         <p className="text-muted-foreground mb-3 text-sm">
           Todas estas referencias se han verificado una a una contra PubMed,
@@ -169,6 +188,15 @@ export default function SciencePage() {
           })}
         </ul>
       </section>
+
+      {/* Ningún ítem de la nav inferior corresponde a /science: sin esto el
+          usuario solo puede salir con el botón atrás del navegador. */}
+      <Link
+        href="/coach"
+        className="text-muted-foreground mt-6 inline-flex min-h-11 items-center text-sm underline underline-offset-2"
+      >
+        ← Volver al coach
+      </Link>
     </AppShell>
   );
 }

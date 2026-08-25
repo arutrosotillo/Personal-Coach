@@ -36,13 +36,13 @@ export function AskCoach() {
         placeholder="Sobre tu entrenamiento, tu progreso o tu recuperación…"
         className="mt-1"
       />
-      <div className="mt-2 flex flex-wrap gap-1">
+      <div className="mt-2 flex flex-wrap gap-2">
         {SUGGESTIONS.map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => setQuestion(s)}
-            className="border-border text-muted-foreground min-h-9 rounded-full border px-3 text-xs"
+            className="border-border text-muted-foreground min-h-11 rounded-full border px-3 text-xs"
           >
             {s}
           </button>

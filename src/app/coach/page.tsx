@@ -9,7 +9,10 @@ import { RecoveryCard } from "@/components/training/recovery-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getProfile } from "@/server/repositories/profile.repo";
-import { getTrainingAnalysis } from "@/server/services/fatigue.service";
+import {
+  DEFAULT_WINDOW_DAYS,
+  getTrainingAnalysis,
+} from "@/server/services/fatigue.service";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +43,6 @@ export default async function CoachPage() {
         </Card>
       ) : null}
 
-      {analysis ? <RecoveryCard fatigue={analysis.fatigue} /> : null}
-
       {analysis && analysis.context.sessions.length > 0 ? (
         <>
           <Card className="mb-4">
@@ -53,7 +54,7 @@ export default async function CoachPage() {
               <p className="text-muted-foreground mb-3 text-sm">
                 {analysis.context.sessions.length} sesiones y{" "}
                 {analysis.variants.length} ejercicios en los últimos{" "}
-                {analysis.fatigue.numbers.windowDays} días.
+                {DEFAULT_WINDOW_DAYS} días.
               </p>
               <CoachPanel
                 request={{ task: "WEEKLY" }}
@@ -73,12 +74,28 @@ export default async function CoachPage() {
         <Card className="mb-4">
           <CardContent className="pt-4">
             <p className="text-muted-foreground text-sm">
-              Todavía no hay sesiones completadas que analizar. Entrena y vuelve
-              por aquí.
+              {profile
+                ? "Todavía no hay sesiones completadas que analizar. Entrena y vuelve por aquí."
+                : "Primero crea tu plan: el coach interpreta lo que entrenas, así que necesita datos para decir algo."}
             </p>
+            {profile ? null : (
+              <Button
+                nativeButton={false}
+                render={<Link href="/onboarding" />}
+                className="mt-3 min-h-11 w-full"
+              >
+                Crear mi plan
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
+
+      {/* Sin sesiones, la tarjeta solo diría "no puedo valorar tu fatiga":
+          dos estados vacíos apilados diciendo lo mismo. */}
+      {analysis && analysis.context.sessions.length > 0 ? (
+        <RecoveryCard fatigue={analysis.fatigue} />
+      ) : null}
 
       <Button
         nativeButton={false}
