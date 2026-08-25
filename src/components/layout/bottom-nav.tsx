@@ -1,6 +1,6 @@
 "use client";
 
-import { Dumbbell, House, Settings, TrendingUp } from "lucide-react";
+import { Dumbbell, House, Settings, Sparkles, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const DESTINATIONS = [
   { href: "/", label: "Hoy", icon: House },
   { href: "/train", label: "Entrenar", icon: Dumbbell },
+  { href: "/coach", label: "Coach", icon: Sparkles },
   { href: "/progress", label: "Progreso", icon: TrendingUp },
   { href: "/settings", label: "Ajustes", icon: Settings },
 ] as const;

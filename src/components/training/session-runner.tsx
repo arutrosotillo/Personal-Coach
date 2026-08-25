@@ -24,6 +24,7 @@ import {
 import type { ClientExecutionSession } from "@/server/repositories/workout.repo";
 import type { ExerciseHistorySummary } from "@/server/services/progression.service";
 import type { ProgressionSuggestion } from "@/core/training/progression";
+import { CoachPanel } from "@/components/coach/coach-panel";
 import { cn } from "@/lib/utils";
 
 export interface SubstitutionExercise {
@@ -679,6 +680,18 @@ function ExerciseHistorySheet({
               </Row>
             </>
           )}
+
+          {/* Coach AI, bajo demanda: una consulta por tap, nunca automática. */}
+          <div className="border-border space-y-3 border-t pt-3">
+            <CoachPanel
+              request={{ task: "EXERCISE", variantId }}
+              label="Analizar con AI Coach"
+            />
+            <CoachPanel
+              request={{ task: "EXPLAIN", variantId }}
+              label="¿Por qué hago esto?"
+            />
+          </div>
         </div>
       </DrawerContent>
     </Drawer>

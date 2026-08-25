@@ -26,6 +26,10 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       DATABASE_URL: "file:./data/e2e.db",
+      // Coach AI en modo FALSO: los E2E nunca llaman a OpenAI ni necesitan
+      // clave. `OPENAI_API_KEY` se deja vacía a propósito.
+      AI_COACH_FAKE: "1",
+      OPENAI_API_KEY: "",
     },
     timeout: 120_000,
   },

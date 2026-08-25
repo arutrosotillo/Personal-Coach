@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { isCoachConfigured } from "@/ai/config";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +12,39 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const overview = await getProfileOverview();
+  const coachReady = isCoachConfigured();
 
   return (
     <AppShell>
       <h1 className="mb-4 text-2xl font-semibold">Ajustes</h1>
+
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle className="text-base">Ciencia y coach</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-muted-foreground text-sm">
+            AI Coach:{" "}
+            {coachReady ? (
+              <span>configurado</span>
+            ) : (
+              <span>
+                no configurado — añade <code>OPENAI_API_KEY</code> a tu{" "}
+                <code>.env</code>
+              </span>
+            )}
+            .
+          </p>
+          <Button
+            nativeButton={false}
+            render={<Link href="/science" />}
+            variant="secondary"
+            className="min-h-11 w-full"
+          >
+            Filosofía, evidencia y bibliografía
+          </Button>
+        </CardContent>
+      </Card>
 
       {overview ? (
         <div className="space-y-4">

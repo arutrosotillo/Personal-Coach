@@ -160,6 +160,21 @@ export function equivalentReps(
   return 30 * ((fromKg * (1 + reps / 30)) / toKg - 1);
 }
 
+/**
+ * Carga equivalente a `referenceReps` repeticiones. Es la misma matemática que
+ * `equivalentReps`, expresada como carga: sirve como MÉTRICA DE TENDENCIA
+ * comparable dentro de la misma variante, también en rangos altos donde el e1RM
+ * no es honesto. No es una afirmación sobre el 1RM.
+ */
+export function equivalentLoad(
+  weightKg: number,
+  reps: number,
+  referenceReps: number,
+): number {
+  if (weightKg <= 0) return 0;
+  return (weightKg * (1 + reps / 30)) / (1 + referenceReps / 30);
+}
+
 /** Resumen determinista de una exposición, ya interpretado con la prescripción. */
 interface ExposureSummary {
   localDate: string | null;
