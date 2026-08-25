@@ -1,4 +1,5 @@
-import { diffDays } from "@/core/dates";
+import { FATIGUE, PROGRESSION } from "@/core/config/training-config";
+import { addDays, diffDays } from "@/core/dates";
 import type {
   ContextSession,
   ContextVariant,
@@ -22,17 +23,56 @@ import { prisma } from "@/server/db";
  * siempre `ACCUMULATION`, así que la "semana" del mesociclo no es un dato
  * fiable. Las semanas de acumulación se DERIVAN de las fechas reales de las
  * sesiones — sin migración y sin inventar estructura (docs/TRAINING_ENGINE.md).
+ *
+ * Dos ventanas distintas, a propósito:
+ *   · las SESIONES se acotan a `sinceLocalDate` (es la ventana de fatiga);
+ *   · las EXPOSICIONES de cada ejercicio se acotan por NÚMERO (`HISTORY_WINDOW`),
+ *     igual que hace `workout.repo` para la pantalla de sesión. Antes se
+ *     acotaban por días, así que el mismo motor contaba "6 sesiones seguidas
+ *     por debajo del rango" al entrenar y "4" en la tarjeta de recuperación:
+ *     los mismos hechos con números distintos en dos pantallas.
  */
+
+/** Margen hacia atrás para completar `HISTORY_WINDOW` exposiciones. */
+const EXPOSURE_LOOKBACK_DAYS = 180;
+
+/**
+ * Ámbito de TODAS las lecturas de este fichero: el perfil entero, **incluidos
+ * los programas archivados**.
+ *
+ * Es deliberado y contraintuitivo, así que conviene dejarlo escrito. Una
+ * revisión propuso acotar al programa activo, porque las sesiones de programas
+ * abandonados llenaban la ventana de "las últimas 4 sesiones" con sus chips a
+ * NULL. Pero acotar rompe algo peor: cambiar de programa es una operación
+ * NORMAL en esta app (F3.1b), y con el filtro el motor de fatiga se quedaría
+ * ciego tres semanas después de cada cambio — justo cuando el usuario acaba de
+ * terminar un bloque y más probable es que necesite descargar. Una sesión que
+ * entrenaste es un hecho sobre tu cuerpo; no deja de serlo porque cambies la
+ * fila del programa a la que cuelga.
+ *
+ * Además `workout.repo` (la pantalla de sesión) lee igual, así que las dos
+ * pantallas ven los mismos hechos. Divergir aquí es exactamente el defecto que
+ * este fichero intenta no tener.
+ *
+ * (`TrainingProgram.deletedAt` no lo escribe nadie hoy — el borrado suave solo
+ * existe en `WorkoutTemplate`—, pero el filtro se deja puesto para que un
+ * borrado real, si algún día se implementa, no cuente como entrenamiento.)
+ */
+const PROGRAM_SCOPE = (profileId: string) => ({ profileId, deletedAt: null });
 export async function getTrainingContext(
   profileId: string,
   sinceLocalDate: string,
   todayLocalDate: string,
 ): Promise<TrainingContext> {
+  const exposuresSince = addDays(todayLocalDate, -EXPOSURE_LOOKBACK_DAYS);
   const sessions = await prisma.workoutSession.findMany({
     where: {
       status: "COMPLETED",
-      localDate: { gte: sinceLocalDate, lte: todayLocalDate },
-      mesocycle: { program: { profileId } },
+      localDate: {
+        gte: exposuresSince < sinceLocalDate ? exposuresSince : sinceLocalDate,
+        lte: todayLocalDate,
+      },
+      mesocycle: { program: PROGRAM_SCOPE(profileId) },
     },
     orderBy: { localDate: "asc" },
     include: {
@@ -56,29 +96,35 @@ export async function getTrainingContext(
     },
   });
 
-  const contextSessions: ContextSession[] = sessions.map((s) => {
-    const plannedSets = s.exercises.reduce((a, e) => a + e.plannedSets, 0);
-    const loggedSets = s.exercises.reduce((a, e) => a + e.setLogs.length, 0);
-    return {
-      id: s.id,
-      localDate: s.localDate,
-      templateName: s.template?.name ?? "Sesión",
-      perceivedPerformance: s.perceivedPerformance,
-      pump: s.pump,
-      jointPain: s.jointPain,
-      fatigue: s.fatigue,
-      motivation: s.motivation,
-      notes: s.notes,
-      plannedSets,
-      loggedSets,
-      completionRate:
-        plannedSets > 0 ? Math.min(1, loggedSets / plannedSets) : 0,
-      durationMin:
-        s.startedAt && s.finishedAt
-          ? Math.round((s.finishedAt.getTime() - s.startedAt.getTime()) / 60000)
-          : null,
-    };
-  });
+  const contextSessions: ContextSession[] = sessions
+    .filter((s) => s.localDate >= sinceLocalDate)
+    .map((s) => {
+      const plannedSets = s.exercises.reduce((a, e) => a + e.plannedSets, 0);
+      const loggedSets = s.exercises.reduce((a, e) => a + e.setLogs.length, 0);
+      return {
+        id: s.id,
+        localDate: s.localDate,
+        templateName: s.template?.name ?? "Sesión",
+        perceivedPerformance: s.perceivedPerformance,
+        pump: s.pump,
+        jointPain: s.jointPain,
+        fatigue: s.fatigue,
+        motivation: s.motivation,
+        notes: s.notes,
+        plannedSets,
+        loggedSets,
+        // `null`, no 0: una sesión sin series previstas no es una sesión
+        // "acortada". Con 0 el motor la contaba como abandono.
+        completionRate:
+          plannedSets > 0 ? Math.min(1, loggedSets / plannedSets) : null,
+        durationMin:
+          s.startedAt && s.finishedAt
+            ? Math.round(
+                (s.finishedAt.getTime() - s.startedAt.getTime()) / 60000,
+              )
+            : null,
+      };
+    });
 
   // ── Agrupación por variante ────────────────────────────────────────────
   // Una sesión aporta como mucho UNA exposición por variante: si la misma
@@ -132,35 +178,23 @@ export async function getTrainingContext(
     }
   }
 
-  const variants = [...byVariant.values()].map((v) => ({
-    ...v,
-    daysSinceLast: diffDays(
-      v.exposures[v.exposures.length - 1].localDate,
-      todayLocalDate,
-    ),
-  }));
+  const variants = [...byVariant.values()]
+    // Un ejercicio que no has tocado en la ventana no es parte de "cómo va tu
+    // entrenamiento ahora"; sus exposiciones antiguas solo sirven para dar
+    // contexto a los que SÍ has entrenado.
+    .filter(
+      (v) => v.exposures[v.exposures.length - 1].localDate >= sinceLocalDate,
+    )
+    .map((v) => ({
+      ...v,
+      exposures: v.exposures.slice(-PROGRESSION.HISTORY_WINDOW),
+      daysSinceLast: diffDays(
+        v.exposures[v.exposures.length - 1].localDate,
+        todayLocalDate,
+      ),
+    }));
 
-  // ── Semanas de acumulación continua ────────────────────────────────────
-  const lastDeload = await prisma.workoutSession.findFirst({
-    where: {
-      status: "COMPLETED",
-      weekKind: "DELOAD",
-      mesocycle: { program: { profileId } },
-    },
-    orderBy: { localDate: "desc" },
-    select: { localDate: true },
-  });
-  const firstEver = await prisma.workoutSession.findFirst({
-    where: {
-      status: "COMPLETED",
-      mesocycle: { program: { profileId, isActive: true, deletedAt: null } },
-    },
-    orderBy: { localDate: "asc" },
-    select: { localDate: true },
-  });
-  const anchor = lastDeload?.localDate ?? firstEver?.localDate ?? null;
-  const weeksSinceDeload =
-    anchor === null ? null : Math.floor(diffDays(anchor, todayLocalDate) / 7);
+  const weeksSinceDeload = await accumulationWeeks(profileId, todayLocalDate);
 
   return {
     todayLocalDate,
@@ -169,4 +203,59 @@ export async function getTrainingContext(
     variants,
     weeksSinceDeload,
   };
+}
+
+/**
+ * Semanas entrenando SEGUIDO, sin una semana suave ni un parón.
+ *
+ * El ancla es la más reciente de tres fechas: la última sesión marcada como
+ * DELOAD, la primera sesión registrada, y la primera sesión posterior a un
+ * hueco de `ACCUMULATION_RESET_GAP_DAYS` días sin entrenar. NO se ancla en el
+ * programa activo: generar un programa nuevo es un acto administrativo y no
+ * debería reiniciar tus semanas de acumulación real.
+ *
+ * El tercer caso es imprescindible: hoy NADA en la app escribe
+ * `weekKind: "DELOAD"` (la única escritura del campo es `ACCUMULATION`), así
+ * que sin él el contador no se reiniciaría jamás. Diría "llevas 85 semanas
+ * seguidas acumulando" a alguien que paró tres meses, y —peor— seguiría
+ * diciéndolo la semana después de hacer la descarga que el propio coach le
+ * recomendó. Un parón real ES la semana suave que la señal busca.
+ */
+async function accumulationWeeks(
+  profileId: string,
+  todayLocalDate: string,
+): Promise<number | null> {
+  const scope = PROGRAM_SCOPE(profileId);
+  const [lastDeload, dates] = await Promise.all([
+    prisma.workoutSession.findFirst({
+      where: {
+        status: "COMPLETED",
+        weekKind: "DELOAD",
+        mesocycle: { program: scope },
+      },
+      orderBy: { localDate: "desc" },
+      select: { localDate: true },
+    }),
+    prisma.workoutSession.findMany({
+      where: { status: "COMPLETED", mesocycle: { program: scope } },
+      orderBy: { localDate: "asc" },
+      select: { localDate: true },
+      distinct: ["localDate"],
+    }),
+  ]);
+  if (dates.length === 0) return null;
+
+  let anchor = dates[0].localDate;
+  for (let i = 1; i < dates.length; i++) {
+    const gap = diffDays(dates[i - 1].localDate, dates[i].localDate);
+    if (gap >= FATIGUE.ACCUMULATION_RESET_GAP_DAYS) anchor = dates[i].localDate;
+  }
+  if (lastDeload && lastDeload.localDate > anchor)
+    anchor = lastDeload.localDate;
+
+  // Un parón que sigue abierto hoy también cuenta.
+  const sinceLast = diffDays(dates[dates.length - 1].localDate, todayLocalDate);
+  if (sinceLast >= FATIGUE.ACCUMULATION_RESET_GAP_DAYS) return 0;
+
+  return Math.floor(diffDays(anchor, todayLocalDate) / 7);
 }
