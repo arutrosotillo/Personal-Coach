@@ -449,9 +449,15 @@ export function assessFatigue(
     jointPainLevel === "ACTION"
       ? " Pero atento al aviso de dolor de abajo."
       : " Sigue con el plan.";
+  // ¿Está el usuario HACIENDO ya la descarga? Si su última sesión se registró
+  // como descarga, seguir diciéndole "te recomiendo una semana de descarga" es
+  // insistir en algo que ya está haciendo. No es falso, pero no ayuda.
+  const enDescarga = sessions.at(-1)?.deload === true;
   const headline =
     decision === "DELOAD_RECOMMENDED"
-      ? `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
+      ? enDescarga
+        ? `Estás haciendo la descarga: sigue así el resto de la semana. ${tally}.`
+        : `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
       : decision === "DELOAD_WATCH"
         ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
         : signals.length > 0

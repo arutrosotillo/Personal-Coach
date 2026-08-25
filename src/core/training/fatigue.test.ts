@@ -593,3 +593,61 @@ describe("L · calibración: ni un mal día basta, ni el colapso pasa desapercib
     expect(r.headline).toMatch(/aviso de dolor/i);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("M · conciencia de descarga", () => {
+  const DURO = [
+    session(12, { fatigue: 5, perceivedPerformance: 2 }),
+    session(9, { fatigue: 5, perceivedPerformance: 2 }),
+    session(5, { fatigue: 5, perceivedPerformance: 2 }),
+  ];
+  const EJ = [
+    exercise("Press", { regressed: true }),
+    exercise("Sentadilla", { regressed: true }),
+    exercise("Remo"),
+  ];
+
+  it("una sesión de descarga no cuenta como sesión acortada", () => {
+    // Recortar el volumen es exactamente lo que el motor pidió. Contarlo era
+    // penalizar al usuario por obedecer, y con la señal que más empuja hacia
+    // otra descarga.
+    const recortadas = [
+      session(12, { completionRate: 0.5, deload: true }),
+      session(9, { completionRate: 0.5, deload: true }),
+      session(5, { completionRate: 0.5, deload: true }),
+      session(2),
+    ];
+    const r = run(recortadas, [exercise("Press"), exercise("Sentadilla")]);
+    expect(r.signals.map((s) => s.code)).not.toContain(
+      "SESSION_COMPLETION_DROP",
+    );
+  });
+
+  it("pero recortar SIN descarga sigue contando", () => {
+    const recortadas = [
+      session(12, { completionRate: 0.5 }),
+      session(9, { completionRate: 0.5 }),
+      session(5, { completionRate: 0.5 }),
+      session(2),
+    ];
+    const r = run(recortadas, [exercise("Press"), exercise("Sentadilla")]);
+    expect(r.signals.map((s) => s.code)).toContain("SESSION_COMPLETION_DROP");
+  });
+
+  it("mientras haces la descarga, no te la vuelve a recetar", () => {
+    const enCurso = [
+      ...DURO,
+      session(2, { completionRate: 0.5, deload: true }),
+    ];
+    const r = run(enCurso, EJ);
+    expect(r.decision).toBe("DELOAD_RECOMMENDED");
+    expect(r.headline).toMatch(/Estás haciendo la descarga/i);
+    expect(r.headline).not.toMatch(/Te recomiendo una semana de descarga/i);
+  });
+
+  it("y si aún no la has empezado, te la recomienda igual que siempre", () => {
+    const r = run([...DURO, session(2)], EJ);
+    expect(r.decision).toBe("DELOAD_RECOMMENDED");
+    expect(r.headline).toMatch(/Te recomiendo una semana de descarga/i);
+  });
+});
