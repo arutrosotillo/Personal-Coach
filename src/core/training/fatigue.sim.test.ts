@@ -176,6 +176,7 @@ function simulate(athlete: Athlete): TrainingAnalysis {
       loggedSets,
       completionRate: loggedSets / plannedSets,
       durationMin: 70,
+      deload: false,
     });
   }
 

@@ -54,3 +54,27 @@ export async function getRecoveryVeto(
     return null;
   }
 }
+
+/**
+ * ¿Estaba el motor recomendando una descarga en esta fecha?
+ *
+ * Se usa al FINALIZAR una sesión, antes de marcarla COMPLETED: así el veredicto
+ * refleja el estado con el que el usuario entró al gimnasio, no el que deja al
+ * salir. Devuelve `false` ante cualquier problema — no saberlo no puede
+ * impedirte terminar el entrenamiento.
+ */
+export async function wasDeloadRecommended(
+  profileId: string,
+  onLocalDate: string,
+): Promise<boolean> {
+  try {
+    const context = await getTrainingContext(
+      profileId,
+      addDays(onLocalDate, -DEFAULT_WINDOW_DAYS),
+      onLocalDate,
+    );
+    return analyzeTraining(context).fatigue.decision === "DELOAD_RECOMMENDED";
+  } catch {
+    return false;
+  }
+}

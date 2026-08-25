@@ -66,6 +66,7 @@ function sessions(feedback: Partial<TrainingContext["sessions"][number]> = {}) {
     loggedSets: 9,
     completionRate: 1,
     durationMin: 60,
+    deload: false,
     ...(i >= 2 ? feedback : {}),
   }));
 }

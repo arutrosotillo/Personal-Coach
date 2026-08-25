@@ -77,6 +77,8 @@ export interface CoachContext {
     template: string;
     setsLogged: number;
     setsPlanned: number;
+    /** Descarga ejecutada: el recorte de series fue deliberado. */
+    descarga: boolean;
     feedback: {
       rendimiento: number | null;
       fatiga: number | null;
@@ -160,6 +162,7 @@ export function buildCoachContext(
       template: s.templateName,
       setsLogged: s.loggedSets,
       setsPlanned: s.plannedSets,
+      descarga: s.deload,
       feedback: {
         rendimiento: s.perceivedPerformance,
         fatiga: s.fatigue,

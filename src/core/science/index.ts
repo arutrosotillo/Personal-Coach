@@ -556,4 +556,11 @@ REGLAS DEL MOTOR DE FATIGA (deterministas):
 - La descarga sugerida recorta VOLUMEN (mitad de las series) y mantiene la carga
   y el RIR objetivo. Una sola palanca, no dos.
 - Nada se aplica automáticamente: es una recomendación.
+- Si el usuario HACE la descarga (recorta series mientras estaba recomendada),
+  esas sesiones se marcan como descarga: no cuentan como sesiones acortadas y
+  reinician el contador de semanas acumuladas. Obedecer nunca penaliza.
+- NO hay periodización automática. El "bloque" tiene una referencia inicial de
+  semanas, pero nada ocurre al alcanzarla: no se cierra, no cambia el programa
+  y no se genera otro. Los ejercicios, los días y las series solo cambian si
+  los cambia el usuario.
 `.trim();

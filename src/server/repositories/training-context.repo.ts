@@ -113,6 +113,7 @@ export async function getTrainingContext(
         notes: s.notes,
         plannedSets,
         loggedSets,
+        deload: s.weekKind === "DELOAD",
         // `null`, no 0: una sesión sin series previstas no es una sesión
         // "acortada". Con 0 el motor la contaba como abandono.
         completionRate:

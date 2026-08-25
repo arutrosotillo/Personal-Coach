@@ -34,6 +34,8 @@ export interface ContextSession {
   notes: string | null;
   plannedSets: number;
   loggedSets: number;
+  /** La sesión se registró como una DESCARGA ejecutada (`weekKind`). */
+  deload: boolean;
   /**
    * Series registradas ÷ previstas, acotado a 1. `null` si no había series
    * previstas: una sesión así no es una sesión "acortada".
@@ -241,6 +243,7 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
       motivation: s.motivation,
       jointPain: s.jointPain,
       completionRate: s.completionRate,
+      deload: s.deload,
     })),
     exercises,
     weeksSinceDeload: context.weeksSinceDeload,

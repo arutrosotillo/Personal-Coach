@@ -56,6 +56,7 @@ function context(overrides: Partial<TrainingContext> = {}): TrainingContext {
       loggedSets: 9,
       completionRate: 1,
       durationMin: 62,
+      deload: false,
     })),
     variants: [
       {
@@ -209,6 +210,7 @@ describe("context builder", () => {
         loggedSets: 9,
         completionRate: 1,
         durationMin: 60,
+        deload: false,
       })),
     });
     const ctx = buildCoachContext(analyzeTraining(many), PROFILE);
@@ -537,8 +539,7 @@ describe("fallos del proveedor: el tracker nunca se queda sin respuesta", () => 
 describe("guardrails · explicar la regla no es contradecir al motor", () => {
   /** Respuesta real de EXPLAIN sobre "Press inclinado", que se descartaba entera. */
   const EXPLAIN_REAL: CoachResponse = {
-    headline:
-      "Press banca: 3 series de 6–8 con 80 kg y objetivo de 2 RIR.",
+    headline: "Press banca: 3 series de 6–8 con 80 kg y objetivo de 2 RIR.",
     highlights: [
       {
         label: "RIR",

@@ -64,6 +64,8 @@ export interface FatigueSessionInput {
   jointPain: number | null;
   /** Series de trabajo registradas ÷ previstas en esa sesión (0..1). */
   completionRate: number | null;
+  /** Descarga ejecutada: recortar aquí fue lo que el motor pidió. */
+  deload?: boolean;
 }
 
 /** Resumen por ejercicio derivado del motor de progresión. */
@@ -299,7 +301,12 @@ export function assessFatigue(
     );
   }
 
-  const measurable = recent.filter((s) => s.completionRate !== null);
+  // Las sesiones de descarga NO cuentan como acortadas: recortar el volumen es
+  // exactamente lo que el motor pidió. Contarlas era penalizar al usuario por
+  // obedecer, y encima con la señal que más empuja hacia otra descarga.
+  const measurable = recent.filter(
+    (s) => s.completionRate !== null && s.deload !== true,
+  );
   const shortSessions = countAtMost(
     measurable,
     (s) => (s.completionRate ?? 1) < config.COMPLETION_LOW,
