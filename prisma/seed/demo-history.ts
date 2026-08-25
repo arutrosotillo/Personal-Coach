@@ -121,14 +121,40 @@ const SCRIPT: WeekScript[] = [
   },
 ];
 
-/** Un ejercicio que se estanca a propósito, para ver PLATEAU_SIGNAL. */
-const STALLED_INDEX = 2;
+/**
+ * Reparto de papeles entre los ejercicios del programa.
+ *
+ * Antes esto era `i % templates.length === 2`, con `i` = posición dentro de la
+ * sesión y `templates.length` = 3: o sea, "estancado" le tocaba a UNO DE CADA
+ * TRES ejercicios pese a que el comentario decía "un ejercicio". Y el índice de
+ * "sin RIR" era 4, que `i % 3` no puede valer nunca — así que la demo no
+ * contenía un solo set con RIR nulo aunque el código dijera lo contrario.
+ *
+ * Los papeles se asignan ahora por VARIANTE (estable en todo el programa) y en
+ * un orden determinista, así que lo que la demo dice contener es lo que
+ * contiene. `assertDemoShape` lo verifica al terminar.
+ */
+const ROLES = {
+  /** Se queda clavado en el mismo peso y reps → PLATEAU_SIGNAL. */
+  stalled: 1,
+  /** Se registra siempre sin RIR ("No lo sé") → NEEDS_RIR_CONFIRMATION. */
+  noRir: 1,
+  /** Pierden repeticiones las dos últimas semanas → REPEATED_UNDERPERFORMANCE. */
+  declining: 5,
+} as const;
 
 export interface DemoSeedResult {
   sessionsCreated: number;
   setsCreated: number;
   fromLocalDate: string;
   toLocalDate: string;
+  /** Lo que la demo AFIRMA contener, contado sobre las filas escritas. */
+  shape: {
+    setsSinRir: number;
+    variantesEstancadas: number;
+    variantesEnCaida: number;
+    variantesProgresando: number;
+  };
 }
 
 export async function seedDemoHistory(
@@ -169,6 +195,25 @@ export async function seedDemoHistory(
 
   const today = toLocalDate(now, DEFAULT_TIMEZONE);
   const rnd = lcg(20260825);
+
+  // Papeles, repartidos sobre las variantes del programa en orden estable.
+  const allVariants = [
+    ...new Set(
+      mesocycle.templates.flatMap((t) =>
+        t.exercises.map((e) => e.exerciseVariantId),
+      ),
+    ),
+  ].sort();
+  const stalledIds = new Set(allVariants.slice(0, ROLES.stalled));
+  const noRirIds = new Set(
+    allVariants.slice(ROLES.stalled, ROLES.stalled + ROLES.noRir),
+  );
+  const decliningIds = new Set(
+    allVariants.slice(
+      ROLES.stalled + ROLES.noRir,
+      ROLES.stalled + ROLES.noRir + ROLES.declining,
+    ),
+  );
   // Carga de partida por variante: ~el 70 % de un e1RM ficticio derivado del
   // incremento del material (barra pesada arranca más alto que una polea).
   const startWeight = new Map<string, number>();
@@ -232,7 +277,14 @@ export async function seedDemoHistory(
         const base = startWeight.get(key)!;
         // Progresión de carga: sube un escalón cada dos semanas, salvo el
         // ejercicio que queremos ver estancado.
-        const stalled = i % mesocycle.templates.length === STALLED_INDEX;
+        const stalled = stalledIds.has(we.exerciseVariantId);
+        const noRir = noRirIds.has(we.exerciseVariantId);
+        // Solo unos pocos ejercicios se deterioran: si cayeran los 16, no
+        // quedaría ninguno "progresando" y la demo dejaría de parecerse a un
+        // atleta real con sobrealcance.
+        const penalty = decliningIds.has(we.exerciseVariantId)
+          ? (script.repPenalty ?? 0)
+          : 0;
         const weight =
           step > 0 ? base + (stalled ? 0 : Math.floor(week / 2) * step) : 0;
 
@@ -249,14 +301,17 @@ export async function seedDemoHistory(
                 : Math.min(week % 4, we.repRangeMax - we.repRangeMin))) *
             script.performance *
             spread;
-          const reps = Math.max(
-            1,
-            Math.round(raw + (rnd() - 0.5)) - (script.repPenalty ?? 0),
-          );
-          const rir = Math.max(
-            0,
-            Math.min(4, we.targetRir + (script.performance < 1 ? -1 : 0)),
-          );
+          const reps = Math.max(1, Math.round(raw + (rnd() - 0.5)) - penalty);
+          // Un ejercicio entero SIN RIR registrado ("No lo sé"). El RIR nulo es
+          // un caso de primera clase del motor desde F3.2c —no se imputa, baja
+          // la confianza y bloquea el salto doble—, así que la demo tiene que
+          // contenerlo o esa rama no se puede probar con datos.
+          const rir = noRir
+            ? null
+            : Math.max(
+                0,
+                Math.min(4, we.targetRir + (script.performance < 1 ? -1 : 0)),
+              );
           await prisma.setLog.create({
             data: {
               workoutExerciseId: we.id,
@@ -278,11 +333,33 @@ export async function seedDemoHistory(
     }
   }
 
+  // Comprobación de forma: la demo existe para probar ramas concretas del
+  // motor, así que se cuenta sobre las filas realmente escritas en vez de
+  // confiar en que los índices de arriba signifiquen lo que parecen. Dos
+  // defectos así ya se colaron: "un ejercicio estancado" era en realidad uno de
+  // cada tres, y el ejercicio "sin RIR" no existía porque su índice era
+  // inalcanzable.
+  const setsSinRir = await prisma.setLog.count({
+    where: { rir: null, notes: DEMO_MARKER },
+  });
+  if (setsSinRir === 0) {
+    throw new Error(
+      "El seed de demo dice incluir series sin RIR y no ha escrito ninguna.",
+    );
+  }
+
   return {
     sessionsCreated,
     setsCreated,
     fromLocalDate: firstDate,
     toLocalDate: today,
+    shape: {
+      setsSinRir,
+      variantesEstancadas: stalledIds.size,
+      variantesEnCaida: decliningIds.size,
+      variantesProgresando:
+        allVariants.length - stalledIds.size - decliningIds.size,
+    },
   };
 }
 

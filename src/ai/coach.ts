@@ -200,7 +200,7 @@ export async function runCoach(
     };
   }
 
-  const guard = checkResponse(parsed.data, context);
+  const guard = checkResponse(parsed.data, context, request.task);
   if (guard.block) {
     return {
       ok: false,

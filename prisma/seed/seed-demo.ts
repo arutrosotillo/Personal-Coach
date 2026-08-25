@@ -57,6 +57,10 @@ async function main() {
   console.log(
     `Sembradas ${result.sessionsCreated} sesiones y ${result.setsCreated} series de demo (${result.fromLocalDate} → ${result.toLocalDate}).`,
   );
+  const sh = result.shape;
+  console.log(
+    `Forma: ${sh.variantesProgresando} ejercicios progresando · ${sh.variantesEstancadas} estancado(s) · ${sh.variantesEnCaida} en caída · ${sh.setsSinRir} series sin RIR.`,
+  );
   console.log(
     `Todas llevan "${DEMO_MARKER}" en las notas. Para borrarlas: SEED_DEMO=1 pnpm seed:demo --clear`,
   );

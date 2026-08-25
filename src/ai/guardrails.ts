@@ -1,5 +1,5 @@
 import type { CoachContext } from "@/ai/context";
-import type { CoachResponse } from "@/ai/types";
+import type { CoachResponse, CoachTask } from "@/ai/types";
 
 /**
  * Guardrails de Coach AI: se ejecutan DESPUÉS del modelo y antes de enseñar
@@ -44,6 +44,21 @@ const DELOAD_HINT =
 
 /** ¿La coincidencia va precedida de una negación? "No toca deload" es correcto. */
 const NEGATION_BEFORE = /\b(?:no|sin|nada\s+de|tampoco|ni)\b[^.]{0,30}$/i;
+
+/**
+ * ¿La coincidencia es CONDICIONAL o EXPLICATIVA en vez de prescriptiva?
+ *
+ * "Para subir carga, cierra 10 repeticiones" describe la regla del motor;
+ * "sube a 25 kg" prescribe una acción para hoy. La diferencia importa: la
+ * tarea EXPLAIN ("¿Por qué hago esto?") tiene como cometido explícito contar
+ * "qué tendría que ocurrir para que suba la carga", así que sin esto el
+ * guardrail bloqueaba SIEMPRE la respuesta que él mismo había pedido, y la
+ * función quedaba muerta para cualquiera que no tuviera justo un ejercicio
+ * listo para subir. Verificado en QA: una explicación correcta —que además
+ * decía que la fatiga y el dolor suspenden las subidas— se descartaba entera.
+ */
+const CONDITIONAL_BEFORE =
+  /\b(?:para|cuando|cuándo|si|hasta|en\s+cuanto|una\s+vez|antes\s+de|requisito|condici[óo]n|permitir[áa]|har[áa]\s+que|justifica|toca)\b[^.]{0,30}$/i;
 
 const KG_NUMBER = /(\d+(?:[.,]\d+)?)\s*(?:kgs?|kilo(?:gramo)?s?)\b/gi;
 const PERCENT_NUMBER = /(\d+(?:[.,]\d+)?)\s*%/g;
@@ -95,13 +110,19 @@ function isGrounded(raw: string, numbers: Set<number>): boolean {
   return false;
 }
 
-/** Coincidencias de `regex` en `text` que NO están negadas. */
+/**
+ * Coincidencias de `regex` en `text` que son PRESCRIPTIVAS: ni negadas
+ * ("no toca descarga") ni condicionales ("para subir carga, cierra 10 reps").
+ */
 function matchesAffirmative(regex: RegExp, text: string): boolean {
   const global = new RegExp(regex.source, `${regex.flags.replace("g", "")}g`);
   for (const match of text.matchAll(global)) {
     const index = match.index ?? 0;
     const before = text.slice(Math.max(0, index - 40), index);
-    if (!NEGATION_BEFORE.test(before)) return true;
+    if (NEGATION_BEFORE.test(before) || CONDITIONAL_BEFORE.test(before)) {
+      continue;
+    }
+    return true;
   }
   return false;
 }
@@ -115,6 +136,7 @@ function collect(regex: RegExp, text: string): string[] {
 export function checkResponse(
   response: CoachResponse,
   context: CoachContext,
+  task: CoachTask = "WEEKLY",
 ): GuardrailResult {
   const text = [
     response.headline,
@@ -149,8 +171,12 @@ export function checkResponse(
     };
   }
 
+  // Un porcentaje puede estar respaldado por su FRACCIÓN: el contexto guarda
+  // `avgCompletionRate: 0.826` y el modelo escribe, correctamente, "82,6 %".
   const ungroundedPct = collect(PERCENT_NUMBER, text).filter(
-    (v) => !isGrounded(v, numbers),
+    (v) =>
+      !isGrounded(v, numbers) &&
+      !isGrounded(String(Number(v.replace(",", ".")) / 100), numbers),
   );
   if (ungroundedPct.length > 0) {
     warnings.push(
@@ -159,8 +185,19 @@ export function checkResponse(
   }
 
   // ── 3. Contradicción con el motor de progresión ────────────────────────
+  //
+  // EXPLAIN queda fuera a propósito. Su cometido es contar CÓMO funciona la
+  // progresión —incluido "qué haría que subiera la carga"—, así que hablar de
+  // subir carga no es contradecir al motor: es la respuesta. Aplicarle esta
+  // regla dejaba la función inservible para cualquiera que no tuviera justo un
+  // ejercicio listo para subir, y encima de forma intermitente, según cómo
+  // redactara el modelo la misma idea. Lo que SÍ sigue aplicándose a EXPLAIN:
+  // cifras inventadas, descargas inventadas y sustancias vetadas — y su prompt
+  // le prohíbe nombrar el peso al que subiría.
   const actions = new Set(context.exercises.map((e) => e.progression.action));
+  const checkEngineContradiction = task !== "EXPLAIN";
   if (
+    checkEngineContradiction &&
     !actions.has("INCREASE_LOAD") &&
     matchesAffirmative(INCREASE_HINT, text)
   ) {
@@ -172,6 +209,7 @@ export function checkResponse(
     };
   }
   if (
+    checkEngineContradiction &&
     !actions.has("DECREASE_LOAD") &&
     matchesAffirmative(DECREASE_HINT, text)
   ) {

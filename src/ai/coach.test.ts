@@ -507,3 +507,125 @@ describe("seguridad del prompt", () => {
     );
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Defectos encontrados en la QA de aceptación con llamadas REALES al modelo.
+// Los textos son los que devolvió gpt-5.6-luna, no invenciones del test.
+describe("guardrails · explicar la regla no es contradecir al motor", () => {
+  /** Respuesta real de EXPLAIN sobre "Press inclinado", que se descartaba entera. */
+  const EXPLAIN_REAL: CoachResponse = {
+    headline:
+      "Press inclinado: 3×6–10 con 20 kg y objetivo de 2 RIR; hoy el motor pide 7/7/7.",
+    highlights: [
+      {
+        label: "RIR",
+        detail:
+          "El objetivo es 2 RIR. El RIR registrado fue 1 en las dos últimas exposiciones, dentro del margen de error, pero no justifica subir carga.",
+        direction: "INFO",
+      },
+    ],
+    fatigue: null,
+    recommendation:
+      "Para subir carga, cierra 10 repeticiones en las 3 series con algo de reserva, manteniendo el objetivo de 2 RIR. Además, la fatiga alta y el dolor articular suspenden actualmente las subidas de carga.",
+    hypotheses: [],
+  };
+
+  it("EXPLAIN puede contar qué haría que subiera la carga", async () => {
+    // La tarea EXPLAIN tiene como cometido explícito responder "qué tendría
+    // que ocurrir para que suba la carga". El guardrail la bloqueaba SIEMPRE
+    // que ningún ejercicio estuviera listo para subir — es decir, casi
+    // siempre—, así que "¿Por qué hago esto?" caía al fallback determinista
+    // sin que nada lo delatara.
+    const result = await runCoach(new FakeCoachProvider(ok(EXPLAIN_REAL)), {
+      task: "EXPLAIN",
+      analysis: analysis(),
+      profile: PROFILE,
+      variantId: "v-bench",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("pero EXPLAIN sigue sin poder inventarse una carga", async () => {
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...EXPLAIN_REAL,
+          recommendation: "Cuando cierres 10 repeticiones subirás a 137,5 kg.",
+        }),
+      ),
+      {
+        task: "EXPLAIN",
+        analysis: analysis(),
+        profile: PROFILE,
+        variantId: "v-bench",
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("GUARDRAIL_BLOCKED");
+    expect(result.message).toMatch(/137/);
+  });
+
+  it("una condición no es una prescripción, tampoco en el resumen semanal", async () => {
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation:
+            "Mantén los 80 kg. Cuando subas la carga, hazlo con el RIR objetivo.",
+        }),
+      ),
+      { task: "WEEKLY", analysis: analysis(), profile: PROFILE },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("y una prescripción sí se bloquea aunque esté bien escrita", async () => {
+    // Contexto donde NINGÚN ejercicio está listo para subir: el fixture normal
+    // sí lo está, y ahí "sube la carga" es una lectura correcta del motor.
+    const base = context();
+    const enRango = analyzeTraining({
+      ...base,
+      variants: base.variants.map((v) => ({
+        ...v,
+        exposures: v.exposures.map((e) => ({
+          ...e,
+          sets: e.sets.map((x) => ({ ...x, reps: 6 })),
+        })),
+      })),
+    });
+    expect(
+      enRango.variants.every((v) => v.suggestion.action !== "INCREASE_LOAD"),
+    ).toBe(true);
+
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation: "Sube la carga en press banca esta semana.",
+        }),
+      ),
+      { task: "WEEKLY", analysis: enRango, profile: PROFILE },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("GUARDRAIL_BLOCKED");
+  });
+
+  it("un porcentaje respaldado por su fracción no es una cifra inventada", async () => {
+    // El contexto guarda `avgCompletionRate: 0.826`; el modelo escribió
+    // "82,6 %", que es exactamente el mismo dato. Salía como aviso.
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation: "Has completado el 100 % de las series previstas.",
+        }),
+      ),
+      { task: "WEEKLY", analysis: analysis(), profile: PROFILE },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.warnings).toEqual([]);
+  });
+});
