@@ -69,7 +69,8 @@ export interface CoachContext {
   };
   adherence: {
     sessionsInWindow: number;
-    avgCompletionRate: number;
+    /** Porcentaje entero (91), no fracción: el modelo lo cita tal cual. */
+    avgCompletionPct: number;
     weeksSinceDeload: number | null;
   };
   sessions: Array<{
@@ -256,7 +257,9 @@ export function buildCoachContext(
     },
     adherence: {
       sessionsInWindow: context.sessions.length,
-      avgCompletionRate: round1(avgCompletion * 100) / 100,
+      // Entero. `round1(x*100)/100` devolvía 0.9129999999999999 por coma
+      // flotante, y el modelo lo escribía literalmente en la respuesta.
+      avgCompletionPct: Math.round(avgCompletion * 100),
       weeksSinceDeload: context.weeksSinceDeload,
     },
     sessions,

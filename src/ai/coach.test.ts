@@ -637,8 +637,8 @@ describe("guardrails · explicar la regla no es contradecir al motor", () => {
   });
 
   it("un porcentaje respaldado por su fracción no es una cifra inventada", async () => {
-    // El contexto guarda `avgCompletionRate: 0.826`; el modelo escribió
-    // "82,6 %", que es exactamente el mismo dato. Salía como aviso.
+    // Un porcentaje respaldado por su fracción en el contexto (0.826 ↔ 82,6 %)
+    // no es una cifra inventada. Salía como aviso.
     const result = await runCoach(
       new FakeCoachProvider(
         ok({
@@ -651,5 +651,77 @@ describe("guardrails · explicar la regla no es contradecir al motor", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.warnings).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("guardrails · hablar de una descarga no es recetarla", () => {
+  /** Respuesta REAL del modelo tras marcar las sesiones de descarga. */
+  const REAL =
+    "No: esta semana hiciste una descarga recomendada y no debes recuperar el volumen recortado. No añadas series para compensar; la descarga ya está contabilizada como tal.";
+
+  it("describir la descarga que el usuario YA hizo pasa", async () => {
+    // El contexto marca ahora las sesiones de descarga, así que el coach habla
+    // de ellas con normalidad — que es justo lo que queremos que sepa
+    // distinguir de "el rendimiento ha bajado". Bloquear cualquier mención
+    // tiraba exactamente esas respuestas.
+    const result = await runCoach(
+      new FakeCoachProvider(ok({ ...GOOD_RESPONSE, recommendation: REAL })),
+      {
+        task: "ASK",
+        analysis: analysis(),
+        profile: PROFILE,
+        question: "¿He entrenado poco?",
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("y recetarla cuando el motor no la recomienda sigue bloqueado", async () => {
+    for (const frase of [
+      "Tómate una semana de descarga.",
+      "Yo me tomaría una semana de descarga.",
+      "Necesitas un deload ya.",
+      "Deberías hacer una semana suave.",
+      "Esta semana recorta las series a la mitad para recuperarte.",
+      "Descansa una semana y vuelve fresco.",
+    ]) {
+      const result = await runCoach(
+        new FakeCoachProvider(ok({ ...GOOD_RESPONSE, recommendation: frase })),
+        { task: "WEEKLY", analysis: analysis(), profile: PROFILE },
+      );
+      expect(result.ok, frase).toBe(false);
+    }
+  });
+
+  it("y desaconsejarla cuando el motor SÍ la recomienda también", async () => {
+    const conFatiga = analyzeTraining({
+      ...context(),
+      sessions: context().sessions.map((s) => ({
+        ...s,
+        fatigue: 5,
+        perceivedPerformance: 2,
+        motivation: 1,
+      })),
+      variants: context().variants.map((v) => ({
+        ...v,
+        exposures: v.exposures.map((e) => ({
+          ...e,
+          sets: e.sets.map((x) => ({ ...x, reps: 3, rir: 0 })),
+        })),
+      })),
+      weeksSinceDeload: 12,
+    });
+    expect(conFatiga.fatigue.decision).toBe("DELOAD_RECOMMENDED");
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation: "No necesitas parar; sigue empujando fuerte.",
+        }),
+      ),
+      { task: "WEEKLY", analysis: conFatiga, profile: PROFILE },
+    );
+    expect(result.ok).toBe(false);
   });
 });

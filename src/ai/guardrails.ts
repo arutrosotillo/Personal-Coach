@@ -39,8 +39,28 @@ const DECREASE_HINT = new RegExp(
 );
 
 /** Formas de proponer una descarga, más allá de la palabra "deload". */
-const DELOAD_HINT =
-  /\b(?:descarga|deload|semana\s+(?:de\s+)?(?:descarga|suave|floja|ligera|mantenimiento|adaptación|adaptacion)|descansa(?:r)?\s+(?:una\s+semana|\d+\s+días)|baja(?:r)?\s+el\s+volumen|s[áa]ltate\s+(?:la|las|el|los)\s+\w+\s+sesi[óo]n\w*|recorta\s+(?:las\s+)?series)\b/i;
+/**
+ * PROPONER una descarga. Ojo: nombrarla no es proponerla.
+ *
+ * Desde que el contexto marca las sesiones de descarga (`descarga: true`), el
+ * coach habla de ellas con normalidad —"esta semana hiciste una descarga
+ * recomendada y no debes recuperar el volumen"—, que es exactamente lo que
+ * queremos que sepa distinguir. Bloquear cualquier mención tiraba justo esas
+ * respuestas. Así que se exige un giro PRESCRIPTIVO junto al sustantivo, o una
+ * frase que ya es imperativa por sí sola.
+ */
+const DELOAD_PRESCRIPTION = new RegExp(
+  [
+    // "haz / tómate / necesitas / deberías … una descarga"
+    "\\b(?:haz(?:te)?|har[íi]a|t[óo]mate|toma|tomar[íi]a|necesitas|necesitar[íi]as|deber[íi]as|te\\s+recomiendo|recomiendo|conviene|planifica|programa|m[ée]tete|toca|hay\\s+que|vale\\s+la\\s+pena|considera|valora)\\b[^.!?]{0,40}\\b(?:descarga|deload|semana\\s+(?:de\\s+)?(?:descarga|suave|floja|ligera|mantenimiento|adaptaci[óo]n))\\b",
+    // Frases que ya son una orden por sí mismas.
+    "\\bdescansa(?:r)?\\s+(?:una\\s+semana|\\d+\\s+d[íi]as)\\b",
+    "\\bbaja(?:r)?\\s+el\\s+volumen\\b",
+    "\\bs[áa]ltate\\s+(?:la|las|el|los)\\s+\\w+\\s+sesi[óo]n\\w*",
+    "\\brecorta\\s+(?:las\\s+)?series\\b",
+  ].join("|"),
+  "i",
+);
 
 /** Desaconsejar una descarga que el motor SÍ recomienda, sin nombrarla. */
 const DELOAD_DENIAL =
@@ -293,8 +313,9 @@ export function checkResponse(
     };
   }
 
-  // Un porcentaje puede estar respaldado por su FRACCIÓN: el contexto guarda
-  // `avgCompletionRate: 0.826` y el modelo escribe, correctamente, "82,6 %".
+  // Un porcentaje puede estar respaldado por su FRACCIÓN, y al revés: el
+  // contexto lleva tanto fracciones (0.5 de recorte) como porcentajes enteros
+  // (`avgCompletionPct: 91`), y el modelo escribe indistintamente una u otro.
   const ungroundedPct = collect(PERCENT_NUMBER, text).filter(
     (v) =>
       !isGrounded(v, numbers) &&
@@ -365,7 +386,7 @@ export function checkResponse(
   }
 
   // ── 4. Descarga inventada (o desaconsejada cuando sí toca) ──────────────
-  const proposesDeload = matchesAffirmative(DELOAD_HINT, text);
+  const proposesDeload = matchesAffirmative(DELOAD_PRESCRIPTION, text);
   if (context.fatigue.decision !== "DELOAD_RECOMMENDED" && proposesDeload) {
     return {
       block: true,
