@@ -183,6 +183,8 @@ export interface Principle {
 export interface PhilosophySection {
   id: string;
   title: string;
+  /** Etiqueta corta para el índice de `/science`. Por defecto, `title`. */
+  short?: string;
   intro: string;
   principles: Principle[];
 }
@@ -191,6 +193,7 @@ export interface PhilosophySection {
 export const PHILOSOPHY: PhilosophySection[] = [
   {
     id: "objetivo",
+    short: "Filosofía",
     title: "Nuestra filosofía",
     intro:
       "Personal Coach entrena por tendencia, no por sesión. Progresa primero en repeticiones y después en carga, con la mayoría del trabajo cerca —pero no encima— del fallo, y un volumen moderado que solo cambia cuando hay evidencia acumulada.",
@@ -225,6 +228,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
   },
   {
     id: "overload",
+    short: "Overload",
     title: "Progressive overload",
     intro:
       "Double progression: primero se suben repeticiones dentro del rango, después la carga. Los dos brazos producen la misma hipertrofia, así que el orden es una elección práctica.",
@@ -259,6 +263,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
   },
   {
     id: "rir",
+    short: "RIR",
     title: "RIR y proximidad al fallo",
     intro:
       "RIR = repeticiones en reserva: cuántas te habrías podido hacer más. RIR 2 significa que paraste con dos en el depósito.",
@@ -305,6 +310,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
   },
   {
     id: "volumen",
+    short: "Volumen",
     title: "Volumen",
     intro:
       "El volumen se cuenta en series EFECTIVAS por músculo y semana: las series directas cuentan 1, y el trabajo indirecto cuenta una fracción.",
@@ -349,15 +355,18 @@ export const PHILOSOPHY: PhilosophySection[] = [
   },
   {
     id: "fatiga",
+    short: "Fatiga",
     title: "Fatiga y descarga",
     intro:
       "La descarga se RECOMIENDA cuando hay evidencia, nunca por calendario y nunca de forma automática.",
     principles: [
       {
         id: "deload-no-potencia",
-        title: "Una descarga no mejora tus ganancias",
+        title: "Una descarga es gestión de fatiga, no un potenciador",
         summary:
-          "Es gestión de fatiga, no un potenciador. En el único ensayo directo, el grupo que descargó no ganó más músculo y ganó MENOS fuerza que el que siguió entrenando.",
+          "En el único ensayo directo, el grupo que dejó de entrenar una semana a mitad de bloque no ganó más músculo y ganó MENOS fuerza que el que siguió. Por eso aquí la descarga es reactiva y nunca por calendario.",
+        detail:
+          "Cuidado con estirar esa conclusión más de lo que da: el estudio probó UNA estrategia (cese total del entrenamiento) durante 9 semanas en 39 personas entrenadas. Los propios autores señalan que un deload puede hacerse de muchas formas distintas del cese, y dejan abierto si un periodo de entrenamiento reducido evitaría esa pérdida de fuerza. Lo que sostiene es \"no dejes de entrenar por calendario\", no la receta concreta que usamos.",
         evidence: "REASONABLE",
         citations: ["coleman2024"],
       },
@@ -367,7 +376,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
         summary:
           "Las señales objetivas (rendimiento medido) pesan más que los chips subjetivos. Recomendar una descarga exige al menos una señal objetiva: tres días seguidos sintiéndote mal no bastan.",
         detail:
-          "Objetivas: caída de rendimiento en ≥2 ejercicios (3 pts), meseta generalizada (2), sesiones acortadas repetidas (2). Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas acumulando (1). Se recomienda con ≥5 puntos y ≥2 objetivos.",
+          "Objetivas (rendimiento medido): caída en varios ejercicios (3 pts), un solo ejercicio en caída (1), meseta generalizada (2). Conductual: sesiones acortadas repetidas (2). Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas seguidas sin parar (1). Se recomienda con ≥5 puntos y ≥2 de ellos objetivos. Acortar sesiones NO cuenta como objetiva: correlaciona con la fatiga, pero también con la agenda.",
         evidence: "HEURISTIC",
         citations: ["coleman2024"],
       },
@@ -391,6 +400,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
   },
   {
     id: "ia",
+    short: "AI Coach",
     title: "Coach AI",
     intro:
       "El motor determinista decide; la IA interpreta y explica. Nunca al revés.",
@@ -464,6 +474,8 @@ export const REASON_CODE_EXPLANATIONS: Record<ProgressionReasonCode, string> = {
   STALE_HISTORY:
     "Han pasado semanas desde esa sesión: se vuelve con el mismo peso para reconfirmar antes de subir. El tiempo no baja la carga.",
   HOLD_DEFAULT: "Mantener la carga y consolidar.",
+  RECOVERY_VETO:
+    "Había una subida lista, pero hay dolor articular o una descarga recomendada. La salud y la recuperación mandan sobre la progresión: la subida queda en pausa, no se pierde.",
 };
 
 /**
@@ -490,12 +502,17 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
 - Historial de ≥3 semanas: se suspenden las subidas hasta reconfirmar; ≥6 semanas,
   confianza mínima. El tiempo nunca baja la carga por sí solo.
 - El motor NUNCA añade ni quita series, ni cambia el programa, ni aplica descargas.
+- Con dolor articular repetido o una descarga recomendada, las SUBIDAS DE CARGA
+  quedan suspendidas (la salud y la recuperación tienen precedencia). Progresar
+  en repeticiones sigue permitido, y la carga nunca baja por este motivo.
 
 REGLAS DEL MOTOR DE FATIGA (deterministas):
 - Recomendar descarga exige ≥5 puntos Y ≥2 puntos de señales OBJETIVAS.
 - Las señales subjetivas (fatiga, motivación, rendimiento percibido) por sí solas
   nunca bastan, y toda señal exige repetición.
 - El dolor articular no puntúa: escala su propio aviso y tiene precedencia.
-- La descarga sugerida recorta VOLUMEN (mitad de series) y mantiene la carga, +2 RIR.
+- Acortar sesiones repetidamente suma puntos pero NO cuenta como señal objetiva.
+- La descarga sugerida recorta VOLUMEN (mitad de las series) y mantiene la carga
+  y el RIR objetivo. Una sola palanca, no dos.
 - Nada se aplica automáticamente: es una recomendación.
 `.trim();

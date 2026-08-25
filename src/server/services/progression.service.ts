@@ -9,6 +9,7 @@ import {
   suggestProgression,
   type ProgressionSuggestion,
 } from "@/core/training/progression";
+import { applyRecoveryVeto, type RecoveryVeto } from "@/core/training/veto";
 import type { ExecutionSession } from "@/server/repositories/workout.repo";
 import { getVariantHistory } from "@/server/repositories/workout.repo";
 
@@ -18,16 +19,24 @@ import { getVariantHistory } from "@/server/repositories/workout.repo";
  * y NO se persiste (ni AlgorithmDecision ni Recommendation; eso es F3).
  */
 
-/** Sugerencia de progresión por WorkoutExercise de la sesión en curso. */
+/**
+ * Sugerencia de progresión por WorkoutExercise de la sesión en curso.
+ *
+ * `veto` llega del motor de fatiga (dolor articular o descarga recomendada) y
+ * suspende las subidas de carga. Sin él, esta pantalla podía decir "sube a
+ * 85 kg" mientras la tarjeta de recuperación decía "retira el ejercicio que te
+ * duele" — COACH_PHILOSOPHY §2 da precedencia a la salud.
+ */
 export function buildSuggestions(
   session: ExecutionSession,
+  veto: RecoveryVeto | null = null,
 ): Record<string, ProgressionSuggestion> {
   // El día de la SESIÓN EN CURSO es el "hoy" del motor: así la recencia mide
   // desde la fecha real de entrenamiento, no desde el reloj del servidor.
   const todayLocalDate = session.localDate;
   const out: Record<string, ProgressionSuggestion> = {};
   for (const ex of session.exercises) {
-    out[ex.id] = suggestProgression({
+    const suggestion = suggestProgression({
       prescription: {
         repRangeMin: ex.repRangeMin,
         repRangeMax: ex.repRangeMax,
@@ -45,6 +54,7 @@ export function buildSuggestions(
       })),
       todayLocalDate,
     });
+    out[ex.id] = applyRecoveryVeto(suggestion, veto);
   }
   return out;
 }
