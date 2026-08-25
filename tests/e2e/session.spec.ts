@@ -128,11 +128,16 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   // Antes se pulsaba "Guardar y finalizar" sin tocar ninguno, así que si el
   // guardado de estos valores se rompiera, el motor se quedaría ciego y ningún
   // test se enteraría.
-  const sheet = page.getByRole("dialog");
   await expect(page.getByText("¿Cómo ha ido?")).toBeVisible();
-  for (const escala of ["Rendimiento", "Pump", "Dolor articular", "Fatiga"]) {
-    const fila = sheet.locator("div").filter({ hasText: escala }).last();
-    await fila.getByRole("button", { name: "4", exact: true }).click();
+  for (const escala of [
+    "Rendimiento",
+    "Molestias articulares",
+    "Fatiga (opcional)",
+  ]) {
+    await page
+      .getByRole("group", { name: escala })
+      .getByRole("button", { name: "4", exact: true })
+      .click();
   }
   await page.getByRole("button", { name: /Guardar y finalizar/i }).click();
 
@@ -146,7 +151,9 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   // Y el feedback llegó de verdad a la sesión: la tarjeta de recuperación de
   // /train lo cuenta entre las sesiones que ha podido valorar.
   await page.goto("/train");
-  await expect(page.getByText(/sesion(es)? en \d+ días/).first()).toBeVisible();
+  await expect(
+    page.getByText(/sesi[oó]n(es)? en \d+ días/).first(),
+  ).toBeVisible();
 });
 
 test("la acción principal de /train se alcanza sin scroll", async ({

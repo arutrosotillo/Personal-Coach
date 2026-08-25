@@ -131,3 +131,31 @@ describe("la semana avanza con el calendario", () => {
     expect(tresSemanasDespues.templates.filter((t) => t.done)).toHaveLength(0);
   });
 });
+
+describe("un día sin ejercicios no es entrenable", () => {
+  it("no se puede vaciar un día quitando su último ejercicio", async () => {
+    // Vaciarlo dejaba el día como entrenable: podías empezar una sesión de
+    // cero ejercicios, "completarla" sin registrar nada, y esa sesión fantasma
+    // marcaba el día como hecho y podía volverse el ancla desde la que se
+    // cuentan las semanas del mesociclo.
+    const { removeTemplateExercise } =
+      await import("@/server/services/program-edit.service");
+    const template = await prisma.workoutTemplate.findFirstOrThrow({
+      where: { deletedAt: null },
+      orderBy: { ordinal: "asc" },
+      include: { exercises: { orderBy: { ordinal: "asc" } } },
+    });
+    // Se quitan todos menos el último; el último debe fallar.
+    for (const te of template.exercises.slice(0, -1)) {
+      await removeTemplateExercise(profileId, te.id);
+    }
+    await expect(
+      removeTemplateExercise(profileId, template.exercises.at(-1)!.id),
+    ).rejects.toThrow(/al menos un ejercicio/i);
+
+    const quedan = await prisma.templateExercise.count({
+      where: { templateId: template.id },
+    });
+    expect(quedan).toBe(1);
+  });
+});
