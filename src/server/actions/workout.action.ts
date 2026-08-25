@@ -18,7 +18,9 @@ import {
   deleteSet,
   discardSession,
   finishSession,
+  EmptyTemplateError,
   logSet,
+  SessionAlreadyCompletedError,
   SessionNotInProgressError,
   setPlannedSets,
   startOrResumeSession,
@@ -66,6 +68,10 @@ export async function startSessionAction(
     revalidatePath("/train");
     return { ok: true, sessionId };
   } catch (error) {
+    // Este sí es accionable por el usuario: dile qué pasa.
+    if (error instanceof EmptyTemplateError) {
+      return { ok: false, error: error.message };
+    }
     console.error("startSessionAction", error);
     return { ok: false, error: "No se pudo iniciar la sesión." };
   }
@@ -137,18 +143,22 @@ export async function substituteExerciseAction(
   }
 }
 
+/** Como `ActionResult`, más si la sesión contó como descarga ejecutada. */
+export interface FinishSessionResult extends ActionResult {
+  deload?: boolean;
+}
+
 export async function finishSessionAction(
   sessionId: string,
   feedback: SessionFeedbackData,
-): Promise<ActionResult> {
+): Promise<FinishSessionResult> {
   const parsed = sessionFeedbackSchema.safeParse(feedback);
   if (!parsed.success) return { ok: false, error: "Feedback inválido" };
+  let finishedAsDeload = false;
   try {
     const profileId = await requireProfileId();
-    await finishSession(profileId, sessionId, parsed.data);
-    revalidatePath("/train");
-    revalidatePath("/train/history");
-    return { ok: true };
+    const { deload } = await finishSession(profileId, sessionId, parsed.data);
+    finishedAsDeload = deload;
   } catch (error) {
     // Si la sesión ya no estaba en curso, el feedback NO se ha guardado. Antes
     // se devolvía `ok` igualmente y el dato (fatiga, dolor, motivación) se
@@ -157,12 +167,17 @@ export async function finishSessionAction(
       return {
         ok: false,
         error:
-          "Esta sesión ya se había cerrado en otro sitio, así que no he podido guardar tu valoración. Ábrela desde el historial si quieres revisarla.",
+          "Esta sesión ya se había cerrado en otro sitio, así que esta valoración no se ha guardado. La sesión y sus series están en tu historial; la valoración de aquella vez es la que quedó.",
       };
     }
     console.error("finishSessionAction", error);
     return { ok: false, error: "No se pudo finalizar la sesión." };
   }
+  // FUERA del try: la sesión ya está guardada. Si `revalidatePath` fallara
+  // dentro, se reportaría "no se pudo finalizar" habiendo finalizado.
+  revalidatePath("/train");
+  revalidatePath("/train/history");
+  return { ok: true, deload: finishedAsDeload };
 }
 
 export async function discardSessionAction(
@@ -174,9 +189,18 @@ export async function discardSessionAction(
     revalidatePath("/train");
     return { ok: true };
   } catch (error) {
+    if (error instanceof SessionAlreadyCompletedError) {
+      // El usuario confirmó "se perderán N series, no se puede deshacer" y la
+      // sesión sigue en el historial contando. Decírselo.
+      revalidatePath("/train");
+      return {
+        ok: false,
+        error:
+          "Esa sesión ya se había terminado, así que no la he descartado: sigue en tu historial.",
+      };
+    }
     if (error instanceof SessionNotInProgressError) {
-      // Ya no está en curso: el resultado que el usuario quería (que no siga
-      // abierta) ya se cumple, así que no es un error para él.
+      // Ya estaba descartada: lo que el usuario quería ya se cumple.
       revalidatePath("/train");
       return { ok: true };
     }

@@ -22,6 +22,14 @@ import { wasDeloadRecommended } from "@/server/services/fatigue.service";
  */
 
 /** La sesión ya no estaba en curso: otra pestaña la cerró, o nunca existió. */
+/** La plantilla se quedó sin ejercicios: no hay nada que entrenar. */
+export class EmptyTemplateError extends Error {
+  constructor() {
+    super("Ese día no tiene ejercicios. Añade alguno antes de entrenarlo.");
+    this.name = "EmptyTemplateError";
+  }
+}
+
 export class SessionNotInProgressError extends Error {
   constructor() {
     super("Esa sesión ya no está en curso.");
@@ -89,9 +97,7 @@ export async function startOrResumeSession(
     // sesión de cero ejercicios se puede "completar" sin registrar nada y
     // ensucia el historial y el conteo de semanas.
     if (template.exercises.length === 0) {
-      throw new Error(
-        "Ese día no tiene ejercicios. Añade alguno antes de entrenarlo.",
-      );
+      throw new EmptyTemplateError();
     }
 
     const weekNumber = weekIndexSince(
@@ -193,28 +199,23 @@ export async function deleteSet(
   workoutExerciseId: string,
   setNumber: number,
 ) {
-  const enCurso = await prisma.workoutExercise.count({
-    where: {
-      id: workoutExerciseId,
-      session: {
-        status: "IN_PROGRESS",
-        mesocycle: { program: { profileId } },
-      },
-    },
-  });
-  if (enCurso === 0) throw new SessionNotInProgressError();
-
-  await prisma.setLog.deleteMany({
-    where: {
-      workoutExerciseId,
-      setNumber,
-      workoutExercise: {
+  // Guarda y borrado en la MISMA transacción: separados, si la sesión se
+  // cerraba entre ambos la guarda pasaba, el borrado no tocaba nada y el
+  // usuario recibía "ok" con la serie todavía ahí.
+  await prisma.$transaction(async (tx) => {
+    const enCurso = await tx.workoutExercise.count({
+      where: {
+        id: workoutExerciseId,
         session: {
           status: "IN_PROGRESS",
           mesocycle: { program: { profileId } },
         },
       },
-    },
+    });
+    if (enCurso === 0) throw new SessionNotInProgressError();
+    await tx.setLog.deleteMany({
+      where: { workoutExerciseId, setNumber },
+    });
   });
 }
 
@@ -316,11 +317,15 @@ async function isExecutedDeload(
     mesocycleId: string;
   },
   profileId: string,
+  recomendada: boolean,
 ): Promise<boolean> {
   const logged = await tx.setLog.count({
     where: {
       setType: "WORKING",
       completed: true,
+      // Mismo criterio que `completionRate` en el repositorio: una serie a 0
+      // repeticiones no es trabajo registrado.
+      reps: { gt: 0 },
       workoutExercise: { sessionId: session.id },
     },
   });
@@ -348,9 +353,7 @@ async function isExecutedDeload(
       mesocycle: { program: { profileId } },
     },
   });
-  if (yaEnDescarga > 0) return true;
-
-  return wasDeloadRecommended(profileId, session.localDate);
+  return yaEnDescarga > 0 || recomendada;
 }
 
 /**
@@ -381,27 +384,36 @@ export async function finishSession(
   });
   if (!session) throw new SessionNotInProgressError();
 
-  // Se decide FUERA de la transacción porque consulta el motor de fatiga
-  // (varias lecturas); dentro alargaría el bloqueo de escritura de SQLite.
-  const deload = await isExecutedDeload(prisma, session, profileId);
+  // El veredicto del motor se consulta FUERA de la transacción: son varias
+  // lecturas y solo mira sesiones COMPLETED, así que esta —que sigue en
+  // curso— no puede alterarlo mientras tanto.
+  const recomendada = await wasDeloadRecommended(profileId, session.localDate);
 
-  const { count } = await prisma.workoutSession.updateMany({
-    where: {
-      id: sessionId,
-      status: "IN_PROGRESS",
-      mesocycle: { program: { profileId } },
-    },
-    data: {
-      status: "COMPLETED",
-      weekKind: deload ? "DELOAD" : "ACCUMULATION",
-      finishedAt: now,
-      perceivedPerformance: feedback.perceivedPerformance ?? null,
-      pump: feedback.pump ?? null,
-      jointPain: feedback.jointPain ?? null,
-      fatigue: feedback.fatigue ?? null,
-      motivation: feedback.motivation ?? null,
-      notes: feedback.notes ?? null,
-    },
+  // El recuento de series y la escritura sí van JUNTOS. Separados, todo lo que
+  // se registrara entre ambos quedaba fuera de la decisión: una sesión al
+  // 167 % del volumen podía acabar grabada como descarga ejecutada, que es
+  // justo lo que le dice al motor de fatiga "obedeció, no le penalices".
+  const { count, deload } = await prisma.$transaction(async (tx) => {
+    const deload = await isExecutedDeload(tx, session, profileId, recomendada);
+    const { count } = await tx.workoutSession.updateMany({
+      where: {
+        id: sessionId,
+        status: "IN_PROGRESS",
+        mesocycle: { program: { profileId } },
+      },
+      data: {
+        status: "COMPLETED",
+        weekKind: deload ? "DELOAD" : "ACCUMULATION",
+        finishedAt: now,
+        perceivedPerformance: feedback.perceivedPerformance ?? null,
+        pump: feedback.pump ?? null,
+        jointPain: feedback.jointPain ?? null,
+        fatigue: feedback.fatigue ?? null,
+        motivation: feedback.motivation ?? null,
+        notes: feedback.notes ?? null,
+      },
+    });
+    return { count, deload };
   });
   // Carrera real: otra pestaña la cerró entre la lectura y la escritura.
   if (count === 0) throw new SessionNotInProgressError();
@@ -409,7 +421,21 @@ export async function finishSession(
 }
 
 /** Descarta una sesión (ABORTED). Queda fuera del historial y las estadísticas. */
-/** Descarta la sesión. Lanza si ya no estaba en curso (ver `finishSession`). */
+/**
+ * Descarta la sesión. Lanza si ya no estaba en curso (ver `finishSession`).
+ *
+ * Descartar una que YA estaba descartada es idempotente y no es un error. Pero
+ * una sesión COMPLETADA es otra cosa: el usuario ha confirmado un diálogo que
+ * dice "se perderán N series, no se puede deshacer", y la sesión sigue en el
+ * historial alimentando volumen y fatiga. Ahí hay que decírselo.
+ */
+export class SessionAlreadyCompletedError extends Error {
+  constructor() {
+    super("Esa sesión ya estaba terminada y sigue en tu historial.");
+    this.name = "SessionAlreadyCompletedError";
+  }
+}
+
 export async function discardSession(profileId: string, sessionId: string) {
   const { count } = await prisma.workoutSession.updateMany({
     where: {
@@ -419,5 +445,12 @@ export async function discardSession(profileId: string, sessionId: string) {
     },
     data: { status: "ABORTED" },
   });
-  if (count === 0) throw new SessionNotInProgressError();
+  if (count > 0) return;
+  const actual = await prisma.workoutSession.findFirst({
+    where: { id: sessionId, mesocycle: { program: { profileId } } },
+    select: { status: true },
+  });
+  if (actual?.status === "COMPLETED") throw new SessionAlreadyCompletedError();
+  if (actual?.status === "ABORTED") return; // ya estaba descartada: idempotente
+  throw new SessionNotInProgressError();
 }

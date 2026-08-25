@@ -19,9 +19,10 @@ import { prisma } from "@/server/db";
 /**
  * Contexto de entrenamiento desde `sinceLocalDate` (inclusive) hasta hoy.
  *
- * Nota sobre `Mesocycle`: hoy `currentWeek` nunca avanza y `weekKind` es
- * siempre `ACCUMULATION`, así que la "semana" del mesociclo no es un dato
- * fiable. Las semanas de acumulación se DERIVAN de las fechas reales de las
+ * Nota sobre `Mesocycle`: `currentWeek` nunca avanza (nadie lo actualiza), así
+ * que la "semana" del mesociclo no es un dato fiable. `weekKind` SÍ se escribe
+ * desde el micro-hardening posterior a la QA: vale `DELOAD` cuando el usuario
+ * ejecuta de verdad la descarga recomendada. Las semanas de acumulación se DERIVAN de las fechas reales de las
  * sesiones — sin migración y sin inventar estructura (docs/TRAINING_ENGINE.md).
  *
  * Dos ventanas distintas, a propósito:
@@ -215,12 +216,13 @@ export async function getTrainingContext(
  * programa activo: generar un programa nuevo es un acto administrativo y no
  * debería reiniciar tus semanas de acumulación real.
  *
- * El tercer caso es imprescindible: hoy NADA en la app escribe
- * `weekKind: "DELOAD"` (la única escritura del campo es `ACCUMULATION`), así
- * que sin él el contador no se reiniciaría jamás. Diría "llevas 85 semanas
- * seguidas acumulando" a alguien que paró tres meses, y —peor— seguiría
- * diciéndolo la semana después de hacer la descarga que el propio coach le
- * recomendó. Un parón real ES la semana suave que la señal busca.
+ * Las dos últimas anclas cubren cada una un caso distinto, y hacen falta las
+ * dos. La sesión `DELOAD` es la descarga que el usuario HIZO: sin ella, quien
+ * obedece la recomendación seguiría leyendo "llevas 10 semanas sin una semana
+ * suave" la semana siguiente de haberla hecho. El hueco de días cubre a quien
+ * simplemente para: sin él, quien se toma tres meses libres leería "llevas 85
+ * semanas seguidas acumulando". Un parón real ES, funcionalmente, la semana
+ * suave que la señal busca.
  */
 async function accumulationWeeks(
   profileId: string,

@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { Badge } from "@/components/ui/badge";
 import { getProfile } from "@/server/repositories/profile.repo";
 import { listCompletedSessions } from "@/server/repositories/workout.repo";
 
@@ -24,7 +25,17 @@ export default async function HistoryPage() {
               className="border-border bg-card flex items-center justify-between gap-3 rounded-lg border px-4 py-3"
             >
               <div>
-                <p className="font-medium">{s.templateName}</p>
+                <p className="font-medium">
+                  {s.templateName}
+                  {/* Sin esto, una sesión de descarga se ve igual que un día
+                      flojo: "10 series" frente a las 16 de siempre, sin nada
+                      que explique por qué. */}
+                  {s.deload ? (
+                    <Badge variant="outline" className="ml-2 align-middle">
+                      Descarga
+                    </Badge>
+                  ) : null}
+                </p>
                 <p className="tnum text-muted-foreground text-xs">
                   {s.localDate} · semana {s.weekNumber}
                 </p>

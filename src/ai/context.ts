@@ -71,6 +71,8 @@ export interface CoachContext {
     sessionsInWindow: number;
     /** Porcentaje entero (91), no fracción: el modelo lo cita tal cual. */
     avgCompletionPct: number;
+    /** Sesiones de descarga en la ventana (excluidas del porcentaje). */
+    sesionesDeDescarga: number;
     weeksSinceDeload: number | null;
   };
   sessions: Array<{
@@ -236,11 +238,16 @@ export function buildCoachContext(
       };
     });
 
+  // Las descargas se EXCLUYEN del promedio: incluirlas daba un 90 % de
+  // adherencia a quien había completado el 100 % de lo que le tocaba, y luego
+  // se le decía al modelo "no lo trates como falta de adherencia" mientras se
+  // le pasaba un número ya contaminado que la regla 1 le prohíbe recalcular.
+  const paraAdherencia = context.sessions.filter((s) => !s.deload);
   const avgCompletion =
-    context.sessions.length > 0
-      ? context.sessions.reduce((a, s) => a + (s.completionRate ?? 1), 0) /
-        context.sessions.length
-      : 0;
+    paraAdherencia.length > 0
+      ? paraAdherencia.reduce((a, s) => a + (s.completionRate ?? 1), 0) /
+        paraAdherencia.length
+      : 1;
 
   return {
     meta: {
@@ -260,6 +267,7 @@ export function buildCoachContext(
       // Entero. `round1(x*100)/100` devolvía 0.9129999999999999 por coma
       // flotante, y el modelo lo escribía literalmente en la respuesta.
       avgCompletionPct: Math.round(avgCompletion * 100),
+      sesionesDeDescarga: context.sessions.length - paraAdherencia.length,
       weeksSinceDeload: context.weeksSinceDeload,
     },
     sessions,

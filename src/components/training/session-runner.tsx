@@ -299,7 +299,13 @@ export function SessionRunner({
     startTransition(async () => {
       const res = await finishSessionAction(session.id, feedback);
       if (res.ok) {
-        toast.success("Sesión guardada");
+        // Si contó como descarga, decirlo: si no, el usuario ve una sesión
+        // corta como cualquier otra y un contador que se reinicia solo.
+        toast.success(
+          res.deload
+            ? "Sesión guardada como descarga: no cuenta como sesión acortada."
+            : "Sesión guardada",
+        );
         router.push("/train");
         router.refresh();
       } else {

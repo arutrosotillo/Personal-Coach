@@ -397,7 +397,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
         summary:
           "Las señales objetivas (rendimiento medido) pesan más que los chips subjetivos. Recomendar una descarga exige al menos una señal objetiva: tres días seguidos sintiéndote mal no bastan.",
         detail:
-          "Objetivas (rendimiento medido): caída en varios ejercicios (3 pts; 5 si afecta a la mitad o más), un solo ejercicio en caída (1), meseta generalizada (2). Conductual: sesiones acortadas repetidas (2). Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas seguidas sin parar (1). Se recomienda con ≥5 puntos y ≥2 de ellos objetivos. Acortar sesiones NO cuenta como objetiva: correlaciona con la fatiga, pero también con la agenda.",
+          "Objetivas (rendimiento medido): caída en varios ejercicios (3 pts; 5 si afecta a la mitad o más), un solo ejercicio en caída (1), meseta generalizada (2). Conductual: sesiones acortadas repetidas (2), sin contar las de una descarga que hayas hecho de verdad. Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas seguidas sin parar (1). Se recomienda con ≥5 puntos y ≥2 de ellos objetivos. Acortar sesiones NO cuenta como objetiva: correlaciona con la fatiga, pero también con la agenda.",
         evidence: "HEURISTIC",
         citations: ["coleman2024"],
       },
@@ -406,6 +406,16 @@ export const PHILOSOPHY: PhilosophySection[] = [
         title: "El dolor articular va por su cuenta",
         summary:
           "No suma puntos de fatiga: escala su propio aviso y tiene precedencia sobre cualquier ajuste de carga. Si duele, se cambia el ejercicio antes que el peso.",
+        evidence: "HEURISTIC",
+        citations: [],
+      },
+      {
+        id: "descarga-hecha",
+        title: "Si la haces, el sistema se entera (y no te penaliza)",
+        summary:
+          "Cuando recortas series estando recomendada una descarga, esas sesiones se marcan como tales: no cuentan como sesiones acortadas y reinician el contador de semanas acumuladas. Obedecer al motor nunca puede penalizarte.",
+        detail:
+          "Hacen falta las dos cosas: que la descarga estuviera recomendada ese día y que de verdad hayas recortado (menos del 70 % de las series que prescribe tu plantilla). Así un día flojo suelto no puede disfrazarse de descarga. No se borra ni un dato: las series, cargas, repeticiones y RIR de esa semana siguen en tu historial y el motor de progresión los sigue usando. En el historial esas sesiones llevan la etiqueta «Descarga».",
         evidence: "HEURISTIC",
         citations: [],
       },

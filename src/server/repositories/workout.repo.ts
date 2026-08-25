@@ -365,6 +365,8 @@ export async function listCompletedSessions(profileId: string) {
     templateName: s.template?.name ?? "Sesión",
     localDate: s.localDate,
     weekNumber: s.weekNumber,
+    /** Sesión de descarga: menos series a propósito, no un día flojo. */
+    deload: s.weekKind === "DELOAD",
     durationMin:
       s.startedAt && s.finishedAt
         ? Math.round((s.finishedAt.getTime() - s.startedAt.getTime()) / 60000)

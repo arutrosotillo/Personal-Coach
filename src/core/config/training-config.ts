@@ -314,11 +314,13 @@ export const FATIGUE = {
   /** Semanas de acumulación continua tras las que el calendario suma 1 punto. */
   LONG_ACCUMULATION_WEEKS: 8,
   /**
-   * Días sin entrenar que reinician el contador de acumulación. No existe
-   * ninguna forma de marcar una semana como DELOAD en la app, así que sin esto
-   * el contador crecería para siempre y la frase "llevas N semanas seguidas"
-   * sería falsa en cuanto el usuario parase una vez. Un parón de 10 días es,
-   * funcionalmente, la semana suave que la señal está buscando.
+   * Días sin entrenar que reinician el contador de acumulación.
+   *
+   * Es la segunda de las dos anclas: la otra es una descarga realmente
+   * ejecutada (`weekKind: "DELOAD"`). Esta cubre a quien simplemente para —
+   * sin ella, la frase "llevas N semanas seguidas" sería falsa en cuanto el
+   * usuario se tomara unas vacaciones. Un parón de 10 días es, funcionalmente,
+   * la semana suave que la señal está buscando.
    */
   ACCUMULATION_RESET_GAP_DAYS: 10,
   /** Prescripción del deload recomendado (advisory). */
