@@ -175,3 +175,29 @@ test("la acción principal de /train se alcanza sin scroll", async ({
   const navBox = await nav.boundingBox();
   expect(ctaBox!.y + ctaBox!.height).toBeLessThanOrEqual(navBox!.y);
 });
+
+test("volver a una sesión ya cerrada no deja una pantalla muerta", async ({
+  page,
+}) => {
+  // El caso de la pestaña vieja: terminas la sesión y vuelves atrás. Antes se
+  // renderizaba el ejecutor entero —con sus botones— para una sesión cerrada,
+  // y cada toque devolvía "ok" sin guardar nada. Ahora ni siquiera se llega a
+  // esa pantalla.
+  await onboard(page);
+  await page.goto("/train");
+  await page.getByRole("button", { name: "Empezar entrenamiento" }).click();
+  await expect(page).toHaveURL(/\/train\/session\//);
+  const urlSesion = page.url();
+
+  await page.getByRole("button", { name: "Completar" }).first().click();
+  const next = page.getByRole("button", { name: "Siguiente" });
+  while (await next.isVisible().catch(() => false)) await next.click();
+  await page.getByRole("button", { name: "Finalizar" }).click();
+  await page.getByRole("button", { name: /Guardar y finalizar/i }).click();
+  await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
+
+  // "Atrás" a la URL de la sesión: debe llevar al historial, no al ejecutor.
+  await page.goto(urlSesion);
+  await expect(page).toHaveURL(/\/train\/history$/);
+  await expect(page.getByRole("heading", { name: "Historial" })).toBeVisible();
+});

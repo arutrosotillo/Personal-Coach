@@ -126,8 +126,9 @@ export function ProgramRationaleCard({
         ) : null}
 
         <p className="text-muted-foreground border-border border-t pt-3 text-xs">
-          Este es un programa inicial. Durante las siguientes fases se ajustará
-          según tu rendimiento, recuperación y adherencia. Generador{" "}
+          Este es tu punto de partida. El motor ajusta cargas y repeticiones
+          sesión a sesión; el programa —ejercicios, días y series— solo cambia
+          si lo cambias tú. Generador{" "}
           <span className="tnum">
             v{rationale.version} · {rationale.ruleId}
           </span>

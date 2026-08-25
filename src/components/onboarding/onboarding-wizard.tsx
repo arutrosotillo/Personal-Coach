@@ -983,8 +983,9 @@ function ReviewStep({
           {priorityNames}
         </p>
         <p className="text-muted-foreground mt-2 text-xs">
-          Punto de partida conservador y equilibrado. Los motores de progresión
-          lo refinarán con tus datos reales en las siguientes fases.
+          Punto de partida conservador y equilibrado. A partir de aquí el motor
+          ajusta cargas y repeticiones sesión a sesión; los ejercicios, los días
+          y las series solo cambian si los cambias tú.
         </p>
       </section>
 

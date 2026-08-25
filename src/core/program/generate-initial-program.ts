@@ -370,8 +370,8 @@ export function generateInitialProgram(
   );
   const explanation =
     priorityLabels.length > 0
-      ? `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, con más trabajo en tus prioridades: ${priorityLabels.join(", ")}. Ningún grupo se abandona. Se refinará con tus datos en las siguientes fases.`
-      : `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, sin prioridad especial: todos los grupos reciben un reparto estándar. Se refinará con tus datos en las siguientes fases.`;
+      ? `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, con más trabajo en tus prioridades: ${priorityLabels.join(", ")}. Ningún grupo se abandona. Las cargas y repeticiones se ajustan sesión a sesión; los ejercicios y las series solo los cambias tú.`
+      : `Programa inicial de ${input.daysPerWeek} días (${split.label}). Volumen de partida conservador y equilibrado, sin prioridad especial: todos los grupos reciben un reparto estándar. Las cargas y repeticiones se ajustan sesión a sesión; los ejercicios y las series solo los cambias tú.`;
 
   return {
     name: split.label,

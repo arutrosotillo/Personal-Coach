@@ -229,3 +229,61 @@ describe("F · vuelta a la normalidad, sin estado atrapado", () => {
     expect(a.fatigue.decision).not.toBe("DELOAD_RECOMMENDED");
   });
 });
+
+describe("contrato de guardado: nada se pierde en silencio", () => {
+  it("cerrar dos veces avisa en vez de perder el feedback", async () => {
+    const { SessionNotInProgressError } =
+      await import("@/server/services/workout-session.service");
+    const dia = addDays(LUNES, 98);
+    await entrenar(dia, templateIds[0], 1, BIEN);
+    const cerrada = await prisma.workoutSession.findFirstOrThrow({
+      where: { localDate: dia },
+      select: { id: true, fatigue: true, jointPain: true },
+    });
+
+    // Segundo intento desde una "pestaña vieja", con feedback distinto.
+    await expect(
+      finishSession(profileId, cerrada.id, MAL, new Date(`${dia}T20:00:00Z`)),
+    ).rejects.toBeInstanceOf(SessionNotInProgressError);
+
+    // Y el feedback original sigue intacto: no se ha machacado a medias.
+    const despues = await prisma.workoutSession.findFirstOrThrow({
+      where: { id: cerrada.id },
+      select: { fatigue: true, jointPain: true, status: true },
+    });
+    expect(despues.status).toBe("COMPLETED");
+    expect(despues.fatigue).toBe(BIEN.fatigue);
+    expect(despues.jointPain).toBe(BIEN.jointPain);
+  });
+
+  it("y un reintento no duplica ni la sesión ni las series", async () => {
+    const dia = addDays(LUNES, 98);
+    const sesiones = await prisma.workoutSession.count({
+      where: { localDate: dia },
+    });
+    expect(sesiones).toBe(1);
+
+    // `logSet` es idempotente por (ejercicio, nº de serie): repetir el mismo
+    // registro actualiza la fila, nunca crea una segunda "serie 1".
+    const we = await prisma.workoutExercise.findFirstOrThrow({
+      where: { session: { localDate: dia } },
+      select: { id: true },
+    });
+    const antes = await prisma.setLog.count({
+      where: { workoutExerciseId: we.id },
+    });
+    await expect(
+      logSet(profileId, {
+        workoutExerciseId: we.id,
+        setNumber: 1,
+        setType: "WORKING",
+        weightKg: 60,
+        reps: 10,
+        rir: 2,
+      }),
+    ).rejects.toThrow();
+    expect(
+      await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),
+    ).toBe(antes);
+  });
+});
