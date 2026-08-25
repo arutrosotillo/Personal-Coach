@@ -50,9 +50,13 @@ app/, components/  →  server/actions/  →  server/services/  →  core/  +  s
 
 ## Decisiones registradas (no re-litigar sin causa técnica real)
 
-1. Plan aprobado: `docs/IMPLEMENTATION_PLAN.md` (fases 0–7). Estado actual: F0+F1 + parche de Fase 1. Fase 2A completa (biblioteca, sesiones/ejecución, edición de programa). Fase 2B completa (contexto "última vez" por serie, motor de progresión solo-sugerencia efímero `src/core/training/progression.ts`, mini-historial). **Fase 3.2 completa**: generador v3.0.0 con **modelo de volumen EFECTIVO** (targeting/suelos/avisos en efectivo, máx 3 series/ejercicio, densidad ≤18/sesión, escalado por días, experiencia; ver `docs/PHASE_3_2_VOLUME_PLAN.md` y `docs/PHASE_3_RESEARCH.md`). **Fase 3.1 + 3.1b completas (Custom Program Builder + reactivación)**: crear programa manual (`/program/new`, `createManualProgram`) que aterriza en las MISMAS tablas y usa el MISMO motor; ops de día (add/rename/remove/reorder); origen manual/generado derivable vía `program-source.service` (`canRestore`); programas anteriores en `/program/history` y reactivación transaccional que conserva historial/snapshots. Aplazado: auto-colapso/auto-avance en sesión; F3.3 (mesociclos/deload) y F3.4 (extensión de progresión).
-2. **Tablas de Coach AI pospuestas a la migración de Fase 6** (no tocan entidades centrales; ver docs/DATA_MODEL.md). `PersonalEvent` SÍ existe desde F1 (lo consumen los motores).
-3. Los motores deterministas son la ÚNICA fuente de números (kcal, cargas, volumen…). Coach AI (F6) solo interpreta.
+1. Plan aprobado: `docs/IMPLEMENTATION_PLAN.md` (fases 0–7). Estado: F0–F2 completas; F3.1/3.1b (programa manual + reactivación); F3.2 (volumen efectivo); **F3.2b/3.2c** (motor de progresión v2 + integridad del RIR, ver `docs/TRAINING_ENGINE_FINAL_AUDIT.md`); **F3.3** (recencia, fatiga y deload reactivo, siempre advisory); **Coach AI v1** y **sección Ciencia** (`/science`). Aplazado: F3.4 (`ADD_SET`/`REMOVE_SET` a límite de mesociclo), F4, F5, F7.
+
+   - **El motor determinista es la única autoridad.** Coach AI (`src/ai/`) es READ-ONLY: interpreta y explica lo que los motores ya decidieron. No puede modificar programa, series, cargas, RIR, volumen ni deload; los guardrails bloquean cualquier respuesta que invente una cifra o contradiga al motor. Sin `OPENAI_API_KEY` la app funciona entera.
+   - **`/science` y los prompts leen de `src/core/science/`**, fuente única de filosofía, explicación de reasonCodes y bibliografía. Cada regla lleva etiqueta de evidencia (fuerte / razonable / heurística) y ninguna heurística se presenta como ciencia. Las referencias solo se muestran si su DOI/PMID está verificado.
+
+2. **Tablas de persistencia de Coach AI pospuestas** (la v1 no persiste nada: las respuestas son efímeras; ver docs/DATA_MODEL.md). `PersonalEvent` SÍ existe desde F1 (lo consumen los motores).
+3. Los motores deterministas son la ÚNICA fuente de números (kcal, cargas, volumen…). Coach AI solo interpreta.
 4. Suelos de seguridad: kcal ≥ max(BMR×0.9, 1500 H / 1200 M) — inviolable.
 5. Registro de comidas por totales + plantillas; sin base de datos de alimentos.
 6. pnpm; Prisma 7 (config en `prisma.config.ts`, client generado en `src/generated/prisma`); Zod 4; shadcn/ui (base-ui); Tailwind 4.

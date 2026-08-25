@@ -1,4 +1,48 @@
-# Coach AI — especificación (Fase 6; NO implementado aún)
+# Coach AI
+
+> **Estado: v1 IMPLEMENTADA** (`src/ai/`). Este documento describe lo construido;
+> las partes marcadas «futuro» siguen sin implementar.
+
+## Lo implementado (v1)
+
+**Arquitectura**: motores deterministas → hechos y decisiones → la IA interpreta.
+La capa es **read-only por construcción**: no existe ninguna operación de escritura
+en `src/ai/` ni en `coach.service.ts`, y hay un test de integración que lo verifica
+contando filas antes y después de una consulta.
+
+| Pieza         | Fichero                | Qué hace                                                                               |
+| ------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| Configuración | `src/ai/config.ts`     | Modelo (`AI_COACH_MODEL`), topes, timeout, precios y `isCoachConfigured()`             |
+| Proveedor     | `src/ai/provider.ts`   | Responses API de `openai@7.5.0` con Structured Outputs; `FakeCoachProvider` para tests |
+| Contexto      | `src/ai/context.ts`    | Traduce el análisis determinista al JSON que ve el modelo, con topes de tamaño         |
+| Guardrails    | `src/ai/guardrails.ts` | Bloquea cifras inventadas, contradicciones con el motor y descargas no recomendadas    |
+| Prompts       | `src/ai/prompts.ts`    | System prompt + instrucciones por función; incluye las reglas REALES del motor         |
+| Orquestación  | `src/ai/coach.ts`      | Contexto → modelo → Zod → guardrails → respuesta o fallback determinista               |
+
+**Modelo**: `gpt-5.6-luna` por defecto (0,20 $/1M entrada, 1,20 $/1M salida; precios
+oficiales verificados el 2026-08-25). ~0,0014 $ por consulta a 4.000 + 500 tokens.
+Se cambia con `AI_COACH_MODEL` sin tocar código. Las llamadas van con
+`reasoning.effort: "none"` porque los tokens de razonamiento se facturan como salida.
+
+**Funciones**: Weekly Coach · Exercise Coach · «¿Por qué hago esto?» · pregunta
+libre acotada. Todas **bajo demanda**: una llamada por pulsación, nada automático,
+nada cacheado (una consulta cuesta menos que la complejidad de un caché).
+
+**Sin `OPENAI_API_KEY`**: la pantalla dice «AI Coach no configurado» y el resto de
+la app funciona igual. La clave solo se lee en servidor y jamás aparece en un
+mensaje de error ni en un log.
+
+**Errores**: clave ausente, timeout, rate limit, error del proveedor, respuesta
+vacía, JSON inválido, JSON que no valida el schema y bloqueo del guardrail. Todos
+devuelven un estado controlado con la explicación determinista de respaldo.
+
+**Nutrición, sueño y recuperación**: el contexto incluye `notAvailable` con lo que
+la app NO registra (peso corporal, calorías, proteína, sueño). El modelo puede dar
+pautas generales pero tiene prohibido inventar cifras personales.
+
+---
+
+## Especificación original (Fase 6, para lo que falta)
 
 Capa interpretativa opcional sobre los motores deterministas. **Los motores son la única fuente de números** (kcal, macros, cargas, volumen, estancamientos, deloads, alertas, ritmos); Coach AI interpreta, relaciona, explica, resume y conversa. La app funciona completa con `AI_ENABLED=false`. Su comportamiento y tono derivan literalmente de COACH_PHILOSOPHY.md.
 

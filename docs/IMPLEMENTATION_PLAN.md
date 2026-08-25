@@ -5,8 +5,17 @@ Fases pequeñas y verificables. Regla: la app es completamente utilizable al fin
 ## Estado
 
 - ✅ **F0 — Documentación** (este directorio).
-- ✅ **F1 — Scaffold, DB, catálogo, onboarding** (esta ejecución).
-- ⬜ F2 → F7 pendientes.
+- ✅ **F1 — Scaffold, DB, catálogo, onboarding**.
+- ✅ **F2 — Entrenamientos y registro de series** (2A + 2B).
+- ✅ **F3.1 / F3.1b — Custom Program Builder + reactivación**.
+- ✅ **F3.2 — Volumen efectivo del generador**.
+- ✅ **F3.2b / F3.2c — Motor de progresión v2 + calidad del dato de RIR**
+  (ver `docs/TRAINING_ENGINE_FINAL_AUDIT.md`).
+- ✅ **F3.3 — Recencia, fatiga y deload reactivo** (advisory, nunca automático).
+- ✅ **Coach AI v1** — adelantada desde F6: capa read-only sobre los motores.
+- ✅ **Sección Ciencia** (`/science`) con bibliografía verificada.
+- ⬜ F3.4 (`ADD_SET`/`REMOVE_SET` a límite de mesociclo), F4 (nutrición y
+  seguimiento corporal), F5 (dashboard y recomendaciones), F7 (PWA, export, QA).
 
 ## F0 — Documentación
 
