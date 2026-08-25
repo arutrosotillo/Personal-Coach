@@ -1,4 +1,4 @@
-import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
+import { DEFAULT_TIMEZONE, toLocalDate, weekIndexSince } from "@/core/dates";
 import type { LogSetData, SessionFeedbackData } from "@/core/schemas/workout";
 import { estimateOneRepMax } from "@/core/training/e1rm";
 import { prisma } from "@/server/db";
@@ -58,7 +58,17 @@ export async function startOrResumeSession(
       },
     });
 
-    const weekNumber = Math.max(template.mesocycle.currentWeek, 1);
+    // Igual que en `getTodayOverview`: la semana sale de las fechas, no de
+    // `currentWeek` (que nadie incrementa y dejaba todas las sesiones en 1).
+    const firstSession = await tx.workoutSession.findFirst({
+      where: { mesocycleId: template.mesocycleId, status: "COMPLETED" },
+      orderBy: { localDate: "asc" },
+      select: { localDate: true },
+    });
+    const weekNumber = weekIndexSince(
+      firstSession?.localDate ?? localDate,
+      localDate,
+    );
 
     const session = await tx.workoutSession.create({
       data: {

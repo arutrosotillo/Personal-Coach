@@ -112,10 +112,11 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <PhaseNote phase="Fase 2">
-          Registro de entrenamientos con recomendaciones de carga, check-in
-          diario de peso y calorías, e historial. Esta versión deja creado tu
-          plan inicial; el registro llega en la siguiente fase.
+        <PhaseNote phase="Fases 4–5">
+          Lo que todavía no puedes hacer aquí: registrar tu peso del día y lo
+          que comes. Las kilocalorías y la proteína de arriba son tu objetivo
+          calculado, no un seguimiento. El entrenamiento sí está completo —
+          registro de series, progresión, recuperación y coach.
         </PhaseNote>
       </div>
     </AppShell>

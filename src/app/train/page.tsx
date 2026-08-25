@@ -44,8 +44,21 @@ export default async function TrainPage() {
       <h1 className="mb-1 text-2xl font-semibold">Entrenar</h1>
       <p className="text-muted-foreground mb-4 text-sm">
         {overview.programName} · Semana{" "}
-        <span className="tnum">{overview.weekNumber}</span> de{" "}
-        <span className="tnum">{overview.weeksPlanned}</span>
+        <span className="tnum">{overview.weekNumber}</span>
+        {/* Pasar del plan es un estado normal hoy: nada cierra el mesociclo
+            todavía (eso es F3.4). Decir "semana 9 de 6" parecería un error. */}
+        {overview.weekNumber <= overview.weeksPlanned ? (
+          <>
+            {" de "}
+            <span className="tnum">{overview.weeksPlanned}</span>
+          </>
+        ) : (
+          <>
+            {" · plan de "}
+            <span className="tnum">{overview.weeksPlanned}</span>
+            {" semanas cumplido"}
+          </>
+        )}
       </p>
 
       {overview.active ? (

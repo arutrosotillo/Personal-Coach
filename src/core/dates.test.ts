@@ -7,6 +7,7 @@ import {
   isLocalDate,
   isoWeekOf,
   toLocalDate,
+  weekIndexSince,
 } from "@/core/dates";
 
 const MADRID = "Europe/Madrid";
@@ -97,5 +98,29 @@ describe("isoWeekOf", () => {
       days.map((d) => `${isoWeekOf(d).isoYear}-${isoWeekOf(d).isoWeek}`),
     );
     expect(weeks.size).toBe(1);
+  });
+});
+
+describe("weekIndexSince — la semana del programa sale de las fechas", () => {
+  it("la primera semana es la 1", () => {
+    expect(weekIndexSince("2026-06-01", "2026-06-01")).toBe(1);
+    expect(weekIndexSince("2026-06-01", "2026-06-07")).toBe(1);
+  });
+
+  it("cambia de semana el LUNES, no a los 7 días del inicio", () => {
+    // Empezar un jueves y llegar al lunes siguiente ya es la semana 2, aunque
+    // solo hayan pasado 4 días: para el usuario "esta semana" es de lunes a
+    // domingo.
+    expect(weekIndexSince("2026-06-04", "2026-06-07")).toBe(1); // jue → dom
+    expect(weekIndexSince("2026-06-04", "2026-06-08")).toBe(2); // jue → lun
+  });
+
+  it("cuenta semanas de calendario a largo plazo", () => {
+    expect(weekIndexSince("2026-06-01", "2026-06-08")).toBe(2);
+    expect(weekIndexSince("2026-06-01", "2026-07-06")).toBe(6);
+  });
+
+  it("no se rompe al cruzar el año", () => {
+    expect(weekIndexSince("2026-12-28", "2027-01-04")).toBe(2);
   });
 });

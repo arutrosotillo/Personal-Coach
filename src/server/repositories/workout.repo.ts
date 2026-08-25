@@ -1,4 +1,10 @@
 import { PROGRESSION } from "@/core/config/training-config";
+import {
+  DEFAULT_TIMEZONE,
+  isoWeekOf,
+  toLocalDate,
+  weekIndexSince,
+} from "@/core/dates";
 import { prisma } from "@/server/db";
 
 export interface VariantExposureRow {
@@ -116,7 +122,9 @@ async function recentWorkingSetsForVariants(
     // Una exposición por sesión: la del `ordinal` más bajo (trabajo principal).
     const ordered: VariantExposure[] = [];
     for (const slots of sessions.values()) {
-      const chosen = [...slots.values()].sort((a, b) => a.ordinal - b.ordinal)[0];
+      const chosen = [...slots.values()].sort(
+        (a, b) => a.ordinal - b.ordinal,
+      )[0];
       if (!chosen) continue;
       chosen.sets.sort((a, b) => a.setNumber - b.setNumber);
       ordered.push({ localDate: chosen.localDate, sets: chosen.sets });
@@ -253,7 +261,11 @@ export async function getExecutionSession(
 }
 
 /** Plantillas de la semana actual + qué se ha completado (pantalla "hoy"). */
-export async function getTodayOverview(profileId: string) {
+export async function getTodayOverview(
+  profileId: string,
+  now: Date = new Date(),
+) {
+  const todayLocalDate = toLocalDate(now, DEFAULT_TIMEZONE);
   const program = await prisma.trainingProgram.findFirst({
     where: { profileId, isActive: true, deletedAt: null },
     orderBy: { createdAt: "desc" },
@@ -274,9 +286,27 @@ export async function getTodayOverview(profileId: string) {
   const mesocycle = program?.mesocycles[0];
   if (!program || !mesocycle) return null;
 
-  const weekNumber = Math.max(mesocycle.currentWeek, 1);
+  // La semana se deriva de las FECHAS. `Mesocycle.currentWeek` no lo incrementa
+  // nadie, así que valía 1 para siempre: la app decía "Semana 1 de 6" el día 60
+  // y, peor, contaba como "hechas esta semana" TODAS las sesiones de la
+  // historia (todas se guardaban con `weekNumber: 1`). A partir del octavo día
+  // eso dejaba "¡Semana completada!" fijo en pantalla y "Hoy toca" no volvía a
+  // proponer nada nunca más.
+  const first = await prisma.workoutSession.findFirst({
+    where: { mesocycleId: mesocycle.id, status: "COMPLETED" },
+    orderBy: { localDate: "asc" },
+    select: { localDate: true },
+  });
+  const weekNumber = weekIndexSince(
+    first?.localDate ?? todayLocalDate,
+    todayLocalDate,
+  );
   const completedThisWeek = await prisma.workoutSession.findMany({
-    where: { mesocycleId: mesocycle.id, weekNumber, status: "COMPLETED" },
+    where: {
+      mesocycleId: mesocycle.id,
+      status: "COMPLETED",
+      localDate: { gte: isoWeekOf(todayLocalDate).weekStartDate },
+    },
     select: { templateId: true },
   });
   const doneTemplateIds = new Set(completedThisWeek.map((s) => s.templateId));

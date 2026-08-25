@@ -75,3 +75,24 @@ export function isoWeekOf(localDate: string): {
   monday.setUTCDate(date.getUTCDate() - (dayOfWeek - 1));
   return { isoYear, isoWeek, weekStartDate: monday.toISOString().slice(0, 10) };
 }
+
+/**
+ * Número de semana (1 = la primera) de `localDate` dentro de un bloque que
+ * empezó en `startLocalDate`, contando por SEMANAS ISO (lunes a domingo).
+ *
+ * Se cuenta por semanas de calendario, no por bloques de 7 días desde el
+ * inicio: para el usuario "esta semana" es de lunes a domingo, y si empezó un
+ * jueves, el lunes siguiente ya es la semana 2.
+ *
+ * Existe porque `Mesocycle.currentWeek` no avanza nunca (nada en la app lo
+ * incrementa). La semana se DERIVA de las fechas reales, igual que las semanas
+ * de acumulación del motor de fatiga.
+ */
+export function weekIndexSince(
+  startLocalDate: string,
+  localDate: string,
+): number {
+  const start = isoWeekOf(startLocalDate).weekStartDate;
+  const current = isoWeekOf(localDate).weekStartDate;
+  return Math.floor(diffDays(start, current) / 7) + 1;
+}
