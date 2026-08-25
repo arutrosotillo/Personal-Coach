@@ -8,6 +8,13 @@ import type { CoachResponse } from "@/ai/types";
  *
  * `block` = la respuesta no se muestra y se cae al fallback determinista.
  * `warnings` = se muestra, pero queda registrado el aviso.
+ *
+ * Dos lecciones aprendidas en revisión, que explican la forma del código:
+ *   · comprobar solo `recommendation` dejaba pasar la misma frase escrita en
+ *     el titular, en un highlight o en una hipótesis → se evalúa TODO el texto;
+ *   · `contextJson.includes("202")` daba por buena una carga de 202 kg porque
+ *     las FECHAS contienen "202" → se compara contra el conjunto de números
+ *     realmente presentes en el contexto, no contra el texto del JSON.
  */
 
 export interface GuardrailResult {
@@ -16,46 +23,87 @@ export interface GuardrailResult {
   warnings: string[];
 }
 
-/** Palabras que la app nunca debe recomendar (COACH_PHILOSOPHY §12). */
+/** Sustancias que la app nunca recomienda (COACH_PHILOSOPHY §12). */
 const FORBIDDEN =
-  /\b(esteroide|esteroides|sarm|sarms|anabolizante|clembuterol|testosterona\s+exógena)\b/i;
+  /\b(esteroides?|sarms?|anabolizantes?|clembuterol|oxandrolona|trembolona|estanozolol|nandrolona|winstrol|dianabol|enantato|propionato|aas|testosterona)\b/i;
 
-/** Verbos de cambio de carga, para detectar contradicciones con el motor. */
-const ARTICLE = "(?:el|la|los|las|tu|tus)\\s+";
+/** Verbos y giros que proponen mover la carga, incluidos infinitivos. */
+const LOAD_NOUN = "(?:carga|peso|kilos|kg|disco|discos)";
 const INCREASE_HINT = new RegExp(
-  `\\b(sub[ei]|aumenta|incrementa|añade)\\s+(?:${ARTICLE})?(carga|peso|kilos)\\b`,
+  `\\b(?:sub(?:e|es|ir|iría|irías|imos)|aument(?:a|ar|aría)|increment(?:a|ar)|añad(?:e|ir|iría)|met(?:e|er)|pon(?:le|er)?|progresa)\\b[^.]{0,30}\\b${LOAD_NOUN}\\b`,
   "i",
 );
 const DECREASE_HINT = new RegExp(
-  `\\b(baja|bajar|reduce|reducir|recorta)\\s+(?:${ARTICLE})?(carga|peso|kilos)\\b`,
+  `\\b(?:baj(?:a|ar|aría)|reduc(?:e|ir)|recort(?:a|ar)|quit(?:a|ar)|alig(?:era|erar)|resta)\\b[^.]{0,30}\\b${LOAD_NOUN}\\b`,
   "i",
 );
-const DELOAD_HINT =
-  /\b(descarga|deload|semana\s+(de\s+)?(descarga|suave)|desload)\b/i;
 
-/** Números que acompañan a un kilo: son los que más daño hacen si se inventan. */
-const KG_NUMBER = /(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)\b/gi;
+/** Formas de proponer una descarga, más allá de la palabra "deload". */
+const DELOAD_HINT =
+  /\b(?:descarga|deload|semana\s+(?:de\s+)?(?:descarga|suave|floja|ligera|adaptación|adaptacion)|descansa(?:r)?\s+(?:una\s+semana|\d+\s+días)|baja(?:r)?\s+el\s+volumen)\b/i;
+
+/** ¿La coincidencia va precedida de una negación? "No toca deload" es correcto. */
+const NEGATION_BEFORE = /\b(?:no|sin|nada\s+de|tampoco|ni)\b[^.]{0,30}$/i;
+
+const KG_NUMBER = /(\d+(?:[.,]\d+)?)\s*(?:kgs?|kilo(?:gramo)?s?)\b/gi;
 const PERCENT_NUMBER = /(\d+(?:[.,]\d+)?)\s*%/g;
 
-function normalizeNumber(raw: string): string {
-  return raw.replace(",", ".").replace(/\.0+$/, "");
+/** Sinónimos por métrica ausente, para que el aviso no dependa de una palabra. */
+const MISSING_TERMS: Record<string, string[]> = {
+  "peso corporal actual": ["peso corporal", "báscula", "bascula"],
+  "calorías diarias": ["calorías", "calorias", "kcal", "superávit", "déficit"],
+  "proteína diaria": ["proteína", "proteina"],
+  "horas de sueño": ["sueño", "sueno", "dormir"],
+  "pasos / actividad diaria": ["pasos"],
+  "medidas corporales": ["cintura", "perímetro", "perimetro"],
+};
+
+/** Todos los números que aparecen realmente en el contexto, ya normalizados. */
+function contextNumbers(context: CoachContext): Set<number> {
+  const out = new Set<number>();
+  const walk = (value: unknown): void => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      out.add(value);
+      return;
+    }
+    if (typeof value === "string") {
+      for (const match of value.matchAll(/\d+(?:[.,]\d+)?/g)) {
+        const n = Number(match[0].replace(",", "."));
+        if (Number.isFinite(n)) out.add(n);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (value && typeof value === "object") {
+      Object.values(value as Record<string, unknown>).forEach(walk);
+    }
+  };
+  walk(context);
+  return out;
 }
 
-/**
- * ¿Aparece este número en el contexto que se le pasó al modelo? Se compara
- * sobre el JSON serializado, tolerando `80` vs `80.0` vs `80,0`.
- */
-function isGrounded(value: string, contextJson: string): boolean {
-  const n = normalizeNumber(value);
-  if (contextJson.includes(n)) return true;
-  // Un entero puede aparecer en el contexto como decimal (`82.5` → `82.5`), o
-  // al revés (`45` ↔ `45.0`).
-  const asFloat = Number(n);
-  if (!Number.isFinite(asFloat)) return false;
-  return (
-    contextJson.includes(asFloat.toFixed(1)) ||
-    contextJson.includes(String(Math.round(asFloat)))
-  );
+function isGrounded(raw: string, numbers: Set<number>): boolean {
+  const n = Number(raw.replace(",", "."));
+  if (!Number.isFinite(n)) return false;
+  // Tolerancia mínima por redondeos de presentación (82.5 ↔ 82.50).
+  for (const value of numbers) {
+    if (Math.abs(value - n) < 0.01) return true;
+  }
+  return false;
+}
+
+/** Coincidencias de `regex` en `text` que NO están negadas. */
+function matchesAffirmative(regex: RegExp, text: string): boolean {
+  const global = new RegExp(regex.source, `${regex.flags.replace("g", "")}g`);
+  for (const match of text.matchAll(global)) {
+    const index = match.index ?? 0;
+    const before = text.slice(Math.max(0, index - 40), index);
+    if (!NEGATION_BEFORE.test(before)) return true;
+  }
+  return false;
 }
 
 function collect(regex: RegExp, text: string): string[] {
@@ -67,7 +115,6 @@ function collect(regex: RegExp, text: string): string[] {
 export function checkResponse(
   response: CoachResponse,
   context: CoachContext,
-  contextJson: string,
 ): GuardrailResult {
   const text = [
     response.headline,
@@ -78,9 +125,10 @@ export function checkResponse(
   ].join("\n");
 
   const warnings: string[] = [];
+  const numbers = contextNumbers(context);
 
-  // ── 1. Sustancias vetadas ──────────────────────────────────────────────
-  if (FORBIDDEN.test(text)) {
+  // ── 1. Sustancias vetadas (salvo si se están desaconsejando) ────────────
+  if (matchesAffirmative(FORBIDDEN, text)) {
     return {
       block: true,
       reason:
@@ -91,7 +139,7 @@ export function checkResponse(
 
   // ── 2. Cifras inventadas en kilos ──────────────────────────────────────
   const ungroundedKg = collect(KG_NUMBER, text).filter(
-    (v) => !isGrounded(v, contextJson),
+    (v) => !isGrounded(v, numbers),
   );
   if (ungroundedKg.length > 0) {
     return {
@@ -101,23 +149,21 @@ export function checkResponse(
     };
   }
 
-  // Los porcentajes solo avisan: pueden ser redondeos legítimos.
   const ungroundedPct = collect(PERCENT_NUMBER, text).filter(
-    (v) => !isGrounded(v, contextJson),
+    (v) => !isGrounded(v, numbers),
   );
   if (ungroundedPct.length > 0) {
     warnings.push(
-      `Porcentajes no verificables en los datos: ${ungroundedPct.join(", ")} %.`,
+      `Porcentajes no verificables en tus datos: ${ungroundedPct.join(", ")} %.`,
     );
   }
 
   // ── 3. Contradicción con el motor de progresión ────────────────────────
-  // Solo aplica cuando TODOS los ejercicios del contexto coinciden en no tocar
-  // la carga: si alguno sí sube o baja, hablar de carga es legítimo.
   const actions = new Set(context.exercises.map((e) => e.progression.action));
-  const anyIncrease = actions.has("INCREASE_LOAD");
-  const anyDecrease = actions.has("DECREASE_LOAD");
-  if (!anyIncrease && INCREASE_HINT.test(text)) {
+  if (
+    !actions.has("INCREASE_LOAD") &&
+    matchesAffirmative(INCREASE_HINT, text)
+  ) {
     return {
       block: true,
       reason:
@@ -125,7 +171,10 @@ export function checkResponse(
       warnings,
     };
   }
-  if (!anyDecrease && DECREASE_HINT.test(text)) {
+  if (
+    !actions.has("DECREASE_LOAD") &&
+    matchesAffirmative(DECREASE_HINT, text)
+  ) {
     return {
       block: true,
       reason:
@@ -134,11 +183,9 @@ export function checkResponse(
     };
   }
 
-  // ── 4. Descarga inventada ──────────────────────────────────────────────
-  if (
-    context.fatigue.decision !== "DELOAD_RECOMMENDED" &&
-    DELOAD_HINT.test(response.recommendation)
-  ) {
+  // ── 4. Descarga inventada (o desaconsejada cuando sí toca) ──────────────
+  const proposesDeload = matchesAffirmative(DELOAD_HINT, text);
+  if (context.fatigue.decision !== "DELOAD_RECOMMENDED" && proposesDeload) {
     return {
       block: true,
       reason:
@@ -146,12 +193,32 @@ export function checkResponse(
       warnings,
     };
   }
+  if (
+    context.fatigue.decision === "DELOAD_RECOMMENDED" &&
+    /\b(?:no|sin|nada\s+de)\b[^.]{0,30}\b(?:descarga|deload|descansar)\b/i.test(
+      text,
+    )
+  ) {
+    return {
+      block: true,
+      reason:
+        "La respuesta desaconsejaba una descarga que el motor de fatiga sí recomienda.",
+      warnings,
+    };
+  }
 
   // ── 5. Métricas que no registramos ─────────────────────────────────────
   for (const missing of context.notAvailable) {
-    const head = missing.split(" ")[0];
-    const pattern = new RegExp(`\\b${head}\\b[^.]{0,40}\\d`, "i");
-    if (pattern.test(text)) {
+    // Se busca la frase completa y sus sinónimos, no la primera palabra: con
+    // "peso" saltaba en cualquier frase que mencionara el peso de la barra.
+    const terms = MISSING_TERMS[missing] ?? [missing];
+    const hit = terms.some((term) =>
+      new RegExp(
+        `\\d[^.]{0,25}\\b${term}\\b|\\b${term}\\b[^.]{0,25}\\d`,
+        "i",
+      ).test(text),
+    );
+    if (hit) {
       warnings.push(
         `Menciona "${missing}" con cifras, y eso no se registra en la app.`,
       );

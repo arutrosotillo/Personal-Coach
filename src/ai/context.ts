@@ -25,6 +25,8 @@ export const CONTEXT_LIMITS = {
 } as const;
 
 export interface CoachExerciseContext {
+  /** No se envía al modelo: se usa para enfocar el contexto. */
+  variantId: string;
   exercise: string;
   variant: string;
   prescription: string;
@@ -140,6 +142,13 @@ const POTENTIALLY_MISSING = [
 export function buildCoachContext(
   analysis: TrainingAnalysis,
   profile: CoachProfileInput,
+  /**
+   * Variante sobre la que se pregunta. Va SIEMPRE la primera, aunque no esté
+   * entre las entrenadas más recientemente: en una rutina de 4 días los
+   * ejercicios de hoy son justo los de mayor `daysSinceLast` y caían fuera del
+   * corte, con lo que el coach acababa respondiendo sobre otro ejercicio.
+   */
+  focusVariantId?: string,
 ): CoachContext {
   const { context, variants, fatigue } = analysis;
   const available = new Set(profile.available ?? []);
@@ -160,9 +169,14 @@ export function buildCoachContext(
       note: s.notes ? s.notes.slice(0, CONTEXT_LIMITS.noteChars) : null,
     }));
 
-  // Los ejercicios más relevantes primero: los entrenados más recientemente.
+  // Los ejercicios más relevantes primero: el preguntado, y luego los
+  // entrenados más recientemente.
   const exercises: CoachExerciseContext[] = [...variants]
-    .sort((a, b) => a.daysSinceLast - b.daysSinceLast)
+    .sort((a, b) => {
+      if (a.variantId === focusVariantId) return -1;
+      if (b.variantId === focusVariantId) return 1;
+      return a.daysSinceLast - b.daysSinceLast;
+    })
     .slice(0, CONTEXT_LIMITS.exercises)
     .map((v) => {
       const source = context.variants.find((c) => c.variantId === v.variantId)!;
@@ -190,6 +204,7 @@ export function buildCoachContext(
         .filter((x): x is number => x !== null);
 
       return {
+        variantId: v.variantId,
         exercise: v.exerciseName,
         variant: v.variantName,
         prescription: `${rx.plannedSets}×${rx.repRangeMin}–${rx.repRangeMax} @${rx.targetRir} RIR (incremento ${rx.loadStepKg} kg)`,
@@ -219,7 +234,7 @@ export function buildCoachContext(
 
   const avgCompletion =
     context.sessions.length > 0
-      ? context.sessions.reduce((a, s) => a + s.completionRate, 0) /
+      ? context.sessions.reduce((a, s) => a + (s.completionRate ?? 1), 0) /
         context.sessions.length
       : 0;
 
@@ -264,32 +279,60 @@ export function buildCoachContext(
         "Las series efectivas son una convención contable, no una medida fisiológica.",
       ],
     },
+    // Solo se declara ausente lo que de verdad no está registrado: decirle al
+    // modelo que no tenemos un dato que el usuario SÍ ha anotado es tan
+    // dañino como dejar que lo invente.
     notAvailable: POTENTIALLY_MISSING.filter((m) => !available.has(m)),
   };
 }
 
 /** Recorta el contexto si se pasa del tope de caracteres (control de coste). */
+/** Recorta una exposición manteniendo alineadas series y tendencias. */
+function trimExercise(
+  exercise: CoachExerciseContext,
+  keep: number,
+): CoachExerciseContext {
+  return {
+    ...exercise,
+    recentSets: exercise.recentSets.slice(-keep),
+    totalRepTrend: exercise.totalRepTrend.slice(-keep),
+    equivalentLoadTrend: exercise.equivalentLoadTrend.slice(-keep),
+  };
+}
+
+/**
+ * Serializa el contexto respetando un tope DURO de caracteres. Se recorta por
+ * pasos (primero la cola del historial, luego ejercicios) y, si aun así no
+ * cabe, se trunca: `maxChars` es un límite, no una sugerencia.
+ *
+ * `<` se escapa a `\u003c` para que una nota del usuario no pueda cerrar el
+ * delimitador `</APPLICATION_DATA>` del prompt. Sigue siendo JSON válido.
+ */
 export function serializeContext(
   context: CoachContext,
   maxChars: number,
 ): string {
-  let json = JSON.stringify(context);
-  if (json.length <= maxChars) return json;
-  // Primero se recortan las sesiones y luego los ejercicios: lo que decide es
-  // el estado actual, no la cola del historial.
-  const trimmed: CoachContext = {
-    ...context,
-    sessions: context.sessions.slice(-6),
-    exercises: context.exercises.slice(0, 8).map((e) => ({
-      ...e,
-      recentSets: e.recentSets.slice(-2),
-    })),
-  };
-  json = JSON.stringify(trimmed);
-  if (json.length <= maxChars) return json;
-  return JSON.stringify({
-    ...trimmed,
-    sessions: trimmed.sessions.slice(-3),
-    exercises: trimmed.exercises.slice(0, 5),
-  });
+  const encode = (value: CoachContext) =>
+    JSON.stringify(value, (key, v) =>
+      key === "variantId" ? undefined : v,
+    ).replace(/</g, "\\u003c");
+
+  const steps: CoachContext[] = [
+    context,
+    {
+      ...context,
+      sessions: context.sessions.slice(-6),
+      exercises: context.exercises.slice(0, 8).map((e) => trimExercise(e, 2)),
+    },
+    {
+      ...context,
+      sessions: context.sessions.slice(-3),
+      exercises: context.exercises.slice(0, 5).map((e) => trimExercise(e, 2)),
+    },
+  ];
+  for (const step of steps) {
+    const json = encode(step);
+    if (json.length <= maxChars) return json;
+  }
+  return encode(steps[steps.length - 1]).slice(0, maxChars);
 }

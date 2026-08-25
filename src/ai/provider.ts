@@ -1,3 +1,5 @@
+import "server-only";
+
 import OpenAI from "openai";
 
 import { AI_CONFIG, estimateCostUsd, getApiKey } from "@/ai/config";
@@ -35,6 +37,7 @@ export interface ProviderSuccess {
  * TypeScript puede estrechar el tipo tras descartarlos uno a uno.
  */
 export type ProviderFailure =
+  | { kind: "TRUNCATED"; detail: string }
   | { kind: "TIMEOUT"; detail: string }
   | { kind: "RATE_LIMIT"; detail: string }
   /** Mensaje técnico para log local. NUNCA contiene la API key. */
@@ -94,6 +97,14 @@ export class OpenAICoachProvider implements CoachProvider {
         store: false,
       });
 
+      // Una respuesta cortada por el tope de salida llega como JSON a medias:
+      // sin esto se reportaba como "no he podido leer la respuesta".
+      if (response.status === "incomplete") {
+        return {
+          kind: "TRUNCATED",
+          detail: response.incomplete_details?.reason ?? "incomplete",
+        };
+      }
       const text = response.output_text?.trim() ?? "";
       const inputTokens = response.usage?.input_tokens ?? 0;
       const outputTokens = response.usage?.output_tokens ?? 0;

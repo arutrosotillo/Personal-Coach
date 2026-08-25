@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Configuración de Coach AI. Solo servidor: este módulo lee `process.env` y
  * NUNCA debe importarse desde un componente cliente.
@@ -17,20 +19,31 @@
  */
 const DEFAULT_MODEL = "gpt-5.6-luna";
 
+/** Lee un número de entorno, ignorando valores no numéricos. */
+function num(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export const AI_CONFIG = {
   model: process.env.AI_COACH_MODEL ?? DEFAULT_MODEL,
   /**
    * Tope de salida. Ojo: en los modelos de razonamiento los tokens de
    * razonamiento CUENTAN aquí y se facturan como salida, por eso las llamadas
    * van con `reasoning.effort = "none"` y `text.verbosity = "low"`.
+   *
+   * 1.600 ≈ el máximo que permite el contrato de respuesta (5.360 caracteres).
+   * Con 700 una respuesta larga se cortaba a medias y llegaba como JSON roto.
    */
-  maxOutputTokens: Number(process.env.AI_COACH_MAX_OUTPUT_TOKENS ?? 700),
+  maxOutputTokens: num(process.env.AI_COACH_MAX_OUTPUT_TOKENS, 1600),
   /** Tope duro del contexto que se envía, medido en caracteres del JSON. */
-  maxContextChars: Number(process.env.AI_COACH_MAX_CONTEXT_CHARS ?? 24_000),
+  maxContextChars: num(process.env.AI_COACH_MAX_CONTEXT_CHARS, 24_000),
   /** Timeout por petición. Un coach que tarda 30 s no sirve en el gimnasio. */
-  timeoutMs: Number(process.env.AI_COACH_TIMEOUT_MS ?? 25_000),
+  timeoutMs: num(process.env.AI_COACH_TIMEOUT_MS, 25_000),
   /** Reintentos del SDK. 1 basta: si falla, se muestra el fallback. */
-  maxRetries: Number(process.env.AI_COACH_MAX_RETRIES ?? 1),
+  maxRetries: num(process.env.AI_COACH_MAX_RETRIES, 1),
+  /** Tope de consultas por hora, para que el endpoint no sea un grifo abierto. */
+  maxCallsPerHour: num(process.env.AI_COACH_MAX_CALLS_PER_HOUR, 30),
   /** Longitud máxima de una pregunta libre. */
   maxQuestionChars: 500,
 } as const;

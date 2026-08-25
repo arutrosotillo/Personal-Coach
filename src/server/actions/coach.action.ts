@@ -1,6 +1,6 @@
 "use server";
 
-import { isCoachConfigured } from "@/ai/config";
+import { AI_CONFIG } from "@/ai/config";
 import type { CoachResult } from "@/ai/types";
 import {
   coachRequestSchema,
@@ -14,8 +14,19 @@ import { askCoach } from "@/server/services/coach.service";
  * datos ni revalida nada. Si la IA falla, la app sigue igual.
  */
 
-export async function coachConfiguredAction(): Promise<boolean> {
-  return isCoachConfigured();
+/**
+ * Ventana deslizante en memoria. La app no tiene login y se sirve por LAN, así
+ * que sin esto cualquiera en la wifi tiene un proxy a OpenAI facturado al
+ * dueño. No pretende ser seguridad: es un tope de gasto.
+ */
+const calls: number[] = [];
+
+function overRateLimit(now: number): boolean {
+  const cutoff = now - 60 * 60 * 1000;
+  while (calls.length > 0 && calls[0] < cutoff) calls.shift();
+  if (calls.length >= AI_CONFIG.maxCallsPerHour) return true;
+  calls.push(now);
+  return false;
 }
 
 export async function askCoachAction(
@@ -32,9 +43,31 @@ export async function askCoachAction(
       fallback: null,
     };
   }
-  return askCoach({
-    task: parsed.data.task,
-    variantId: parsed.data.variantId ?? undefined,
-    question: parsed.data.question ?? undefined,
-  });
+  if (overRateLimit(Date.now())) {
+    return {
+      ok: false,
+      task: parsed.data.task,
+      error: "RATE_LIMIT",
+      message: `Has hecho ${AI_CONFIG.maxCallsPerHour} consultas en la última hora. Espera un poco.`,
+      fallback: null,
+    };
+  }
+
+  // Nada que ocurra aquí puede tumbar la pantalla: si algo falla (base de
+  // datos, proveedor, lo que sea), el usuario ve un estado controlado.
+  try {
+    return await askCoach({
+      task: parsed.data.task,
+      variantId: parsed.data.variantId ?? undefined,
+      question: parsed.data.question ?? undefined,
+    });
+  } catch {
+    return {
+      ok: false,
+      task: parsed.data.task,
+      error: "PROVIDER_ERROR",
+      message: "El coach no está disponible ahora mismo.",
+      fallback: null,
+    };
+  }
 }

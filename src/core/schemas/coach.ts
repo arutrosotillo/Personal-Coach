@@ -28,10 +28,10 @@ export const coachRequestSchema = z
     message: "Escribe una pregunta",
     path: ["question"],
   })
-  .refine((v) => v.task !== "EXERCISE" || !!v.variantId, {
-    message: "Falta el ejercicio",
-    path: ["variantId"],
-  });
+  .refine(
+    (v) => (v.task !== "EXERCISE" && v.task !== "EXPLAIN") || !!v.variantId,
+    { message: "Falta el ejercicio", path: ["variantId"] },
+  );
 
 export type CoachRequestInput = z.input<typeof coachRequestSchema>;
 export type CoachRequestData = z.output<typeof coachRequestSchema>;

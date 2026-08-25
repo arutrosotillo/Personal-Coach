@@ -58,23 +58,19 @@ export function deterministicFallback(request: CoachRequest): string | null {
   return variant?.suggestion.explanation ?? null;
 }
 
+/**
+ * Acota el contexto al ejercicio preguntado. Si no aparece, se devuelve SIN
+ * ejercicios: `runCoach` responderá `NO_DATA`. Antes se sustituía por el
+ * primero de la lista y el coach explicaba, con total aplomo, otro ejercicio.
+ */
 function focusContext(
   context: CoachContext,
   variantId: string | undefined,
-  analysis: TrainingAnalysis,
 ): CoachContext {
   if (!variantId) return context;
-  const target = analysis.variants.find((v) => v.variantId === variantId);
-  if (!target) return context;
-  const exercises = context.exercises.filter(
-    (e) =>
-      e.exercise === target.exerciseName && e.variant === target.variantName,
-  );
-  // Contexto acotado: para una pregunta sobre un ejercicio no hace falta —ni
-  // conviene pagar por— el historial de los otros doce.
   return {
     ...context,
-    exercises: exercises.length > 0 ? exercises : context.exercises.slice(0, 1),
+    exercises: context.exercises.filter((e) => e.variantId === variantId),
     sessions: context.sessions.slice(-4),
   };
 }
@@ -117,8 +113,23 @@ export async function runCoach(
     };
   }
 
-  const full = buildCoachContext(request.analysis, request.profile);
-  const context = focusContext(full, request.variantId, request.analysis);
+  const full = buildCoachContext(
+    request.analysis,
+    request.profile,
+    request.variantId,
+  );
+  const context = focusContext(full, request.variantId);
+  if (request.variantId && context.exercises.length === 0) {
+    return {
+      ok: false,
+      task: request.task,
+      error: "NO_DATA",
+      message:
+        "No tengo historial reciente de este ejercicio para analizarlo. Regístralo una vez y vuelve.",
+      fallback,
+    };
+  }
+
   const contextJson = serializeContext(context, AI_CONFIG.maxContextChars);
 
   const result = await provider.generate({
@@ -128,6 +139,15 @@ export async function runCoach(
     userMessage: userMessage(request, context),
   });
 
+  if (result.kind === "TRUNCATED") {
+    return {
+      ok: false,
+      task: request.task,
+      error: "INVALID_RESPONSE",
+      message: "La respuesta del coach se cortó a mitad. Inténtalo otra vez.",
+      fallback,
+    };
+  }
   if (result.kind === "TIMEOUT") {
     return {
       ok: false,
@@ -180,7 +200,7 @@ export async function runCoach(
     };
   }
 
-  const guard = checkResponse(parsed.data, context, contextJson);
+  const guard = checkResponse(parsed.data, context);
   if (guard.block) {
     return {
       ok: false,

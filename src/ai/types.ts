@@ -5,18 +5,35 @@ import { z } from "zod";
  * schema: si no encaja, se descarta y se muestra el fallback determinista.
  */
 
+/**
+ * Los límites de longitud se TRUNCAN, no se rechazan: el modo estricto de
+ * Structured Outputs no admite `maxLength`, así que el modelo puede devolver
+ * una respuesta perfectamente conforme a su schema y 20 caracteres más larga
+ * de lo que esperábamos. Tirarla entera (y cobrarla) sería absurdo.
+ */
+const cap = (max: number) => z.string().transform((s) => s.slice(0, max));
+
 export const coachHighlightSchema = z.object({
-  label: z.string().min(1).max(60),
-  detail: z.string().min(1).max(400),
+  label: cap(60),
+  detail: cap(400),
   direction: z.enum(["UP", "DOWN", "FLAT", "INFO"]),
 });
 
 export const coachResponseSchema = z.object({
-  headline: z.string().min(1).max(200),
-  highlights: z.array(coachHighlightSchema).max(6),
-  fatigue: z.string().max(400).nullable(),
-  recommendation: z.string().min(1).max(800),
-  hypotheses: z.array(z.string().max(300)).max(4),
+  headline: z
+    .string()
+    .min(1)
+    .transform((s) => s.slice(0, 200)),
+  highlights: z.array(coachHighlightSchema).transform((v) => v.slice(0, 6)),
+  fatigue: z
+    .string()
+    .transform((s) => s.slice(0, 400))
+    .nullable(),
+  recommendation: z
+    .string()
+    .min(1)
+    .transform((s) => s.slice(0, 800)),
+  hypotheses: z.array(cap(300)).transform((v) => v.slice(0, 4)),
 });
 
 export type CoachHighlight = z.infer<typeof coachHighlightSchema>;
@@ -29,6 +46,7 @@ export const COACH_RESPONSE_JSON_SCHEMA = {
     headline: { type: "string" },
     highlights: {
       type: "array",
+      maxItems: 6,
       items: {
         type: "object",
         properties: {
@@ -42,7 +60,7 @@ export const COACH_RESPONSE_JSON_SCHEMA = {
     },
     fatigue: { type: ["string", "null"] },
     recommendation: { type: "string" },
-    hypotheses: { type: "array", items: { type: "string" } },
+    hypotheses: { type: "array", maxItems: 4, items: { type: "string" } },
   },
   required: [
     "headline",
