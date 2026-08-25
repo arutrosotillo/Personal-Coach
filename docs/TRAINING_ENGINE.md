@@ -229,14 +229,27 @@ Antes el plan añadía además **+2 de RIR**. Se quitó: apilar las dos palancas
 por debajo de la banda respaldada y acerca la semana al cese total, que es justo donde Coleman
 encontró la pérdida de fuerza.
 
-**Mesociclo**: `Mesocycle.currentWeek` nunca avanza y `weekKind` es siempre `ACCUMULATION`, así que
-la «semana» del mesociclo no es un dato fiable. Las semanas de acumulación se **derivan** de las
-fechas reales de las sesiones, sin migración y sin inventar estructura. El ancla es la más reciente
+**Mesociclo**: `Mesocycle` es un CONTENEDOR, no una periodización. Se crea una vez
+(`status: "PLANNED"`, `weeksPlanned: 6`, `currentWeek: 0`) y **nadie lo actualiza jamás**: no avanza,
+no se cierra al llegar a las 6 semanas, no genera el siguiente y no hay periodización automática
+(eso es F3.4, aplazada). Por eso la UI habla de «bloque de entrenamiento · referencia inicial N
+semanas» y no de una cuenta atrás. `currentWeek` no se lee en ningún sitio.
+
+Las semanas de acumulación se **derivan** de las fechas reales de las sesiones, sin migración y sin
+inventar estructura. El ancla es la más reciente
 de tres fechas: última sesión `DELOAD`, primera sesión del programa activo, y **primera sesión tras
 un hueco de ≥`ACCUMULATION_RESET_GAP_DAYS` (10 d)**.
 
-Ese tercer caso es imprescindible: **nada en la app escribe hoy `weekKind: "DELOAD"`**, así que sin
-él el contador nunca se reiniciaría. Diría «llevas 85 semanas seguidas acumulando» a quien paró tres
+Desde el micro-hardening posterior a la QA, `weekKind: "DELOAD"` **sí se escribe**: al finalizar una
+sesión se marca así cuando el motor recomendaba descarga en esa fecha Y las series registradas
+quedan por debajo del `COMPLETION_LOW` de lo que prescribe la plantilla (se compara con la
+plantilla, no con las series previstas de la sesión, porque «− Quitar serie» baja estas últimas). Si
+ya hay una sesión DELOAD en la misma semana ISO, el resto de la semana también cuenta. Esas
+sesiones **no cuentan como acortadas** en `SESSION_COMPLETION_DROP` y **anclan el contador**: hacer
+la descarga que el motor pide deja de penalizar y reinicia `LONG_ACCUMULATION`. [HEURÍSTICA] el
+umbral del 70 % reutiliza `COMPLETION_LOW`.
+
+El tercer caso (el hueco de días) sigue siendo necesario para quien simplemente para: Diría «llevas 85 semanas seguidas acumulando» a quien paró tres
 meses y seguiría diciéndolo la semana después de hacer la descarga que el propio coach recomendó —
 además de restar 1 punto efectivo al umbral de forma permanente. Un parón real **es** la semana suave
 que la señal busca.
