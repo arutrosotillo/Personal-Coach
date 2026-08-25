@@ -1,18 +1,21 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { RecoveryCard } from "@/components/training/recovery-card";
 import { StartSessionButton } from "@/components/training/start-session-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getProfile } from "@/server/repositories/profile.repo";
 import { getTodayOverview } from "@/server/repositories/workout.repo";
+import { getTrainingAnalysis } from "@/server/services/fatigue.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function TrainPage() {
   const profile = await getProfile();
   const overview = profile ? await getTodayOverview(profile.id) : null;
+  const analysis = profile ? await getTrainingAnalysis(profile.id) : null;
 
   if (!overview) {
     return (
@@ -42,6 +45,8 @@ export default async function TrainPage() {
         <span className="tnum">{overview.weekNumber}</span> de{" "}
         <span className="tnum">{overview.weeksPlanned}</span>
       </p>
+
+      {analysis ? <RecoveryCard fatigue={analysis.fatigue} /> : null}
 
       {overview.active ? (
         <Card className="mb-4">

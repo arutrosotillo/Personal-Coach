@@ -1,0 +1,374 @@
+import { FATIGUE, FATIGUE_ENGINE_VERSION } from "@/core/config/training-config";
+import { diffDays } from "@/core/dates";
+import type { Confidence } from "@/core/enums";
+
+/**
+ * Motor de fatiga y deload reactivo (Fase 3.3). Puro y determinista.
+ *
+ * SOLO RECOMIENDA. No modifica el programa, ni las series, ni la carga, ni el
+ * mesociclo: devuelve una evaluación con sus números y, si procede, un plan de
+ * descarga que el usuario puede aceptar más adelante.
+ *
+ * Dos reglas que gobiernan todo el motor:
+ *
+ *  1. **Una mala sesión no es información.** Toda señal exige repetición
+ *     (`SUSTAINED_COUNT`) o varios ejercicios afectados.
+ *  2. **Lo subjetivo no basta.** Recomendar una descarga exige al menos
+ *     `MIN_OBJECTIVE_SCORE` puntos de señales OBJETIVAS (rendimiento medido).
+ *     Tres chips malos seguidos no pueden, por sí solos, mandarte a descargar.
+ *
+ * La salud va por otra vía: el dolor articular NO puntúa, escala su propio
+ * aviso y tiene precedencia (COACH_PHILOSOPHY §2).
+ */
+
+export type FatigueLevel = "LOW" | "MODERATE" | "HIGH" | "INSUFFICIENT_DATA";
+
+export type FatigueSignalCode =
+  | "PERFORMANCE_DECLINE"
+  | "WIDESPREAD_PLATEAU"
+  | "SESSION_COMPLETION_DROP"
+  | "HIGH_FATIGUE_SUSTAINED"
+  | "LOW_PERCEIVED_PERFORMANCE"
+  | "LOW_MOTIVATION_SUSTAINED"
+  | "LONG_ACCUMULATION";
+
+export type JointPainLevel = "NONE" | "WATCH" | "ACTION";
+
+export type DeloadDecision =
+  "NO_DELOAD" | "DELOAD_WATCH" | "DELOAD_RECOMMENDED" | "INSUFFICIENT_DATA";
+
+export interface FatigueSignal {
+  code: FatigueSignalCode;
+  /** Puntos que aporta al score. */
+  weight: number;
+  /** Objetiva = medida sobre el rendimiento. Subjetiva = chip del usuario. */
+  kind: "OBJECTIVE" | "SUBJECTIVE" | "CALENDAR";
+  /** Frase con los NÚMEROS que la disparan. Nunca "parece que...". */
+  message: string;
+  numbers: Record<string, number>;
+}
+
+/** Feedback de una sesión completada, tal y como se guarda (chips 1..5). */
+export interface FatigueSessionInput {
+  localDate: string;
+  perceivedPerformance: number | null;
+  fatigue: number | null;
+  motivation: number | null;
+  jointPain: number | null;
+  /** Series de trabajo registradas ÷ previstas en esa sesión (0..1). */
+  completionRate: number;
+}
+
+/** Resumen por ejercicio derivado del motor de progresión. */
+export interface FatigueExerciseInput {
+  variantId: string;
+  name: string;
+  /** El motor pidió bajar la carga o detectó que no permite el rango. */
+  regressed: boolean;
+  /** El motor emitió `PLATEAU_SIGNAL`. */
+  plateaued: boolean;
+  /** Días desde la última exposición (para no contar ejercicios abandonados). */
+  daysSinceLast: number;
+}
+
+export interface FatigueInput {
+  todayLocalDate: string;
+  sessions: FatigueSessionInput[];
+  exercises: FatigueExerciseInput[];
+  /** Semanas de acumulación continua sin descarga (derivado, sin migración). */
+  weeksSinceDeload: number | null;
+}
+
+export interface DeloadPlan {
+  days: number;
+  setFraction: number;
+  minSetsPerExercise: number;
+  rirIncrease: number;
+  loadChange: "KEEP" | "REDUCE_10_PCT";
+  summary: string;
+}
+
+export interface FatigueAssessment {
+  level: FatigueLevel;
+  score: number;
+  objectiveScore: number;
+  signals: FatigueSignal[];
+  decision: DeloadDecision;
+  /** Plan sugerido. SIEMPRE advisory: nada se aplica solo. */
+  plan: DeloadPlan | null;
+  jointPain: {
+    level: JointPainLevel;
+    message: string | null;
+    numbers: Record<string, number>;
+  };
+  confidence: Confidence;
+  explanation: string;
+  engineVersion: string;
+  numbers: {
+    sessionsInWindow: number;
+    exercisesTracked: number;
+    windowDays: number;
+    weeksSinceDeload: number | null;
+  };
+}
+
+// ── Utilidades puras ──────────────────────────────────────────────────────
+
+function countAtMost<T>(items: T[], predicate: (item: T) => boolean): number {
+  return items.filter(predicate).length;
+}
+
+/** Sesiones dentro de la ventana, de la más antigua a la más reciente. */
+function withinWindow(
+  sessions: FatigueSessionInput[],
+  today: string,
+  windowDays: number,
+): FatigueSessionInput[] {
+  return sessions
+    .filter((s) => diffDays(s.localDate, today) <= windowDays)
+    .sort((a, b) => a.localDate.localeCompare(b.localDate));
+}
+
+// ── Motor ─────────────────────────────────────────────────────────────────
+
+export function assessFatigue(
+  input: FatigueInput,
+  config = FATIGUE,
+): FatigueAssessment {
+  const sessions = withinWindow(
+    input.sessions,
+    input.todayLocalDate,
+    config.WINDOW_DAYS,
+  );
+  // Solo ejercicios vivos: uno que no se toca desde hace un mes no dice nada
+  // sobre la fatiga de esta semana.
+  const exercises = input.exercises.filter(
+    (e) => e.daysSinceLast <= config.WINDOW_DAYS,
+  );
+  const recent = sessions.slice(-config.RECENT_SESSIONS);
+
+  const base = {
+    sessionsInWindow: sessions.length,
+    exercisesTracked: exercises.length,
+    windowDays: config.WINDOW_DAYS,
+    weeksSinceDeload: input.weeksSinceDeload,
+  };
+
+  // ── Dolor articular: vía separada, no puntúa, tiene precedencia ─────────
+  const severePain = countAtMost(
+    recent,
+    (s) => s.jointPain !== null && s.jointPain >= config.JOINT_PAIN_SEVERE,
+  );
+  const mildPain = countAtMost(
+    recent,
+    (s) => s.jointPain !== null && s.jointPain >= config.JOINT_PAIN_MILD,
+  );
+  const jointPainLevel: JointPainLevel =
+    severePain >= 1 || mildPain >= config.SUSTAINED_COUNT
+      ? "ACTION"
+      : mildPain >= 1
+        ? "WATCH"
+        : "NONE";
+  const jointPain = {
+    level: jointPainLevel,
+    message:
+      jointPainLevel === "ACTION"
+        ? `Has reportado dolor articular ${severePain >= 1 ? `${config.JOINT_PAIN_SEVERE}/5 o más` : `${config.JOINT_PAIN_MILD}/5`} en ${Math.max(severePain, mildPain)} de las últimas ${recent.length} sesiones. Antes que cualquier ajuste de carga: cambia o retira el ejercicio que te duele, y si persiste, consulta con un profesional.`
+        : jointPainLevel === "WATCH"
+          ? `Dolor articular ${config.JOINT_PAIN_MILD}/5 en una de las últimas ${recent.length} sesiones. De momento solo lo vigilo; si se repite, hay que cambiar el ejercicio.`
+          : null,
+    numbers: {
+      severas: severePain,
+      moderadas: mildPain,
+      sesiones: recent.length,
+    },
+  };
+
+  if (sessions.length < config.MIN_SESSIONS) {
+    return {
+      level: "INSUFFICIENT_DATA",
+      score: 0,
+      objectiveScore: 0,
+      signals: [],
+      decision: "INSUFFICIENT_DATA",
+      plan: null,
+      jointPain,
+      confidence: "LOW",
+      explanation: `Con ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} en los últimos ${config.WINDOW_DAYS} días no puedo valorar tu fatiga. Con ${config.MIN_SESSIONS} podré.`,
+      engineVersion: FATIGUE_ENGINE_VERSION,
+      numbers: base,
+    };
+  }
+
+  const signals: FatigueSignal[] = [];
+  const add = (
+    code: FatigueSignalCode,
+    kind: FatigueSignal["kind"],
+    message: string,
+    numbers: Record<string, number>,
+  ) => {
+    signals.push({
+      code,
+      kind,
+      weight: config.WEIGHTS[code],
+      message,
+      numbers,
+    });
+  };
+
+  // ── Señales OBJETIVAS (rendimiento medido) ─────────────────────────────
+  const regressed = exercises.filter((e) => e.regressed);
+  if (regressed.length >= config.DECLINE_MIN_EXERCISES) {
+    add(
+      "PERFORMANCE_DECLINE",
+      "OBJECTIVE",
+      `El rendimiento ha caído en ${regressed.length} ejercicios (${regressed.map((e) => e.name).join(", ")}): el motor ha tenido que bajar la carga o has dejado de alcanzar el rango.`,
+      { ejercicios: regressed.length },
+    );
+  }
+
+  const plateaued = exercises.filter((e) => e.plateaued);
+  if (
+    exercises.length > 0 &&
+    plateaued.length / exercises.length >= config.PLATEAU_FRACTION &&
+    plateaued.length >= 2
+  ) {
+    add(
+      "WIDESPREAD_PLATEAU",
+      "OBJECTIVE",
+      `${plateaued.length} de ${exercises.length} ejercicios llevan varias exposiciones sin mejorar (${plateaued.map((e) => e.name).join(", ")}).`,
+      { enMeseta: plateaued.length, total: exercises.length },
+    );
+  }
+
+  const shortSessions = countAtMost(
+    recent,
+    (s) => s.completionRate < config.COMPLETION_LOW,
+  );
+  if (shortSessions >= config.SUSTAINED_COUNT) {
+    add(
+      "SESSION_COMPLETION_DROP",
+      "OBJECTIVE",
+      `Has acortado ${shortSessions} de las últimas ${recent.length} sesiones (menos del ${Math.round(config.COMPLETION_LOW * 100)} % de las series previstas).`,
+      { acortadas: shortSessions, sesiones: recent.length },
+    );
+  }
+
+  // ── Señales SUBJETIVAS (chips) — siempre exigen repetición ─────────────
+  const highFatigue = countAtMost(
+    recent,
+    (s) => s.fatigue !== null && s.fatigue >= config.HIGH_FATIGUE,
+  );
+  if (highFatigue >= config.SUSTAINED_COUNT) {
+    add(
+      "HIGH_FATIGUE_SUSTAINED",
+      "SUBJECTIVE",
+      `Has reportado fatiga ≥${config.HIGH_FATIGUE}/5 en ${highFatigue} de las últimas ${recent.length} sesiones.`,
+      { veces: highFatigue, sesiones: recent.length },
+    );
+  }
+
+  const lowPerf = countAtMost(
+    recent,
+    (s) =>
+      s.perceivedPerformance !== null &&
+      s.perceivedPerformance <= config.LOW_PERFORMANCE,
+  );
+  if (lowPerf >= config.SUSTAINED_COUNT) {
+    add(
+      "LOW_PERCEIVED_PERFORMANCE",
+      "SUBJECTIVE",
+      `Has valorado tu rendimiento ≤${config.LOW_PERFORMANCE}/5 en ${lowPerf} de las últimas ${recent.length} sesiones.`,
+      { veces: lowPerf, sesiones: recent.length },
+    );
+  }
+
+  const lowMotivation = countAtMost(
+    recent,
+    (s) => s.motivation !== null && s.motivation <= config.LOW_MOTIVATION,
+  );
+  if (lowMotivation >= config.SUSTAINED_COUNT + 1) {
+    add(
+      "LOW_MOTIVATION_SUSTAINED",
+      "SUBJECTIVE",
+      `Motivación ≤${config.LOW_MOTIVATION}/5 en ${lowMotivation} de las últimas ${recent.length} sesiones. Es una señal de adherencia, no de fatiga: por sí sola no cambia nada.`,
+      { veces: lowMotivation, sesiones: recent.length },
+    );
+  }
+
+  // ── CALENDARIO: red suave, jamás suficiente por sí sola ────────────────
+  if (
+    input.weeksSinceDeload !== null &&
+    input.weeksSinceDeload >= config.LONG_ACCUMULATION_WEEKS
+  ) {
+    add(
+      "LONG_ACCUMULATION",
+      "CALENDAR",
+      `Llevas ${input.weeksSinceDeload} semanas seguidas acumulando sin una semana suave. No es un motivo por sí solo —descargar por calendario no mejora las ganancias— pero suma al resto.`,
+      { semanas: input.weeksSinceDeload },
+    );
+  }
+
+  const score = signals.reduce((a, s) => a + s.weight, 0);
+  const objectiveScore = signals
+    .filter((s) => s.kind === "OBJECTIVE")
+    .reduce((a, s) => a + s.weight, 0);
+
+  const decision: DeloadDecision =
+    score >= config.RECOMMEND_SCORE &&
+    objectiveScore >= config.MIN_OBJECTIVE_SCORE
+      ? "DELOAD_RECOMMENDED"
+      : score >= config.WATCH_SCORE
+        ? "DELOAD_WATCH"
+        : "NO_DELOAD";
+
+  const level: FatigueLevel =
+    decision === "DELOAD_RECOMMENDED"
+      ? "HIGH"
+      : decision === "DELOAD_WATCH"
+        ? "MODERATE"
+        : "LOW";
+
+  // Confianza: manda la evidencia objetiva y el nº de sesiones.
+  const confidence: Confidence =
+    sessions.length >= config.MIN_SESSIONS + 2 && objectiveScore >= 3
+      ? "HIGH"
+      : sessions.length >= config.MIN_SESSIONS && objectiveScore >= 2
+        ? "MEDIUM"
+        : "LOW";
+
+  const plan: DeloadPlan | null =
+    decision === "DELOAD_RECOMMENDED"
+      ? {
+          days: config.DELOAD_PLAN.DAYS,
+          setFraction: config.DELOAD_PLAN.SET_FRACTION,
+          minSetsPerExercise: config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE,
+          rirIncrease: config.DELOAD_PLAN.RIR_INCREASE,
+          loadChange: jointPainLevel === "ACTION" ? "REDUCE_10_PCT" : "KEEP",
+          summary: `Una semana: la mitad de las series (mínimo ${config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE} por ejercicio), ${jointPainLevel === "ACTION" ? `−${Math.round(config.DELOAD_PLAN.LOAD_REDUCTION_WITH_PAIN * 100)} % de carga` : "la misma carga"} y +${config.DELOAD_PLAN.RIR_INCREASE} de RIR. Se recorta el VOLUMEN, no la intensidad: es lo que baja la fatiga sin perder el estímulo.`,
+        }
+      : null;
+
+  const explanation =
+    decision === "DELOAD_RECOMMENDED"
+      ? `${signals.map((s) => s.message).join(" ")} Con eso te recomiendo una semana de descarga. No la aplico: la decides tú.`
+      : decision === "DELOAD_WATCH"
+        ? `${signals.map((s) => s.message).join(" ")} No es suficiente para recomendarte una descarga —falta evidencia de que el rendimiento esté cayendo— pero lo estoy vigilando.`
+        : signals.length > 0
+          ? `${signals.map((s) => s.message).join(" ")} Nada de esto indica fatiga acumulada: sigue con el plan.`
+          : `Sin señales de fatiga acumulada en ${sessions.length} sesiones de los últimos ${config.WINDOW_DAYS} días. Sigue con el plan.`;
+
+  return {
+    level,
+    score,
+    objectiveScore,
+    signals,
+    decision,
+    plan,
+    jointPain,
+    confidence,
+    explanation,
+    engineVersion: FATIGUE_ENGINE_VERSION,
+    numbers: base,
+  };
+}

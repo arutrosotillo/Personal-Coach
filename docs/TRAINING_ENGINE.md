@@ -148,6 +148,64 @@ depende de ella** (se descarta la regla D3 de §2 hasta que exista la captura).
 guardan al finalizar la sesión pero **no alimentan ninguna decisión automática**. Quedan preparados
 para F3.3.
 
+## 1d. Recencia del historial (Fase 3.3)
+
+El motor de progresión recibe `todayLocalDate` y la fecha de cada exposición. El tiempo **nunca
+cambia la carga por sí solo**; lo que hace es:
+
+- **Degradar la confianza**: con la última exposición a ≥`STALE_MIN_DAYS` (21 d) la confianza no
+  puede ser ALTA; a ≥`OLD_MIN_DAYS` (42 d) es BAJA.
+- **Suspender las subidas**: con historial viejo, cerrar el rango produce `HOLD` ·
+  `STALE_HISTORY` — «vuelve con el mismo peso para reconfirmar». No se baja la carga por un parón.
+- **Romper rachas**: dos exposiciones separadas por más de `RUN_GAP_DAYS` (21 d) no son
+  comparables, así que no cuentan juntas para bajar carga ni para detectar mesetas.
+
+Sin `todayLocalDate` el motor se comporta como antes (`numbers.daysSinceLast = -1`).
+
+## 1e. Fatiga y deload reactivo (Fase 3.3)
+
+`src/core/training/fatigue.ts` (+ `analysis.ts`, que combina progresión y fatiga). Puro,
+determinista y **solo recomienda**: no toca el programa, ni las series, ni la carga, ni el
+mesociclo.
+
+**Dos reglas que gobiernan el motor:**
+
+1. **Una mala sesión no es información.** Toda señal exige repetición o varios ejercicios afectados.
+2. **Lo subjetivo no basta.** Recomendar descarga exige ≥`MIN_OBJECTIVE_SCORE` puntos de señales
+   OBJETIVAS. Tres chips malos seguidos jamás mandan a descargar por sí solos.
+
+| Señal                       | Tipo       | Peso | Dispara con                                           |
+| --------------------------- | ---------- | ---- | ----------------------------------------------------- |
+| `PERFORMANCE_DECLINE`       | objetiva   | 3    | ≥2 ejercicios con regresión del motor de progresión   |
+| `WIDESPREAD_PLATEAU`        | objetiva   | 2    | ≥50 % de los ejercicios (y ≥2) con `PLATEAU_SIGNAL`   |
+| `SESSION_COMPLETION_DROP`   | objetiva   | 2    | ≥2 de las últimas 4 sesiones con <70 % de series      |
+| `HIGH_FATIGUE_SUSTAINED`    | subjetiva  | 2    | fatiga ≥4/5 en ≥2 de las últimas 4                    |
+| `LOW_PERCEIVED_PERFORMANCE` | subjetiva  | 1    | rendimiento percibido ≤2/5 en ≥2                      |
+| `LOW_MOTIVATION_SUSTAINED`  | subjetiva  | 1    | motivación ≤2/5 en ≥3 (señal de adherencia)           |
+| `LONG_ACCUMULATION`         | calendario | 1    | ≥8 semanas sin descarga (red suave, nunca suficiente) |
+
+**Decisión**: `score ≥5` **y** `objectiveScore ≥2` → `DELOAD_RECOMMENDED` · `score ≥3` →
+`DELOAD_WATCH` · resto → `NO_DELOAD` · <3 sesiones en 21 días → `INSUFFICIENT_DATA`.
+
+**Dolor articular**: vía SEPARADA. No puntúa (para no contaminar la lectura de fatiga), escala su
+propio aviso (`NONE` → `WATCH` → `ACTION`) y tiene precedencia sobre cualquier ajuste de carga
+(COACH_PHILOSOPHY §2).
+
+**Plan de descarga sugerido** (advisory, nunca aplicado): 1 semana, **mitad de series** (mín. 1 por
+ejercicio), **misma carga** (−10 % solo si hay dolor articular) y **+2 de RIR**. Se recorta el
+VOLUMEN, no la intensidad. Base: los deloads **no** mejoran las ganancias (Coleman et al. 2024,
+PeerJ 12:e16777 — sin diferencia en hipertrofia y peor fuerza en el grupo con descarga); son gestión
+de fatiga, y la intensidad es lo que preserva la adaptación en los estudios de taper. Los PESOS y
+umbrales son **[HEURÍSTICA]**.
+
+**Mesociclo**: `Mesocycle.currentWeek` nunca avanza y `weekKind` es siempre `ACCUMULATION`, así que
+la «semana» del mesociclo no es un dato fiable. Las semanas de acumulación se **derivan** de las
+fechas reales de las sesiones (última sesión `DELOAD` o primera del programa activo). Sin migración
+y sin inventar estructura.
+
+**Meseta**: `PLATEAU_SIGNAL` sigue siendo solo evidencia. F3.3 la contextualiza (varias mesetas a la
+vez suman a la fatiga) pero **jamás** deriva en añadir o quitar series.
+
 ## 2. Progressive overload — double progression (F3)
 
 ### Inputs

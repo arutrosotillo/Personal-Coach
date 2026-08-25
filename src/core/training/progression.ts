@@ -1,7 +1,9 @@
 import {
   PROGRESSION,
   PROGRESSION_ENGINE_VERSION,
+  RECENCY,
 } from "@/core/config/training-config";
+import { diffDays } from "@/core/dates";
 import type { Confidence } from "@/core/enums";
 
 /**
@@ -54,6 +56,7 @@ export type ProgressionReasonCode =
   | "ONE_OFF_UNDERPERFORMANCE"
   | "NEAR_FAILURE_HOLD"
   | "ADD_REP"
+  | "STALE_HISTORY"
   | "HOLD_DEFAULT";
 
 export type ProgressionSignalCode = "PLATEAU_SIGNAL" | "MIXED_LOADS";
@@ -90,6 +93,13 @@ export interface ProgressionInput {
   prescription: ProgressionPrescription;
   /** Exposiciones de la variante, de la MÁS ANTIGUA a la MÁS RECIENTE. */
   history: ProgressionExposure[];
+  /**
+   * Día del usuario (Fase 3.3). Sin él, el motor no puede saber si el
+   * historial es de la semana pasada o de hace dos meses y lo trata como
+   * fresco. El tiempo NUNCA cambia la carga por sí solo: degrada la confianza,
+   * rompe rachas separadas por huecos largos y suspende las subidas.
+   */
+  todayLocalDate?: string;
 }
 
 export interface ProgressionSuggestion {
@@ -119,6 +129,8 @@ export interface ProgressionSuggestion {
     exposures: number;
     /** Exposiciones consecutivas al mismo peso (incluida la última). */
     sameWeightRun: number;
+    /** Días desde la última exposición (`-1` si no se conoce la fecha). */
+    daysSinceLast: number;
   };
 }
 
@@ -150,6 +162,7 @@ export function equivalentReps(
 
 /** Resumen determinista de una exposición, ya interpretado con la prescripción. */
 interface ExposureSummary {
+  localDate: string | null;
   sets: ProgressionSet[];
   n: number;
   weight: number;
@@ -199,6 +212,7 @@ function summarize(
 
   const weights = sets.map((s) => s.weightKg);
   return {
+    localDate: exposure.localDate ?? null,
     sets,
     n,
     weight: n > 0 ? lowerMedian(weights) : 0,
@@ -278,6 +292,7 @@ export function suggestProgression(
     missingRir: 0,
     exposures: 0,
     sameWeightRun: 0,
+    daysSinceLast: -1,
   };
 
   const window = input.history
@@ -308,6 +323,29 @@ export function suggestProgression(
   const usable = summaries.filter((s) => s.n >= minUsableSets);
   const last = summaries[summaries.length - 1];
 
+  // ── Recencia (Fase 3.3) ─────────────────────────────────────────────────
+  // Sin `todayLocalDate` el motor no puede saber si esto es de la semana
+  // pasada o de hace dos meses; en ese caso lo trata como fresco (compatible
+  // con las llamadas antiguas) y lo dice en `numbers.daysSinceLast = -1`.
+  const daysSinceLast =
+    input.todayLocalDate && last.localDate
+      ? diffDays(last.localDate, input.todayLocalDate)
+      : -1;
+  const recency: "FRESH" | "STALE" | "OLD" =
+    daysSinceLast < 0
+      ? "FRESH"
+      : daysSinceLast >= RECENCY.OLD_MIN_DAYS
+        ? "OLD"
+        : daysSinceLast >= RECENCY.STALE_MIN_DAYS
+          ? "STALE"
+          : "FRESH";
+
+  /** Un hueco largo entre dos exposiciones las hace incomparables. */
+  const gapBreaks = (older: ExposureSummary, newer: ExposureSummary): boolean =>
+    older.localDate !== null &&
+    newer.localDate !== null &&
+    diffDays(older.localDate, newer.localDate) > RECENCY.RUN_GAP_DAYS;
+
   const numbersFor = (s: ExposureSummary, sameWeightRun: number) => ({
     pesoRef: s.weight,
     ...base,
@@ -315,6 +353,7 @@ export function suggestProgression(
     missingRir: s.missingRir,
     exposures: usable.length,
     sameWeightRun,
+    daysSinceLast,
   });
 
   // ── 1. SESSION_INCOMPLETE ───────────────────────────────────────────────
@@ -337,6 +376,8 @@ export function suggestProgression(
   const sameWeightRun: ExposureSummary[] = [];
   for (let i = usable.length - 1; i >= 0; i--) {
     if (usable[i].weight !== last.weight) break;
+    const newer = sameWeightRun[0];
+    if (newer && gapBreaks(usable[i], newer)) break;
     sameWeightRun.unshift(usable[i]);
   }
 
@@ -344,7 +385,7 @@ export function suggestProgression(
   const loadable = loadStepKg > 0;
 
   // Confianza: el RIR ausente NUNCA sube la confianza (§F3.2c).
-  const confidence: Confidence =
+  const rawConfidence: Confidence =
     last.missingRir === last.n
       ? "LOW"
       : usable.length >= 3 &&
@@ -355,6 +396,13 @@ export function suggestProgression(
         : usable.length >= 2
           ? "MEDIUM"
           : "LOW";
+  // Un historial viejo no puede sostener una confianza alta.
+  const confidence: Confidence =
+    recency === "OLD"
+      ? "LOW"
+      : recency === "STALE" && rawConfidence === "HIGH"
+        ? "MEDIUM"
+        : rawConfidence;
 
   // Señal informativa de meseta: N exposiciones al mismo peso sin batir el
   // mejor total de repeticiones alcanzado a ese peso. No altera la acción.
@@ -438,6 +486,8 @@ export function suggestProgression(
     const s = usable[i];
     if (s.weight > underRef) break; // ya había bajado por su cuenta
     if (s.medianReps >= repRangeMin || !notSandbagging(s)) break;
+    const newer = underRun[0];
+    if (newer && gapBreaks(s, newer)) break;
     underRun.unshift(s);
     underRef = s.weight;
   }
@@ -575,6 +625,21 @@ export function suggestProgression(
         suggestedReps: target,
         setTargets: uniformTargets(target, plannedSets),
         explanation: `Cerraste ${last.medianReps} reps a peso corporal: añade ${loadStepKg} kg de lastre y busca ${target} reps. Aquí solo cuento el lastre, así que el objetivo es aproximado.`,
+      });
+    }
+
+    // 3b-bis-recency. Historial viejo: no se sube carga sobre un rendimiento
+    // que puede tener semanas. El tiempo NO baja la carga por sí solo; lo que
+    // hace es suspender la subida hasta reconfirmar.
+    if (recency !== "FRESH") {
+      const semanas = Math.floor(daysSinceLast / 7);
+      return done({
+        action: "HOLD",
+        reasonCode: "STALE_HISTORY",
+        suggestedWeightKg: last.weight,
+        suggestedReps: repRangeMax,
+        setTargets: uniformTargets(repRangeMax, plannedSets),
+        explanation: `Cerraste el rango, pero hace ${semanas} ${semanas === 1 ? "semana" : "semanas"} de esa sesión. Vuelve con ${last.weight} kg para reconfirmar: si sale, subimos. No te bajo la carga por el parón.`,
       });
     }
 

@@ -223,6 +223,95 @@ export const PROGRESSION = {
   ACCEPTABLE_SHORTFALL_REPS: 2,
 } as const;
 
+/**
+ * Recencia del historial (Fase 3.3). El tiempo NUNCA cambia la carga por sí
+ * solo; lo que hace es degradar la CONFIANZA y volver la recomendación más
+ * conservadora. Un rendimiento de hace seis semanas no es evidencia del mismo
+ * peso que el de la semana pasada. [HEURÍSTICA]
+ */
+export const RECENCY = {
+  /** Hasta aquí, el historial es plenamente utilizable. */
+  FRESH_MAX_DAYS: 10,
+  /** A partir de aquí el historial es VIEJO: no se sube carga y baja confianza. */
+  STALE_MIN_DAYS: 21,
+  /** A partir de aquí es MUY viejo: confianza mínima y mensaje de reentrada. */
+  OLD_MIN_DAYS: 42,
+  /**
+   * Un hueco mayor que esto entre dos exposiciones ROMPE la racha: dos sesiones
+   * separadas por un mes no son comparables para detectar mesetas ni caídas.
+   */
+  RUN_GAP_DAYS: 21,
+} as const;
+
+/**
+ * Motor de fatiga y deload reactivo (Fase 3.3, `src/core/training/fatigue.ts`).
+ *
+ * Principio: el deload se RECOMIENDA, nunca se aplica. Y una sola señal
+ * subjetiva jamás basta — hace falta al menos una señal OBJETIVA (rendimiento
+ * medido), porque `fatigue = 5` un martes no es información suficiente.
+ *
+ * Evidencia: los deloads NO mejoran las ganancias (Coleman et al. 2024, PeerJ
+ * 12:e16777: sin diferencia en hipertrofia y PEOR fuerza en el grupo con
+ * deload). Son gestión de fatiga. Por eso el disparador es reactivo y el
+ * calendario pesa poco. Los PESOS de abajo son [HEURÍSTICA].
+ */
+export const FATIGUE = {
+  /** Ventana de análisis en días (aprox. 2–3 semanas de entrenamiento). */
+  WINDOW_DAYS: 21,
+  /** Sesiones mínimas en la ventana para evaluar algo. */
+  MIN_SESSIONS: 3,
+  /** Puntos por señal. Objetivas pesan más que subjetivas. */
+  WEIGHTS: {
+    PERFORMANCE_DECLINE: 3,
+    WIDESPREAD_PLATEAU: 2,
+    SESSION_COMPLETION_DROP: 2,
+    HIGH_FATIGUE_SUSTAINED: 2,
+    LOW_PERCEIVED_PERFORMANCE: 1,
+    LOW_MOTIVATION_SUSTAINED: 1,
+    LONG_ACCUMULATION: 1,
+  },
+  /** Score a partir del cual se RECOMIENDA deload. */
+  RECOMMEND_SCORE: 5,
+  /** Score a partir del cual se avisa sin recomendar. */
+  WATCH_SCORE: 3,
+  /**
+   * Puntos objetivos mínimos para recomendar. Sin esto, tres chips subjetivos
+   * malos bastarían para pedir una semana de descarga.
+   */
+  MIN_OBJECTIVE_SCORE: 2,
+  /** Ejercicios distintos con regresión para contar PERFORMANCE_DECLINE. */
+  DECLINE_MIN_EXERCISES: 2,
+  /** Fracción de ejercicios en meseta para contar WIDESPREAD_PLATEAU. */
+  PLATEAU_FRACTION: 0.5,
+  /** Sesiones con feedback malo repetido (de las últimas `RECENT_SESSIONS`). */
+  RECENT_SESSIONS: 4,
+  SUSTAINED_COUNT: 2,
+  /** Umbrales de los chips 1..5. */
+  HIGH_FATIGUE: 4,
+  LOW_PERFORMANCE: 2,
+  LOW_MOTIVATION: 2,
+  JOINT_PAIN_SEVERE: 4,
+  JOINT_PAIN_MILD: 3,
+  /** Fracción de series completadas por debajo de la cual la sesión se acortó. */
+  COMPLETION_LOW: 0.7,
+  /** Semanas de acumulación continua tras las que el calendario suma 1 punto. */
+  LONG_ACCUMULATION_WEEKS: 8,
+  /** Prescripción del deload recomendado (advisory). */
+  DELOAD_PLAN: {
+    /** Fracción de las series habituales. Mantener carga, recortar volumen. */
+    SET_FRACTION: 0.5,
+    MIN_SETS_PER_EXERCISE: 1,
+    /** Puntos de RIR que se añaden al objetivo. */
+    RIR_INCREASE: 2,
+    /** Solo se recorta carga si hay dolor articular. */
+    LOAD_REDUCTION_WITH_PAIN: 0.1,
+    DAYS: 7,
+  },
+} as const;
+
+/** Versión del motor de fatiga. */
+export const FATIGUE_ENGINE_VERSION = "1.0.0";
+
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
 export const PROGRESSION_ENGINE_VERSION = "2.0.0";
 

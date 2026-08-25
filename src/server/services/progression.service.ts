@@ -22,6 +22,9 @@ import { getVariantHistory } from "@/server/repositories/workout.repo";
 export function buildSuggestions(
   session: ExecutionSession,
 ): Record<string, ProgressionSuggestion> {
+  // El día de la SESIÓN EN CURSO es el "hoy" del motor: así la recencia mide
+  // desde la fecha real de entrenamiento, no desde el reloj del servidor.
+  const todayLocalDate = session.localDate;
   const out: Record<string, ProgressionSuggestion> = {};
   for (const ex of session.exercises) {
     out[ex.id] = suggestProgression({
@@ -40,6 +43,7 @@ export function buildSuggestions(
           rir: s.rir,
         })),
       })),
+      todayLocalDate,
     });
   }
   return out;
