@@ -511,6 +511,29 @@ describe("seguridad del prompt", () => {
 // ───────────────────────────────────────────────────────────────────────────
 // Defectos encontrados en la QA de aceptación con llamadas REALES al modelo.
 // Los textos son los que devolvió gpt-5.6-luna, no invenciones del test.
+describe("fallos del proveedor: el tracker nunca se queda sin respuesta", () => {
+  it("una excepción del proveedor cae al fallback, no revienta", async () => {
+    // El proveedor real traduce sus fallos, pero un bug suyo (o del SDK) puede
+    // lanzar. La excepción salía de `runCoach` y el usuario perdía la
+    // explicación determinista de respaldo.
+    const roto = {
+      generate: async () => {
+        throw new Error("boom");
+      },
+    };
+    const result = await runCoach(roto, {
+      task: "WEEKLY",
+      analysis: analysis(),
+      profile: PROFILE,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe("PROVIDER_ERROR");
+    expect(result.fallback).toBeTruthy();
+    expect(result.message).not.toMatch(/boom/);
+  });
+});
+
 describe("guardrails · explicar la regla no es contradecir al motor", () => {
   /** Respuesta real de EXPLAIN sobre "Press inclinado", que se descartaba entera. */
   const EXPLAIN_REAL: CoachResponse = {

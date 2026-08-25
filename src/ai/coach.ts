@@ -13,7 +13,7 @@ import {
   SYSTEM_PROMPT,
   WEEKLY_INSTRUCTIONS,
 } from "@/ai/prompts";
-import type { CoachProvider } from "@/ai/provider";
+import type { CoachProvider, ProviderResult } from "@/ai/provider";
 import {
   coachResponseSchema,
   type CoachResult,
@@ -132,12 +132,22 @@ export async function runCoach(
 
   const contextJson = serializeContext(context, AI_CONFIG.maxContextChars);
 
-  const result = await provider.generate({
-    system: SYSTEM_PROMPT,
-    instructions: INSTRUCTIONS[request.task],
-    contextJson,
-    userMessage: userMessage(request, context),
-  });
+  // El proveedor real traduce sus fallos a `ProviderResult`, pero nada impide
+  // que uno lance (un bug del SDK, un fetch que revienta antes de entrar en su
+  // try). Sin esto la excepción salía de `runCoach` y el usuario perdía el
+  // fallback determinista: veía el error genérico de la server action en vez
+  // de lo que dice el motor.
+  let result: ProviderResult;
+  try {
+    result = await provider.generate({
+      system: SYSTEM_PROMPT,
+      instructions: INSTRUCTIONS[request.task],
+      contextJson,
+      userMessage: userMessage(request, context),
+    });
+  } catch {
+    result = { kind: "ERROR", detail: "el proveedor lanzó una excepción" };
+  }
 
   if (result.kind === "TRUNCATED") {
     return {
