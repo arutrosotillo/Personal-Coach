@@ -155,10 +155,15 @@ cambia la carga por sí solo**; lo que hace es:
 
 - **Degradar la confianza**: con la última exposición a ≥`STALE_MIN_DAYS` (21 d) la confianza no
   puede ser ALTA; a ≥`OLD_MIN_DAYS` (42 d) es BAJA.
-- **Suspender las subidas**: con historial viejo, cerrar el rango produce `HOLD` ·
+- **Suspender el avance**: con historial viejo, cerrar el rango produce `HOLD` ·
   `STALE_HISTORY` — «vuelve con el mismo peso para reconfirmar». No se baja la carga por un parón.
-- **Romper rachas**: dos exposiciones separadas por más de `RUN_GAP_DAYS` (21 d) no son
-  comparables, así que no cuentan juntas para bajar carga ni para detectar mesetas.
+  La puerta va **antes** de las ramas sin carga externa: a peso corporal el desentrenamiento pega
+  antes, no después, así que tampoco ahí se pide superar una marca de hace seis semanas.
+- **Romper rachas**: dos exposiciones separadas por `RUN_GAP_DAYS` (21 d) o más no son
+  comparables, así que no cuentan juntas para bajar carga ni para detectar mesetas, y una caída de
+  carga al volver de un parón no se trata como atípica. Es deliberadamente **el mismo número** que
+  `STALE_MIN_DAYS`: sería incoherente que 21 días fuesen «comparables» para bajarte la carga y
+  «demasiado viejos» para subírtela.
 
 Sin `todayLocalDate` el motor se comporta como antes (`numbers.daysSinceLast = -1`).
 
@@ -174,15 +179,25 @@ mesociclo.
 2. **Lo subjetivo no basta.** Recomendar descarga exige ≥`MIN_OBJECTIVE_SCORE` puntos de señales
    OBJETIVAS. Tres chips malos seguidos jamás mandan a descargar por sí solos.
 
-| Señal                       | Tipo       | Peso | Dispara con                                           |
-| --------------------------- | ---------- | ---- | ----------------------------------------------------- |
-| `PERFORMANCE_DECLINE`       | objetiva   | 3    | ≥2 ejercicios con regresión del motor de progresión   |
-| `WIDESPREAD_PLATEAU`        | objetiva   | 2    | ≥50 % de los ejercicios (y ≥2) con `PLATEAU_SIGNAL`   |
-| `SESSION_COMPLETION_DROP`   | objetiva   | 2    | ≥2 de las últimas 4 sesiones con <70 % de series      |
-| `HIGH_FATIGUE_SUSTAINED`    | subjetiva  | 2    | fatiga ≥4/5 en ≥2 de las últimas 4                    |
-| `LOW_PERCEIVED_PERFORMANCE` | subjetiva  | 1    | rendimiento percibido ≤2/5 en ≥2                      |
-| `LOW_MOTIVATION_SUSTAINED`  | subjetiva  | 1    | motivación ≤2/5 en ≥3 (señal de adherencia)           |
-| `LONG_ACCUMULATION`         | calendario | 1    | ≥8 semanas sin descarga (red suave, nunca suficiente) |
+| Señal                       | Tipo       | Peso | Dispara con                                                 |
+| --------------------------- | ---------- | ---- | ----------------------------------------------------------- |
+| `PERFORMANCE_DECLINE`       | objetiva   | 3    | regresión en ≥`max(2, 25 %)` de los ejercicios seguidos     |
+| `WIDESPREAD_PLATEAU`        | objetiva   | 2    | ≥50 % de los ejercicios (y ≥2) con `PLATEAU_SIGNAL`         |
+| `SINGLE_LIFT_DECLINE`       | objetiva   | 1    | exactamente 1 ejercicio en regresión (crédito parcial)      |
+| `SESSION_COMPLETION_DROP`   | conductual | 2    | ≥2 de las últimas 4 sesiones con <70 % de series            |
+| `HIGH_FATIGUE_SUSTAINED`    | subjetiva  | 2    | fatiga ≥4/5 en ≥2 de las últimas 4                          |
+| `LOW_PERCEIVED_PERFORMANCE` | subjetiva  | 1    | rendimiento percibido ≤2/5 en ≥2                            |
+| `LOW_MOTIVATION_SUSTAINED`  | subjetiva  | 1    | motivación ≤2/5 en ≥3 (señal de adherencia)                 |
+| `LONG_ACCUMULATION`         | calendario | 1    | ≥8 semanas seguidas sin parar (red suave, nunca suficiente) |
+
+**`SESSION_COMPLETION_DROP` es CONDUCTUAL, no objetiva**: correlaciona con la fatiga, pero también
+con la agenda y con una máquina ocupada. Suma al `score` y **no** cuenta para `objectiveScore`, así
+que por sí sola no puede habilitar una recomendación de descarga con el rendimiento medido intacto.
+
+**Qué cuenta como «regresión»** (`analysis.ts`): que el motor haya bajado la carga, que lleve ≥2
+exposiciones consecutivas bajo el rango (`REPEATED_UNDERPERFORMANCE`, `STUCK_BELOW_RANGE`), o que el
+**peso de trabajo actual esté por debajo del máximo de la ventana** sin que el motor esté ya pidiendo
+avanzar. Un mal día suelto (`ONE_OFF_UNDERPERFORMANCE`) **no** es una regresión: no mueve la carga.
 
 **Decisión**: `score ≥5` **y** `objectiveScore ≥2` → `DELOAD_RECOMMENDED` · `score ≥3` →
 `DELOAD_WATCH` · resto → `NO_DELOAD` · <3 sesiones en 21 días → `INSUFFICIENT_DATA`.
@@ -191,17 +206,50 @@ mesociclo.
 propio aviso (`NONE` → `WATCH` → `ACTION`) y tiene precedencia sobre cualquier ajuste de carga
 (COACH_PHILOSOPHY §2).
 
+**Precedencia (COACH_PHILOSOPHY §2)**: con `jointPain: ACTION` o `DELOAD_RECOMMENDED`, las subidas
+de carga quedan **suspendidas** en las dos pantallas (`applyRecoveryVeto`, `src/core/training/veto.ts`).
+Convierte `INCREASE_LOAD` en `HOLD` · `RECOVERY_VETO` sobre el peso de referencia, conserva la subida
+en una señal, **nunca baja la carga** y no toca `ADD_REP`. Se aplica DESPUÉS del veredicto de fatiga y
+no lo realimenta: si lo hiciera, el propio veto contaría como evidencia de fatiga.
+
 **Plan de descarga sugerido** (advisory, nunca aplicado): 1 semana, **mitad de series** (mín. 1 por
-ejercicio), **misma carga** (−10 % solo si hay dolor articular) y **+2 de RIR**. Se recorta el
-VOLUMEN, no la intensidad. Base: los deloads **no** mejoran las ganancias (Coleman et al. 2024,
-PeerJ 12:e16777 — sin diferencia en hipertrofia y peor fuerza en el grupo con descarga); son gestión
-de fatiga, y la intensidad es lo que preserva la adaptación en los estudios de taper. Los PESOS y
-umbrales son **[HEURÍSTICA]**.
+ejercicio) y **misma carga y mismo RIR objetivo** (−10 % de carga solo si hay dolor articular).
+**Una sola palanca**: se recorta el volumen y se deja la intensidad intacta. El recorte a la mitad
+cae dentro del 41–60 % que el meta-análisis de taper de Bosquet et al. 2007 (PMID 17762369)
+identifica como óptimo sin tocar intensidad ni frecuencia — **[EVIDENCIA RAZONABLE]**, porque ese
+meta-análisis es mayoritariamente de deportes de resistencia.
+
+Lo que sostiene Coleman et al. 2024 (PeerJ 12:e16777) y lo que **no**: probó una semana de **cese
+total** a mitad de un bloque de 9 semanas en 39 personas entrenadas, y encontró misma hipertrofia y
+PEOR fuerza. Eso respalda que el disparador sea reactivo y no de calendario; **no** respalda la
+receta concreta, que es precisamente la condición que el estudio no probó. Los PESOS y umbrales son
+**[HEURÍSTICA]**.
+
+Antes el plan añadía además **+2 de RIR**. Se quitó: apilar las dos palancas deja la carga real muy
+por debajo de la banda respaldada y acerca la semana al cese total, que es justo donde Coleman
+encontró la pérdida de fuerza.
 
 **Mesociclo**: `Mesocycle.currentWeek` nunca avanza y `weekKind` es siempre `ACCUMULATION`, así que
 la «semana» del mesociclo no es un dato fiable. Las semanas de acumulación se **derivan** de las
-fechas reales de las sesiones (última sesión `DELOAD` o primera del programa activo). Sin migración
-y sin inventar estructura.
+fechas reales de las sesiones, sin migración y sin inventar estructura. El ancla es la más reciente
+de tres fechas: última sesión `DELOAD`, primera sesión del programa activo, y **primera sesión tras
+un hueco de ≥`ACCUMULATION_RESET_GAP_DAYS` (10 d)**.
+
+Ese tercer caso es imprescindible: **nada en la app escribe hoy `weekKind: "DELOAD"`**, así que sin
+él el contador nunca se reiniciaría. Diría «llevas 85 semanas seguidas acumulando» a quien paró tres
+meses y seguiría diciéndolo la semana después de hacer la descarga que el propio coach recomendó —
+además de restar 1 punto efectivo al umbral de forma permanente. Un parón real **es** la semana suave
+que la señal busca.
+
+**Ámbito de lectura**: `getTrainingContext` lee el **perfil entero, incluidos los programas
+archivados** — igual que `workout.repo`, para que las dos pantallas vean los mismos hechos. Acotar
+al programa activo se consideró y se descartó: cambiar de programa es una operación normal (F3.1b) y
+el filtro dejaría al motor ciego tres semanas después de cada cambio, justo al terminar un bloque.
+Una sesión que entrenaste no deja de contar porque cambies la fila del programa a la que cuelga.
+
+Las EXPOSICIONES de cada ejercicio se acotan por número (`HISTORY_WINDOW`), no por días, para que el
+motor cuente lo mismo en la pantalla de sesión y en la tarjeta de recuperación; las SESIONES sí se
+acotan a la ventana, porque ahí lo que se mide es el periodo reciente.
 
 **Meseta**: `PLATEAU_SIGNAL` sigue siendo solo evidencia. F3.3 la contextualiza (varias mesetas a la
 vez suman a la fatiga) pero **jamás** deriva en añadir o quitar series.
