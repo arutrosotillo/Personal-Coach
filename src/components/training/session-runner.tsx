@@ -422,7 +422,7 @@ export function SessionRunner({
             type="button"
             variant="secondary"
             size="sm"
-            className="min-h-9"
+            className="min-h-11"
             disabled={pending}
             onClick={addSet}
           >
@@ -433,7 +433,7 @@ export function SessionRunner({
               type="button"
               variant="secondary"
               size="sm"
-              className="min-h-9"
+              className="min-h-11"
               disabled={pending}
               onClick={removeSet}
             >
@@ -444,7 +444,7 @@ export function SessionRunner({
             type="button"
             variant="secondary"
             size="sm"
-            className="min-h-9"
+            className="min-h-11"
             onClick={() => setSubOpen(true)}
           >
             Sustituir ejercicio
