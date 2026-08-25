@@ -34,8 +34,15 @@ async function main() {
     return;
   }
 
+  // Ojo con la lógica de tres valores de SQL: `NOT (notes LIKE '[demo]%')`
+  // vale NULL —no TRUE— cuando `notes` es NULL, y la fila NO se cuenta. Como
+  // la app nunca rellena `notes` sola, casi todas las sesiones reales la tienen
+  // a NULL: el guardarraíl veía cero siempre y no protegía nada.
   const realSessions = await prisma.workoutSession.count({
-    where: { status: "COMPLETED", NOT: { notes: { startsWith: DEMO_MARKER } } },
+    where: {
+      status: "COMPLETED",
+      OR: [{ notes: null }, { NOT: { notes: { startsWith: DEMO_MARKER } } }],
+    },
   });
   if (realSessions > 0 && process.env.SEED_DEMO_FORCE !== "1") {
     console.error(

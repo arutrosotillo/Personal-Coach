@@ -35,6 +35,14 @@ interface WeekScript {
   perceivedPerformance: number;
   /** Fracción de las series previstas que llega a registrar. */
   completion: number;
+  /**
+   * Repeticiones que se restan a lo que tocaría. El multiplicador
+   * `performance` solo no basta para sacar al atleta del rango prescrito, así
+   * que sin esto las últimas semanas "de fatiga acumulada" tenían el feedback
+   * malo y el RENDIMIENTO MEDIDO intacto — y el motor, con razón, no
+   * recomendaba nada. La demo debe poder llegar hasta `DELOAD_RECOMMENDED`.
+   */
+  repPenalty?: number;
   note?: string;
 }
 
@@ -90,7 +98,8 @@ const SCRIPT: WeekScript[] = [
     completion: 1,
     note: "Molestia en el hombro al empujar",
   },
-  // Deriva a fatiga acumulada: rendimiento cae y el feedback empeora.
+  // Deriva a fatiga acumulada: el rendimiento MEDIDO cae por debajo del rango
+  // dos semanas seguidas y el feedback empeora a la vez.
   {
     performance: 0.99,
     fatigue: 4,
@@ -98,6 +107,7 @@ const SCRIPT: WeekScript[] = [
     jointPain: 3,
     perceivedPerformance: 2,
     completion: 0.65,
+    repPenalty: 3,
   },
   {
     performance: 0.95,
@@ -106,6 +116,7 @@ const SCRIPT: WeekScript[] = [
     jointPain: 3,
     perceivedPerformance: 2,
     completion: 0.6,
+    repPenalty: 4,
     note: "Sesión cortada, sin energía",
   },
 ];
@@ -238,7 +249,10 @@ export async function seedDemoHistory(
                 : Math.min(week % 4, we.repRangeMax - we.repRangeMin))) *
             script.performance *
             spread;
-          const reps = Math.max(1, Math.round(raw + (rnd() - 0.5)));
+          const reps = Math.max(
+            1,
+            Math.round(raw + (rnd() - 0.5)) - (script.repPenalty ?? 0),
+          );
           const rir = Math.max(
             0,
             Math.min(4, we.targetRir + (script.performance < 1 ? -1 : 0)),
