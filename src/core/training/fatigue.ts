@@ -30,6 +30,7 @@ export type FatigueSignalCode =
   | "HIGH_FATIGUE_SUSTAINED"
   | "LOW_PERCEIVED_PERFORMANCE"
   | "LOW_MOTIVATION_SUSTAINED"
+  | "SINGLE_LIFT_DECLINE"
   | "LONG_ACCUMULATION";
 
 export type JointPainLevel = "NONE" | "WATCH" | "ACTION";
@@ -41,8 +42,13 @@ export interface FatigueSignal {
   code: FatigueSignalCode;
   /** Puntos que aporta al score. */
   weight: number;
-  /** Objetiva = medida sobre el rendimiento. Subjetiva = chip del usuario. */
-  kind: "OBJECTIVE" | "SUBJECTIVE" | "CALENDAR";
+  /**
+   * Objetiva = medida sobre el rendimiento registrado. Conductual = lo que
+   * hiciste (acortar sesiones), que correlaciona con la fatiga pero también
+   * con la agenda. Subjetiva = chip del usuario. Calendario = paso del tiempo.
+   * Solo las OBJETIVAS cuentan para la puerta de `MIN_OBJECTIVE_SCORE`.
+   */
+  kind: "OBJECTIVE" | "BEHAVIORAL" | "SUBJECTIVE" | "CALENDAR";
   /** Frase con los NÚMEROS que la disparan. Nunca "parece que...". */
   message: string;
   numbers: Record<string, number>;
@@ -56,7 +62,7 @@ export interface FatigueSessionInput {
   motivation: number | null;
   jointPain: number | null;
   /** Series de trabajo registradas ÷ previstas en esa sesión (0..1). */
-  completionRate: number;
+  completionRate: number | null;
 }
 
 /** Resumen por ejercicio derivado del motor de progresión. */
@@ -83,7 +89,6 @@ export interface DeloadPlan {
   days: number;
   setFraction: number;
   minSetsPerExercise: number;
-  rirIncrease: number;
   loadChange: "KEEP" | "REDUCE_10_PCT";
   summary: string;
 }
@@ -120,6 +125,17 @@ export interface FatigueAssessment {
 
 // ── Utilidades puras ──────────────────────────────────────────────────────
 
+/** Lista de nombres acotada: con 50 ejercicios el mensaje era ilegible. */
+function namesOf(items: { name: string }[], max = 4): string {
+  const shown = items.slice(0, max).map((i) => i.name);
+  const rest = items.length - shown.length;
+  return rest > 0 ? `${shown.join(", ")} y ${rest} más` : shown.join(", ");
+}
+
+const CONFIDENCE_ORDER = { LOW: 0, MEDIUM: 1, HIGH: 2 } as const;
+const lowerOf = (a: Confidence, b: Confidence): Confidence =>
+  CONFIDENCE_ORDER[a] <= CONFIDENCE_ORDER[b] ? a : b;
+
 function countAtMost<T>(items: T[], predicate: (item: T) => boolean): number {
   return items.filter(predicate).length;
 }
@@ -131,7 +147,13 @@ function withinWindow(
   windowDays: number,
 ): FatigueSessionInput[] {
   return sessions
-    .filter((s) => diffDays(s.localDate, today) <= windowDays)
+    .filter((s) => {
+      // La cota inferior importa: sin ella una sesión fechada en el futuro
+      // (dato corrupto, o un import) entraba en la ventana y podía disparar
+      // una recomendación de descarga.
+      const days = diffDays(s.localDate, today);
+      return days >= 0 && days <= windowDays;
+    })
     .sort((a, b) => a.localDate.localeCompare(b.localDate));
 }
 
@@ -179,7 +201,7 @@ export function assessFatigue(
     level: jointPainLevel,
     message:
       jointPainLevel === "ACTION"
-        ? `Has reportado dolor articular ${severePain >= 1 ? `${config.JOINT_PAIN_SEVERE}/5 o más` : `${config.JOINT_PAIN_MILD}/5`} en ${Math.max(severePain, mildPain)} de las últimas ${recent.length} sesiones. Antes que cualquier ajuste de carga: cambia o retira el ejercicio que te duele, y si persiste, consulta con un profesional.`
+        ? `Has reportado dolor articular ${severePain >= 1 ? `${config.JOINT_PAIN_SEVERE}/5 o más` : `${config.JOINT_PAIN_MILD}/5`} en ${severePain >= 1 ? severePain : mildPain} de las últimas ${recent.length} ${recent.length === 1 ? "sesión" : "sesiones"}. Antes que cualquier ajuste de carga: cambia o retira el ejercicio que te duele, y si persiste, consulta con un profesional.`
         : jointPainLevel === "WATCH"
           ? `Dolor articular ${config.JOINT_PAIN_MILD}/5 en una de las últimas ${recent.length} sesiones. De momento solo lo vigilo; si se repite, hay que cambiar el ejercicio.`
           : null,
@@ -225,12 +247,28 @@ export function assessFatigue(
 
   // ── Señales OBJETIVAS (rendimiento medido) ─────────────────────────────
   const regressed = exercises.filter((e) => e.regressed);
-  if (regressed.length >= config.DECLINE_MIN_EXERCISES) {
+  const declineThreshold = Math.max(
+    config.DECLINE_MIN_EXERCISES,
+    Math.ceil(exercises.length * config.DECLINE_FRACTION),
+  );
+  if (regressed.length >= declineThreshold) {
     add(
       "PERFORMANCE_DECLINE",
       "OBJECTIVE",
-      `El rendimiento ha caído en ${regressed.length} ejercicios (${regressed.map((e) => e.name).join(", ")}): el motor ha tenido que bajar la carga o has dejado de alcanzar el rango.`,
-      { ejercicios: regressed.length },
+      `El rendimiento ha caído en ${regressed.length} de ${exercises.length} ejercicios (${namesOf(regressed)}): el motor ha tenido que bajar la carga, o llevas varias sesiones sin alcanzar el rango.`,
+      { ejercicios: regressed.length, total: exercises.length },
+    );
+  } else if (regressed.length === 1) {
+    // Crédito parcial. El sobrealcance suele empezar exactamente así: primero
+    // cede el levantamiento más demandante y el resto aguanta. Vale 1 punto
+    // objetivo —nunca basta por sí solo para recomendar una descarga— pero
+    // deja de valer lo MISMO que "ningún ejercicio en caída", que era la
+    // consecuencia de tener una puerta dura en 2 sin crédito parcial.
+    add(
+      "SINGLE_LIFT_DECLINE",
+      "OBJECTIVE",
+      `${regressed[0].name} ha ido hacia atrás, pero es el único: el resto de tus ejercicios no han caído. Cuando cae uno solo suele ser el ejercicio y no tu recuperación — revisa técnica, en qué puesto de la sesión lo haces y el descanso entre series antes de tocar nada más.`,
+      { ejercicios: 1, total: exercises.length },
     );
   }
 
@@ -243,21 +281,22 @@ export function assessFatigue(
     add(
       "WIDESPREAD_PLATEAU",
       "OBJECTIVE",
-      `${plateaued.length} de ${exercises.length} ejercicios llevan varias exposiciones sin mejorar (${plateaued.map((e) => e.name).join(", ")}).`,
+      `${plateaued.length} de ${exercises.length} ejercicios llevan varias exposiciones sin mejorar (${namesOf(plateaued)}).`,
       { enMeseta: plateaued.length, total: exercises.length },
     );
   }
 
+  const measurable = recent.filter((s) => s.completionRate !== null);
   const shortSessions = countAtMost(
-    recent,
-    (s) => s.completionRate < config.COMPLETION_LOW,
+    measurable,
+    (s) => (s.completionRate ?? 1) < config.COMPLETION_LOW,
   );
   if (shortSessions >= config.SUSTAINED_COUNT) {
     add(
       "SESSION_COMPLETION_DROP",
-      "OBJECTIVE",
-      `Has acortado ${shortSessions} de las últimas ${recent.length} sesiones (menos del ${Math.round(config.COMPLETION_LOW * 100)} % de las series previstas).`,
-      { acortadas: shortSessions, sesiones: recent.length },
+      "BEHAVIORAL",
+      `Has acortado ${shortSessions} de las últimas ${measurable.length} sesiones (menos del ${Math.round(config.COMPLETION_LOW * 100)} % de las series previstas).`,
+      { acortadas: shortSessions, sesiones: measurable.length },
     );
   }
 
@@ -311,7 +350,7 @@ export function assessFatigue(
     add(
       "LONG_ACCUMULATION",
       "CALENDAR",
-      `Llevas ${input.weeksSinceDeload} semanas seguidas acumulando sin una semana suave. No es un motivo por sí solo —descargar por calendario no mejora las ganancias— pero suma al resto.`,
+      `Llevas ${input.weeksSinceDeload} semanas entrenando sin una semana suave ni un parón. No es un motivo por sí solo —no hay evidencia de que descargar por calendario mejore las ganancias— pero suma al resto.`,
       { semanas: input.weeksSinceDeload },
     );
   }
@@ -336,13 +375,25 @@ export function assessFatigue(
         ? "MODERATE"
         : "LOW";
 
-  // Confianza: manda la evidencia objetiva y el nº de sesiones.
-  const confidence: Confidence =
-    sessions.length >= config.MIN_SESSIONS + 2 && objectiveScore >= 3
+  // Confianza en ESTE veredicto, sea cual sea. Dos ejes distintos:
+  //   · cuántos datos hay (sesiones y ejercicios seguidos) → techo;
+  //   · si el veredicto es "descarga", cuánta evidencia objetiva lo sostiene.
+  // Antes solo miraba lo segundo, así que un "estás perfectamente" apoyado en
+  // 12 sesiones limpias salía con confianza BAJA: la lectura invertida.
+  const dataConfidence: Confidence =
+    sessions.length >= config.MIN_SESSIONS + 2 && exercises.length >= 2
       ? "HIGH"
-      : sessions.length >= config.MIN_SESSIONS && objectiveScore >= 2
+      : sessions.length >= config.MIN_SESSIONS
         ? "MEDIUM"
         : "LOW";
+  const confidence: Confidence =
+    decision === "NO_DELOAD"
+      ? dataConfidence
+      : objectiveScore >= 3
+        ? dataConfidence
+        : objectiveScore >= 2
+          ? lowerOf(dataConfidence, "MEDIUM")
+          : "LOW";
 
   const plan: DeloadPlan | null =
     decision === "DELOAD_RECOMMENDED"
@@ -350,15 +401,21 @@ export function assessFatigue(
           days: config.DELOAD_PLAN.DAYS,
           setFraction: config.DELOAD_PLAN.SET_FRACTION,
           minSetsPerExercise: config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE,
-          rirIncrease: config.DELOAD_PLAN.RIR_INCREASE,
           loadChange: jointPainLevel === "ACTION" ? "REDUCE_10_PCT" : "KEEP",
-          summary: `Una semana: la mitad de las series (mínimo ${config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE} por ejercicio), ${jointPainLevel === "ACTION" ? `−${Math.round(config.DELOAD_PLAN.LOAD_REDUCTION_WITH_PAIN * 100)} % de carga` : "la misma carga"} y +${config.DELOAD_PLAN.RIR_INCREASE} de RIR. Se recorta el VOLUMEN, no la intensidad: es lo que baja la fatiga sin perder el estímulo.`,
+          summary:
+            jointPainLevel === "ACTION"
+              ? `Una semana: la mitad de las series (mínimo ${config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE} por ejercicio), el mismo RIR objetivo y −${Math.round(config.DELOAD_PLAN.LOAD_REDUCTION_WITH_PAIN * 100)} % de carga. Normalmente en una descarga se recortaría solo el volumen y se dejarían los kilos —la carga alta es lo que conserva la fuerza—, pero con dolor articular manda la articulación.`
+              : `Una semana: la mitad de las series (mínimo ${config.DELOAD_PLAN.MIN_SETS_PER_EXERCISE} por ejercicio), la misma carga y el mismo RIR objetivo de siempre. Se recorta el volumen y se dejan los kilos: mantener la exposición a carga alta es lo que conserva la fuerza.`,
         }
       : null;
 
   const objectiveCount = signals.filter((s) => s.kind === "OBJECTIVE").length;
   const otherCount = signals.length - objectiveCount;
-  const tally = `${objectiveCount} ${objectiveCount === 1 ? "señal objetiva" : "señales objetivas"}${otherCount > 0 ? ` y ${otherCount} subjetiva${otherCount === 1 ? "" : "s"}` : ""}`;
+  // "objetiva / no objetiva" obligaba al usuario a saber qué significan esas
+  // etiquetas. Se cuentan señales (que puede contar él mismo en la lista de
+  // abajo) y se nombra la categoría por lo que es: rendimiento medido.
+  const total = signals.length;
+  const tally = `${total} ${total === 1 ? "señal" : "señales"}${objectiveCount > 0 ? `, ${objectiveCount === 1 ? "una de ellas" : `${objectiveCount} de ellas`} de rendimiento medido` : ", ninguna de rendimiento medido"}`;
 
   const headline =
     decision === "DELOAD_RECOMMENDED"

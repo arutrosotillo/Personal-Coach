@@ -230,15 +230,16 @@ export const PROGRESSION = {
  * peso que el de la semana pasada. [HEURÍSTICA]
  */
 export const RECENCY = {
-  /** Hasta aquí, el historial es plenamente utilizable. */
-  FRESH_MAX_DAYS: 10,
   /** A partir de aquí el historial es VIEJO: no se sube carga y baja confianza. */
   STALE_MIN_DAYS: 21,
   /** A partir de aquí es MUY viejo: confianza mínima y mensaje de reentrada. */
   OLD_MIN_DAYS: 42,
   /**
-   * Un hueco mayor que esto entre dos exposiciones ROMPE la racha: dos sesiones
-   * separadas por un mes no son comparables para detectar mesetas ni caídas.
+   * Un hueco de esto o más entre dos exposiciones ROMPE la racha: dos sesiones
+   * separadas por tres semanas no son comparables para detectar mesetas ni
+   * caídas. Es deliberadamente el MISMO número que `STALE_MIN_DAYS`: sería
+   * incoherente que 21 días fuesen "comparables" para bajarte la carga y
+   * "demasiado viejos" para subírtela.
    */
   RUN_GAP_DAYS: 21,
 } as const;
@@ -250,10 +251,15 @@ export const RECENCY = {
  * subjetiva jamás basta — hace falta al menos una señal OBJETIVA (rendimiento
  * medido), porque `fatigue = 5` un martes no es información suficiente.
  *
- * Evidencia: los deloads NO mejoran las ganancias (Coleman et al. 2024, PeerJ
- * 12:e16777: sin diferencia en hipertrofia y PEOR fuerza en el grupo con
- * deload). Son gestión de fatiga. Por eso el disparador es reactivo y el
- * calendario pesa poco. Los PESOS de abajo son [HEURÍSTICA].
+ * Evidencia [RAZONABLE], acotada a lo que el estudio probó de verdad: una
+ * semana de CESE TOTAL del entrenamiento a mitad de un bloque de 9 semanas no
+ * mejoró la hipertrofia y empeoró la fuerza (Coleman et al. 2024, PeerJ
+ * 12:e16777, n=39 entrenados). Los propios autores acotan que un deload puede
+ * emplear estrategias muy distintas del cese, y dejan abierto si un periodo de
+ * entrenamiento REDUCIDO atenuaría esa pérdida. Por tanto lo que respalda la
+ * cita es "no descargues por calendario dejando de entrenar", no la
+ * prescripción concreta de abajo. Que el disparador sea reactivo se apoya en
+ * ella; los PESOS y los umbrales son [HEURÍSTICA].
  */
 export const FATIGUE = {
   /** Ventana de análisis en días (aprox. 2–3 semanas de entrenamiento). */
@@ -268,6 +274,7 @@ export const FATIGUE = {
     HIGH_FATIGUE_SUSTAINED: 2,
     LOW_PERCEIVED_PERFORMANCE: 1,
     LOW_MOTIVATION_SUSTAINED: 1,
+    SINGLE_LIFT_DECLINE: 1,
     LONG_ACCUMULATION: 1,
   },
   /** Score a partir del cual se RECOMIENDA deload. */
@@ -279,8 +286,13 @@ export const FATIGUE = {
    * malos bastarían para pedir una semana de descarga.
    */
   MIN_OBJECTIVE_SCORE: 2,
-  /** Ejercicios distintos con regresión para contar PERFORMANCE_DECLINE. */
+  /**
+   * Ejercicios distintos con regresión para contar PERFORMANCE_DECLINE. Se
+   * exige el MAYOR de los dos: con un catálogo de 50 variantes, 2 ejercicios
+   * en caída son un 4 % y no deberían disparar la señal más pesada del motor.
+   */
   DECLINE_MIN_EXERCISES: 2,
+  DECLINE_FRACTION: 0.25,
   /** Fracción de ejercicios en meseta para contar WIDESPREAD_PLATEAU. */
   PLATEAU_FRACTION: 0.5,
   /** Sesiones con feedback malo repetido (de las últimas `RECENT_SESSIONS`). */
@@ -296,13 +308,33 @@ export const FATIGUE = {
   COMPLETION_LOW: 0.7,
   /** Semanas de acumulación continua tras las que el calendario suma 1 punto. */
   LONG_ACCUMULATION_WEEKS: 8,
+  /**
+   * Días sin entrenar que reinician el contador de acumulación. No existe
+   * ninguna forma de marcar una semana como DELOAD en la app, así que sin esto
+   * el contador crecería para siempre y la frase "llevas N semanas seguidas"
+   * sería falsa en cuanto el usuario parase una vez. Un parón de 10 días es,
+   * funcionalmente, la semana suave que la señal está buscando.
+   */
+  ACCUMULATION_RESET_GAP_DAYS: 10,
   /** Prescripción del deload recomendado (advisory). */
+  /**
+   * Prescripción del deload recomendado (advisory: nunca se aplica sola).
+   *
+   * Una sola palanca: se recorta el VOLUMEN y se deja intacta la intensidad.
+   * El recorte a la mitad cae dentro del 41–60 % que el meta-análisis de taper
+   * de Bosquet et al. 2007 (PMID 17762369) identifica como óptimo sin tocar
+   * intensidad ni frecuencia [EVIDENCIA RAZONABLE: ese meta-análisis es
+   * mayoritariamente de deportes de resistencia].
+   *
+   * Antes esto añadía ADEMÁS +2 de RIR. Se quitó: apilar las dos palancas deja
+   * la carga real muy por debajo de la banda respaldada y acerca la semana al
+   * cese total, que es justo donde Coleman et al. encontraron pérdida de
+   * fuerza. Mantener los kilos es lo que preserva las adaptaciones.
+   */
   DELOAD_PLAN: {
     /** Fracción de las series habituales. Mantener carga, recortar volumen. */
     SET_FRACTION: 0.5,
     MIN_SETS_PER_EXERCISE: 1,
-    /** Puntos de RIR que se añaden al objetivo. */
-    RIR_INCREASE: 2,
     /** Solo se recorta carga si hay dolor articular. */
     LOAD_REDUCTION_WITH_PAIN: 0.1,
     DAYS: 7,

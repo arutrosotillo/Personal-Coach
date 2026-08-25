@@ -217,9 +217,16 @@ describe("simulación F3.3 · fatiga y deload reactivo", () => {
 
   it("C · caída sostenida de rendimiento → señal objetiva", () => {
     const r = simulate({ name: "C", ...BASE, weeks: 16, declineFromWeek: 8 });
+    // Tras 8 semanas cayendo: al press banca el motor le ha bajado la carga y
+    // los otros dos llevan exposiciones sin mejorar. Ninguno de los tres
+    // progresa, y eso tiene que verse en la evidencia OBJETIVA.
     const codes = r.fatigue.signals.map((s) => s.code);
-    expect(codes, r.fatigue.explanation).toContain("PERFORMANCE_DECLINE");
-    expect(r.fatigue.objectiveScore).toBeGreaterThanOrEqual(2);
+    expect(codes, r.fatigue.explanation).toContain("SINGLE_LIFT_DECLINE");
+    expect(codes, r.fatigue.explanation).toContain("WIDESPREAD_PLATEAU");
+    expect(r.fatigue.objectiveScore).toBeGreaterThanOrEqual(3);
+    // Pero sigue sin bastar para recomendar una descarga: no hay ni una sola
+    // señal de que el usuario se encuentre mal.
+    expect(r.fatigue.decision).not.toBe("DELOAD_RECOMMENDED");
   });
 
   it("D · caída + fatiga alta repetida → deload RECOMENDADO con números", () => {

@@ -123,13 +123,18 @@ describe("B · una mala sesión → NUNCA dispara nada", () => {
     expect(r.signals).toHaveLength(0);
   });
 
-  it("un solo ejercicio con regresión tampoco", () => {
+  it("un solo ejercicio con regresión no recomienda nada, pero se nombra", () => {
     const r = run(NORMAL, [
       exercise("Press banca", { regressed: true }),
       exercise("Sentadilla"),
     ]);
     expect(r.decision).toBe("NO_DELOAD");
-    expect(r.signals).toHaveLength(0);
+    // Crédito parcial: 1 punto objetivo y un mensaje que dice explícitamente
+    // que un solo ejercicio en caída apunta al ejercicio, no a la fatiga.
+    expect(r.signals.map((x) => x.code)).toEqual(["SINGLE_LIFT_DECLINE"]);
+    expect(r.score).toBe(1);
+    expect(r.signals[0].message).toContain("Press banca");
+    expect(r.signals[0].message).toMatch(/suele ser el ejercicio/i);
   });
 });
 
@@ -197,8 +202,12 @@ describe("D · rendimiento cae + fatiga alta → recomendación con números", (
     expect(r.plan).not.toBeNull();
     expect(r.plan!.setFraction).toBe(0.5);
     expect(r.plan!.loadChange).toBe("KEEP");
-    expect(r.plan!.rirIncrease).toBe(2);
-    expect(r.plan!.summary).toMatch(/VOLUMEN, no la intensidad/i);
+    // Una sola palanca: se recorta el volumen y NO se toca el RIR objetivo.
+    // Apilar las dos dejaba la semana cerca del cese total, que es donde
+    // Coleman et al. 2024 encontraron pérdida de fuerza.
+    expect(r.plan!.summary).toMatch(/mismo RIR objetivo/i);
+    expect(r.plan!.summary).toMatch(/se recorta el volumen/i);
+    expect(r.plan!.summary).not.toMatch(/\+\d de RIR/);
   });
 });
 
@@ -325,7 +334,12 @@ describe("I · calendario: red suave, nunca suficiente", () => {
     expect(r.signals.map((s) => s.code)).toEqual(["LONG_ACCUMULATION"]);
     expect(r.score).toBe(1);
     expect(r.decision).toBe("NO_DELOAD");
-    expect(r.signals[0].message).toMatch(/no mejora las ganancias/i);
+    expect(r.signals[0].message).toMatch(
+      /no hay evidencia de que descargar por calendario mejore/i,
+    );
+    // La frase tiene que ser verificable: el contador se reinicia con un
+    // parón, así que "sin una semana suave ni un parón" es cierto.
+    expect(r.signals[0].message).toMatch(/ni un parón/i);
   });
 
   it("por debajo del umbral no dice nada", () => {
@@ -399,5 +413,138 @@ describe("invariantes", () => {
       expect(["LOW", "MEDIUM", "HIGH"], label).toContain(r.confidence);
       expect(r.engineVersion, label).toBe("1.0.0");
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Defectos encontrados en revisión independiente de F3.3. Cada uno tiene aquí
+// su caso: son regresiones que ya ocurrieron una vez.
+describe("K · regresiones de revisión", () => {
+  it("el aviso de dolor dice CUÁNTAS sesiones fueron severas, no las leves", () => {
+    // Dolor 1 / 5 / 3 / 1: UNA sesión ≥4, no dos. El contador imprimía
+    // `max(severas, leves)`, y como "leves" cuenta `>= 3` (que incluye las
+    // severas), siempre salía el número más alto: duplicaba la gravedad
+    // reportada en el aviso más sensible de la app.
+    const r = run([
+      session(12, { jointPain: 1 }),
+      session(9, { jointPain: 5 }),
+      session(5, { jointPain: 3 }),
+      session(2, { jointPain: 1 }),
+    ]);
+    expect(r.jointPain.level).toBe("ACTION");
+    expect(r.jointPain.numbers).toMatchObject({ severas: 1, moderadas: 2 });
+    expect(r.jointPain.message).toContain("en 1 de las últimas 4");
+  });
+
+  it("acortar sesiones NO es evidencia objetiva por sí sola", () => {
+    // Dos sesiones cortas + chips malos sumaban 5 con `objectiveScore` 2 y
+    // recomendaban una semana de descarga a alguien cuyo rendimiento medido
+    // estaba intacto. Irse antes del gimnasio es conducta, no rendimiento.
+    const r = run(
+      [
+        session(12),
+        session(9, { completionRate: 0.5, fatigue: 5 }),
+        session(5, { completionRate: 0.33, fatigue: 5 }),
+        session(2, { perceivedPerformance: 2 }),
+      ],
+      [exercise("Press banca"), exercise("Sentadilla")],
+    );
+    expect(r.signals.map((s) => s.code)).toContain("SESSION_COMPLETION_DROP");
+    expect(r.objectiveScore).toBe(0);
+    expect(r.decision).not.toBe("DELOAD_RECOMMENDED");
+  });
+
+  it("una sesión sin series previstas no cuenta como acortada", () => {
+    const r = run([
+      session(12, { completionRate: null }),
+      session(9, { completionRate: null }),
+      session(5),
+      session(2),
+    ]);
+    expect(r.signals).toHaveLength(0);
+  });
+
+  it("con un catálogo grande, 2 ejercicios en caída no son 'el rendimiento'", () => {
+    // 2 de 50 es un 4 %: no puede disparar la señal más pesada del motor.
+    const many = Array.from({ length: 50 }, (_, i) =>
+      exercise(`Ej ${i}`, { regressed: i < 2 }),
+    );
+    const r = run(NORMAL, many);
+    expect(r.signals.map((s) => s.code)).not.toContain("PERFORMANCE_DECLINE");
+
+    const enough = Array.from({ length: 50 }, (_, i) =>
+      exercise(`Ej ${i}`, { regressed: i < 13 }),
+    );
+    const r2 = run(NORMAL, enough);
+    expect(r2.signals.map((s) => s.code)).toContain("PERFORMANCE_DECLINE");
+    // Y el mensaje no vomita 13 nombres.
+    expect(r2.signals[0].message).toMatch(/y \d+ más/);
+  });
+
+  it("una sesión con fecha futura no entra en la ventana", () => {
+    const r = run([
+      { ...session(-30), jointPain: 5, fatigue: 5 },
+      { ...session(-29), jointPain: 5, fatigue: 5 },
+      { ...session(-28), jointPain: 5, fatigue: 5 },
+    ]);
+    expect(r.decision).toBe("INSUFFICIENT_DATA");
+    expect(r.jointPain.level).toBe("NONE");
+  });
+
+  it("sin señales y con muchas sesiones, la confianza es ALTA", () => {
+    // La confianza es confianza EN EL VEREDICTO. Antes solo podía ser alta
+    // cuando el veredicto era malo: un "estás perfectamente" respaldado por
+    // 12 sesiones limpias salía con confianza BAJA.
+    const clean = Array.from({ length: 12 }, (_, i) => session(20 - i));
+    const r = run(clean, [exercise("Press banca"), exercise("Sentadilla")]);
+    expect(r.decision).toBe("NO_DELOAD");
+    expect(r.confidence).toBe("HIGH");
+  });
+
+  it("el titular no llama 'subjetiva' a la señal de calendario", () => {
+    // Con `LONG_ACCUMULATION` como única señal, el recuento decía "0 objetivas
+    // y 1 subjetiva": la de calendario no es ninguna de las dos cosas.
+    const r = run(NORMAL, [], 40);
+    expect(r.signals.map((s) => s.code)).toEqual(["LONG_ACCUMULATION"]);
+    expect(r.headline).toContain("1 señal, ninguna de rendimiento medido");
+    expect(r.headline).not.toContain("subjetiva");
+  });
+
+  it("el plan no dice a la vez '−10 % de carga' y 'se dejan los kilos'", () => {
+    const conDolor = run(
+      [
+        session(12, { fatigue: 5, jointPain: 5 }),
+        session(9, { fatigue: 5, jointPain: 4 }),
+        session(5, { fatigue: 4, jointPain: 4 }),
+        session(2, { fatigue: 5, jointPain: 5 }),
+      ],
+      [
+        exercise("Press banca", { regressed: true }),
+        exercise("Sentadilla", { regressed: true }),
+      ],
+    );
+    expect(conDolor.plan!.loadChange).toBe("REDUCE_10_PCT");
+    expect(conDolor.plan!.summary).toContain("−10 % de carga");
+    expect(conDolor.plan!.summary).not.toContain("se dejarían los kilos:");
+    expect(conDolor.plan!.summary).toMatch(/manda la articulación/i);
+  });
+
+  it("el plan de descarga recorta volumen y NO añade RIR", () => {
+    const r = run(
+      [
+        session(12, { fatigue: 5 }),
+        session(9, { fatigue: 5 }),
+        session(5, { fatigue: 4 }),
+        session(2, { fatigue: 5 }),
+      ],
+      [
+        exercise("Press banca", { regressed: true }),
+        exercise("Sentadilla", { regressed: true }),
+      ],
+    );
+    expect(r.decision).toBe("DELOAD_RECOMMENDED");
+    expect(r.plan!.setFraction).toBe(0.5);
+    expect(r.plan!.loadChange).toBe("KEEP");
+    expect(Object.keys(r.plan!)).not.toContain("rirIncrease");
   });
 });
