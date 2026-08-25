@@ -146,7 +146,7 @@ test("Coach: resumen semanal, pregunta libre y análisis por ejercicio", async (
 
   // Descartar la sesión abierta para no dejar estado a otros specs.
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Salir" }).click();
+  await page.getByRole("button", { name: "Descartar sesión" }).click();
   await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
 
   // Resumen semanal bajo demanda.

@@ -114,6 +114,6 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
 
   // Limpieza: la DB e2e es compartida entre specs.
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Salir" }).click();
+  await page.getByRole("button", { name: "Descartar sesión" }).click();
   await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
 });

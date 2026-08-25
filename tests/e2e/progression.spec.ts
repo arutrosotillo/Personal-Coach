@@ -89,6 +89,6 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   // una sesión activa a otras specs (la DB e2e es compartida).
   await page.keyboard.press("Escape");
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Salir" }).click();
+  await page.getByRole("button", { name: "Descartar sesión" }).click();
   await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
 });
