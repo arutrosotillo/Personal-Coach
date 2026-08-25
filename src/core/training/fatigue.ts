@@ -414,7 +414,13 @@ export function assessFatigue(
   // etiquetas. Se cuentan señales (que puede contar él mismo en la lista de
   // abajo) y se nombra la categoría por lo que es: rendimiento medido.
   const total = signals.length;
-  const tally = `${total} ${total === 1 ? "señal" : "señales"}${objectiveCount > 0 ? `, ${objectiveCount === 1 ? "una de ellas" : `${objectiveCount} de ellas`} de rendimiento medido` : ", ninguna de rendimiento medido"}`;
+  const tally = `${total} ${total === 1 ? "señal" : "señales"}${
+    objectiveCount === 0
+      ? ", ninguna de rendimiento medido"
+      : total === 1
+        ? " de rendimiento medido"
+        : `, ${objectiveCount === 1 ? "una de ellas" : `${objectiveCount} de ellas`} de rendimiento medido`
+  }`;
 
   const headline =
     decision === "DELOAD_RECOMMENDED"

@@ -47,7 +47,6 @@ async function entrenar(localDate: string, templateId: string) {
     weightKg: 40,
     reps: 10,
     rir: 2,
-    completed: true,
   });
   await finishSession(profileId, id, {
     perceivedPerformance: 4,

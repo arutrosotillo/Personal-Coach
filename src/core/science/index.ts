@@ -109,7 +109,7 @@ export const CITATIONS: Citation[] = [
     year: 2026,
     title:
       "The Resistance Training Dose Response: Meta-Regressions Exploring the Effects of Weekly Volume and Frequency on Muscle Hypertrophy and Strength Gains",
-    journal: "Sports Medicine",
+    journal: "Sports Medicine 56(2):481–505",
     doi: "10.1007/s40279-025-02344-w",
     pmid: "41343037",
   },
@@ -130,7 +130,19 @@ export const CITATIONS: Citation[] = [
     title:
       "How many times per week should a muscle be trained to maximize muscle hypertrophy? A systematic review and meta-analysis of studies examining the effects of resistance training frequency",
     journal: "Journal of Sports Sciences 37(11):1286–1295",
+    doi: "10.1080/02640414.2018.1555906",
     pmid: "30558493",
+  },
+  {
+    id: "bosquet2007",
+    authors: "Bosquet L, Montpetit J, Arvisais D, Mujika I",
+    year: 2007,
+    title: "Effects of tapering on performance: a meta-analysis",
+    journal: "Medicine & Science in Sports & Exercise 39(8):1358–1365",
+    doi: "10.1249/mss.0b013e31806010e0",
+    pmid: "17762369",
+    caveat:
+      "El corpus es mayoritariamente de deportes de resistencia, no de entrenamiento de fuerza: sostiene la DIRECCIÓN (recortar volumen sin tocar intensidad) mejor que la cifra exacta aplicada a la hipertrofia.",
   },
   {
     id: "coleman2024",
@@ -141,6 +153,7 @@ export const CITATIONS: Citation[] = [
       "Gaining more from doing less? The effects of a one-week deload period during supervised resistance training on muscular adaptations",
     journal: "PeerJ 12:e16777",
     doi: "10.7717/peerj.16777",
+    pmid: "38274324",
   },
   {
     id: "enes2024",
@@ -149,15 +162,17 @@ export const CITATIONS: Citation[] = [
     title:
       "Effects of Different Weekly Set Progressions on Muscular Adaptations in Trained Males: Is There a Dose-Response Effect?",
     journal: "Medicine & Science in Sports & Exercise 56(3):553–563",
+    doi: "10.1249/MSS.0000000000003317",
     pmid: "37796222",
   },
   {
     id: "acsm2026",
-    authors: "American College of Sports Medicine",
+    authors:
+      "Currier BS, D'Souza AC, Singh MAF, Lowisz CV, Rawson ES, Schoenfeld BJ, et al.",
     year: 2026,
     title:
       "Position Stand. Resistance Training Prescription for Muscle Function, Hypertrophy, and Physical Performance in Healthy Adults: An Overview of Reviews",
-    journal: "Medicine & Science in Sports & Exercise",
+    journal: "Medicine & Science in Sports & Exercise 58(4):851–872",
     doi: "10.1249/MSS.0000000000003897",
     pmid: "41843416",
     caveat:
@@ -366,7 +381,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
         summary:
           "En el único ensayo directo, el grupo que dejó de entrenar una semana a mitad de bloque no ganó más músculo y ganó MENOS fuerza que el que siguió. Por eso aquí la descarga es reactiva y nunca por calendario.",
         detail:
-          "Cuidado con estirar esa conclusión más de lo que da: el estudio probó UNA estrategia (cese total del entrenamiento) durante 9 semanas en 39 personas entrenadas. Los propios autores señalan que un deload puede hacerse de muchas formas distintas del cese, y dejan abierto si un periodo de entrenamiento reducido evitaría esa pérdida de fuerza. Lo que sostiene es \"no dejes de entrenar por calendario\", no la receta concreta que usamos.",
+          'Cuidado con estirar esa conclusión más de lo que da: el estudio probó UNA estrategia (cese total del entrenamiento) durante 9 semanas en 39 personas entrenadas. Los propios autores señalan que un deload puede hacerse de muchas formas distintas del cese, y dejan abierto si un periodo de entrenamiento reducido evitaría esa pérdida de fuerza. Lo que sostiene es "no dejes de entrenar por calendario", no la receta concreta que usamos.',
         evidence: "REASONABLE",
         citations: ["coleman2024"],
       },
@@ -385,6 +400,26 @@ export const PHILOSOPHY: PhilosophySection[] = [
         title: "El dolor articular va por su cuenta",
         summary:
           "No suma puntos de fatiga: escala su propio aviso y tiene precedencia sobre cualquier ajuste de carga. Si duele, se cambia el ejercicio antes que el peso.",
+        evidence: "HEURISTIC",
+        citations: [],
+      },
+      {
+        id: "receta-descarga",
+        title: "Qué es una descarga aquí: la mitad de las series",
+        summary:
+          "Una semana con la mitad de tus series habituales (mínimo 1 por ejercicio), los MISMOS kilos y el mismo RIR objetivo. Una sola palanca: se recorta el volumen y se deja la intensidad intacta.",
+        detail:
+          "Recortar el volumen a la mitad cae dentro del 41–60 % que el meta-análisis de taper de Bosquet identifica como óptimo sin tocar intensidad ni frecuencia — con la salvedad de que ese trabajo es sobre todo de deportes de resistencia, por eso la etiqueta no es «fuerte». Mantener los kilos es deliberado: la exposición a carga alta es lo que conserva las adaptaciones, y añadir ADEMÁS repeticiones en reserva dejaría la semana cerca de no entrenar. La única excepción es el dolor articular: ahí sí se baja un 10 % la carga, porque la articulación manda. Y nada de esto se aplica solo: es una recomendación que aceptas o ignoras.",
+        evidence: "REASONABLE",
+        citations: ["bosquet2007", "coleman2024"],
+      },
+      {
+        id: "meseta",
+        title: "Una meseta es un aviso, no una orden",
+        summary:
+          "Cuando llevas varias exposiciones seguidas sin mejorar repeticiones ni carga, la app te lo señala. Y ahí se queda: no te añade series, no te cambia el ejercicio y no te manda descargar por su cuenta.",
+        detail:
+          "Estancarse unas semanas es parte normal de entrenar, y las causas posibles son muchas —fatiga, sueño, comida, técnica, o simplemente que ese ejercicio ya no admite saltos finos—. Como el dato por sí solo no distingue entre ellas, la app te da el aviso con sus números y la decisión la tomas tú. Solo cuenta como evidencia de fatiga acumulada si se estanca la MITAD o más de tus ejercicios a la vez: uno solo suele ser cosa del ejercicio, no de tu recuperación.",
         evidence: "HEURISTIC",
         citations: [],
       },

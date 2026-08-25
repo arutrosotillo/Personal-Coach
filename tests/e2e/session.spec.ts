@@ -121,8 +121,19 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   }
   await page.getByRole("button", { name: "Finalizar" }).click();
 
-  // Feedback → guardar y finalizar
+  // Feedback → guardar y finalizar.
+  //
+  // Los chips de esta pantalla (fatiga, dolor articular, motivación,
+  // rendimiento percibido) son la ÚNICA entrada del motor de fatiga de F3.3.
+  // Antes se pulsaba "Guardar y finalizar" sin tocar ninguno, así que si el
+  // guardado de estos valores se rompiera, el motor se quedaría ciego y ningún
+  // test se enteraría.
+  const sheet = page.getByRole("dialog");
   await expect(page.getByText("¿Cómo ha ido?")).toBeVisible();
+  for (const escala of ["Rendimiento", "Pump", "Dolor articular", "Fatiga"]) {
+    const fila = sheet.locator("div").filter({ hasText: escala }).last();
+    await fila.getByRole("button", { name: "4", exact: true }).click();
+  }
   await page.getByRole("button", { name: /Guardar y finalizar/i }).click();
 
   // De vuelta en Entrenar, y la sesión aparece en el historial
@@ -131,6 +142,11 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   await expect(page.getByRole("heading", { name: "Historial" })).toBeVisible();
   // (La DB e2e es compartida: puede haber más de una sesión en el historial.)
   await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
+
+  // Y el feedback llegó de verdad a la sesión: la tarjeta de recuperación de
+  // /train lo cuenta entre las sesiones que ha podido valorar.
+  await page.goto("/train");
+  await expect(page.getByText(/sesion(es)? en \d+ días/).first()).toBeVisible();
 });
 
 test("la acción principal de /train se alcanza sin scroll", async ({
