@@ -44,6 +44,8 @@ export type ProgressionReasonCode =
   | "INCOMPLETE_FOR_INCREASE"
   | "NEEDS_RIR_CONFIRMATION"
   | "ATYPICAL_LOAD_DROP"
+  /** No lo emite el motor: lo pone `applyRecoveryVeto` (dolor o descarga). */
+  | "RECOVERY_VETO"
   | "MIXED_LOADS"
   | "STUCK_BELOW_RANGE"
   | "RANGE_CLOSED"
@@ -59,7 +61,11 @@ export type ProgressionReasonCode =
   | "STALE_HISTORY"
   | "HOLD_DEFAULT";
 
-export type ProgressionSignalCode = "PLATEAU_SIGNAL" | "MIXED_LOADS";
+export type ProgressionSignalCode =
+  | "PLATEAU_SIGNAL"
+  | "MIXED_LOADS"
+  /** No lo emite el motor: guarda la subida que `applyRecoveryVeto` suspendió. */
+  | "VETO_SUSPENDED_INCREASE";
 
 export interface ProgressionSignal {
   code: ProgressionSignalCode;
@@ -342,9 +348,11 @@ export function suggestProgression(
   // Sin `todayLocalDate` el motor no puede saber si esto es de la semana
   // pasada o de hace dos meses; en ese caso lo trata como fresco (compatible
   // con las llamadas antiguas) y lo dice en `numbers.daysSinceLast = -1`.
+  // `-1` significa "no lo sé" (llamada sin `todayLocalDate`). Una exposición
+  // fechada mañana daba también -1 y se colaba como desconocida: se acota a 0.
   const daysSinceLast =
     input.todayLocalDate && last.localDate
-      ? diffDays(last.localDate, input.todayLocalDate)
+      ? Math.max(0, diffDays(last.localDate, input.todayLocalDate))
       : -1;
   const recency: "FRESH" | "STALE" | "OLD" =
     daysSinceLast < 0
@@ -359,7 +367,7 @@ export function suggestProgression(
   const gapBreaks = (older: ExposureSummary, newer: ExposureSummary): boolean =>
     older.localDate !== null &&
     newer.localDate !== null &&
-    diffDays(older.localDate, newer.localDate) > RECENCY.RUN_GAP_DAYS;
+    diffDays(older.localDate, newer.localDate) >= RECENCY.RUN_GAP_DAYS;
 
   const numbersFor = (s: ExposureSummary, sameWeightRun: number) => ({
     pesoRef: s.weight,
@@ -473,6 +481,9 @@ export function suggestProgression(
   const previous = usable.length >= 2 ? usable[usable.length - 2] : null;
   if (
     previous !== null &&
+    // Si entre las dos exposiciones hay un parón, la caída de carga no es
+    // atípica: es exactamente lo que hay que hacer al volver.
+    !gapBreaks(previous, last) &&
     previous.weight > 0 &&
     last.weight > 0 &&
     last.weight < previous.weight * config.ATYPICAL_DROP_FRACTION &&
@@ -592,6 +603,30 @@ export function suggestProgression(
       });
     }
 
+    // 3a-bis. Historial viejo: no se progresa sobre un rendimiento que puede
+    // tener semanas. El tiempo NO baja la carga por sí solo; lo que hace es
+    // suspender el avance hasta reconfirmar. Va ANTES de las ramas sin carga
+    // externa: a peso corporal el desentrenamiento pega antes, no después.
+    if (recency !== "FRESH") {
+      const semanas = Math.round(daysSinceLast / 7);
+      const cuando = `hace ${semanas} ${semanas === 1 ? "semana" : "semanas"}`;
+      return done({
+        action: "HOLD",
+        reasonCode: "STALE_HISTORY",
+        suggestedWeightKg: last.weight,
+        suggestedReps: repRangeMax,
+        setTargets: ratchetTargets(
+          sameWeightRun,
+          Math.min(last.minReps, repRangeMax),
+          repRangeMax,
+          plannedSets,
+        ),
+        explanation: loadable
+          ? `Cerraste el rango, pero hace ${semanas} ${semanas === 1 ? "semana" : "semanas"} de esa sesión. Vuelve con ${last.weight} kg para reconfirmar: si sale, subimos. No te bajo la carga por el parón.`
+          : `Cerraste el rango, pero de eso ${cuando}. Repite las mismas repeticiones para reconfirmar antes de pedirte más; si sale, seguimos sumando. No te bajo el objetivo por el parón.`,
+      });
+    }
+
     // 3b. Sin carga externa cuantificable: se progresa por repeticiones.
     if (!loadable) {
       const cap = repRangeMax + config.RANGE_EXTENSION_CAP;
@@ -640,21 +675,6 @@ export function suggestProgression(
         suggestedReps: target,
         setTargets: uniformTargets(target, plannedSets),
         explanation: `Cerraste ${last.medianReps} reps a peso corporal: añade ${loadStepKg} kg de lastre y busca ${target} reps. Aquí solo cuento el lastre, así que el objetivo es aproximado.`,
-      });
-    }
-
-    // 3b-bis-recency. Historial viejo: no se sube carga sobre un rendimiento
-    // que puede tener semanas. El tiempo NO baja la carga por sí solo; lo que
-    // hace es suspender la subida hasta reconfirmar.
-    if (recency !== "FRESH") {
-      const semanas = Math.floor(daysSinceLast / 7);
-      return done({
-        action: "HOLD",
-        reasonCode: "STALE_HISTORY",
-        suggestedWeightKg: last.weight,
-        suggestedReps: repRangeMax,
-        setTargets: uniformTargets(repRangeMax, plannedSets),
-        explanation: `Cerraste el rango, pero hace ${semanas} ${semanas === 1 ? "semana" : "semanas"} de esa sesión. Vuelve con ${last.weight} kg para reconfirmar: si sale, subimos. No te bajo la carga por el parón.`,
       });
     }
 

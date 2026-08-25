@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PROGRESSION } from "@/core/config/training-config";
+import { PROGRESSION, RECENCY } from "@/core/config/training-config";
+import { addDays } from "@/core/dates";
 
 import {
   equivalentReps,
@@ -45,12 +46,21 @@ function s(
 function run(
   history: ProgressionExposure[],
   rx: Partial<ProgressionPrescription> = {},
+  todayLocalDate?: string,
 ) {
   const input: ProgressionInput = {
     prescription: { ...BENCH, ...rx },
     history,
+    todayLocalDate,
   };
   return suggestProgression(input);
+}
+
+const TODAY = "2026-08-25";
+
+/** La misma exposición, fechada a `daysAgo` días de `TODAY`. */
+function dated(exposure: ProgressionExposure, daysAgo: number) {
+  return { ...exposure, localDate: addDays(TODAY, -daysAgo) };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -777,5 +787,125 @@ describe("11 · invariantes (rejilla determinista)", () => {
       expect(["LOW", "MEDIUM", "HIGH"]).toContain(a.confidence);
       expect(a.engineVersion).toBe("2.0.0");
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("11 · recencia: el tiempo suspende el avance, nunca baja la carga", () => {
+  const cerrado = [
+    dated(s(80, [8, 8, 8], 2), 30),
+    dated(s(80, [8, 8, 8], 2), 7),
+  ];
+
+  it("con historial fresco sube como siempre", () => {
+    const r = run(
+      [dated(s(80, [8, 8, 8], 2), 14), dated(s(80, [8, 8, 8], 2), 7)],
+      {},
+      TODAY,
+    );
+    expect(r.action).toBe("INCREASE_LOAD");
+    expect(r.numbers.daysSinceLast).toBe(7);
+  });
+
+  it("a partir de STALE_MIN_DAYS suspende la subida sin bajar nada", () => {
+    const r = run(
+      [dated(s(80, [8, 8, 8], 2), 60), dated(s(80, [8, 8, 8], 2), 25)],
+      {},
+      TODAY,
+    );
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("STALE_HISTORY");
+    expect(r.suggestedWeightKg).toBe(80);
+    expect(r.explanation).toMatch(/No te bajo la carga por el parón/i);
+  });
+
+  it("la frontera es exactamente STALE_MIN_DAYS", () => {
+    const dia = (n: number) =>
+      run(
+        [dated(s(80, [8, 8, 8], 2), n + 30), dated(s(80, [8, 8, 8], 2), n)],
+        {},
+        TODAY,
+      );
+    expect(dia(RECENCY.STALE_MIN_DAYS - 1).action).toBe("INCREASE_LOAD");
+    expect(dia(RECENCY.STALE_MIN_DAYS).reasonCode).toBe("STALE_HISTORY");
+  });
+
+  it("también protege al peso corporal, donde el desentrenamiento pega antes", () => {
+    // La puerta de recencia iba DESPUÉS de las ramas sin carga externa, así que
+    // tras seis semanas parado el coach pedía superar la última marca justo en
+    // los ejercicios donde menos sentido tiene.
+    const fondos = [
+      dated(s(0, [12, 12, 12], 2), 70),
+      dated(s(0, [12, 12, 12], 2), 45),
+    ];
+    const r = run(
+      fondos,
+      { loadStepKg: 0, repRangeMin: 8, repRangeMax: 12 },
+      TODAY,
+    );
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("STALE_HISTORY");
+    expect(r.explanation).not.toMatch(/kg/);
+    expect(r.explanation).toMatch(/reconfirmar/i);
+  });
+
+  it("y a las dominadas sin lastre registrado", () => {
+    const dominadas = [
+      dated(s(0, [12, 12, 12], 2), 70),
+      dated(s(0, [12, 12, 12], 2), 45),
+    ];
+    const r = run(dominadas, { repRangeMin: 8, repRangeMax: 12 }, TODAY);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("STALE_HISTORY");
+  });
+
+  it("sin `todayLocalDate` se comporta como antes (compatibilidad)", () => {
+    expect(run(cerrado).action).toBe("INCREASE_LOAD");
+  });
+
+  it("una exposición con fecha futura no se confunde con 'no lo sé'", () => {
+    const r = run(
+      [dated(s(80, [8, 8, 8], 2), 7), dated(s(80, [8, 8, 8], 2), -1)],
+      {},
+      TODAY,
+    );
+    expect(r.numbers.daysSinceLast).toBe(0);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("12 · un parón hace incomparables dos exposiciones", () => {
+  it("volver con la mitad de peso tras meses NO es una caída atípica", () => {
+    // El motor decía, con confianza ALTA: "de momento sigo con 80 kg" a alguien
+    // que llevaba cinco meses sin entrenar. Es el peor consejo que puede dar.
+    const r = run(
+      [dated(s(80, [12, 12, 12], 2), 150), dated(s(40, [12, 12, 12], 5), 0)],
+      { repRangeMin: 8, repRangeMax: 12 },
+      TODAY,
+    );
+    expect(r.reasonCode).not.toBe("ATYPICAL_LOAD_DROP");
+    expect(r.suggestedWeightKg).not.toBe(80);
+  });
+
+  it("pero sin parón sigue pidiendo confirmación", () => {
+    const r = run(
+      [dated(s(80, [12, 12, 12], 2), 7), dated(s(40, [12, 12, 12], 5), 0)],
+      { repRangeMin: 8, repRangeMax: 12 },
+      TODAY,
+    );
+    expect(r.reasonCode).toBe("ATYPICAL_LOAD_DROP");
+    expect(r.suggestedWeightKg).toBe(80);
+  });
+
+  it("la frontera del hueco es la MISMA que la de historial viejo", () => {
+    // Sería incoherente que 21 días fuesen "comparables" para bajarte la carga
+    // y "demasiado viejos" para subírtela.
+    const bajo = s(80, [4, 4, 4], 0);
+    const conHueco = (gap: number) =>
+      run([dated(bajo, gap + 1), dated(bajo, 1)], {}, TODAY);
+    expect(conHueco(RECENCY.RUN_GAP_DAYS - 1).action).toBe("DECREASE_LOAD");
+    expect(conHueco(RECENCY.RUN_GAP_DAYS).reasonCode).toBe(
+      "ONE_OFF_UNDERPERFORMANCE",
+    );
   });
 });
