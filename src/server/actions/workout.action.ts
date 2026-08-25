@@ -19,6 +19,7 @@ import {
   discardSession,
   finishSession,
   logSet,
+  SessionNotInProgressError,
   setPlannedSets,
   startOrResumeSession,
   substituteExercise,
@@ -97,6 +98,12 @@ export async function deleteSetAction(
     await deleteSet(profileId, workoutExerciseId, setNumber);
     return { ok: true };
   } catch (error) {
+    if (error instanceof SessionNotInProgressError) {
+      return {
+        ok: false,
+        error: "Esa sesión ya no está en curso: no he podido borrar la serie.",
+      };
+    }
     console.error("deleteSetAction", error);
     return { ok: false, error: "No se pudo borrar la serie." };
   }
@@ -143,6 +150,16 @@ export async function finishSessionAction(
     revalidatePath("/train/history");
     return { ok: true };
   } catch (error) {
+    // Si la sesión ya no estaba en curso, el feedback NO se ha guardado. Antes
+    // se devolvía `ok` igualmente y el dato (fatiga, dolor, motivación) se
+    // perdía sin que nadie se enterara. Reintentar no sirve: hay que decirlo.
+    if (error instanceof SessionNotInProgressError) {
+      return {
+        ok: false,
+        error:
+          "Esta sesión ya se había cerrado en otro sitio, así que no he podido guardar tu valoración. Ábrela desde el historial si quieres revisarla.",
+      };
+    }
     console.error("finishSessionAction", error);
     return { ok: false, error: "No se pudo finalizar la sesión." };
   }
@@ -157,6 +174,12 @@ export async function discardSessionAction(
     revalidatePath("/train");
     return { ok: true };
   } catch (error) {
+    if (error instanceof SessionNotInProgressError) {
+      // Ya no está en curso: el resultado que el usuario quería (que no siga
+      // abierta) ya se cumple, así que no es un error para él.
+      revalidatePath("/train");
+      return { ok: true };
+    }
     console.error("discardSessionAction", error);
     return { ok: false, error: "No se pudo descartar la sesión." };
   }

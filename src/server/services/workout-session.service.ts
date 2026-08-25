@@ -1,13 +1,33 @@
-import { DEFAULT_TIMEZONE, toLocalDate, weekIndexSince } from "@/core/dates";
+import { FATIGUE } from "@/core/config/training-config";
+import {
+  DEFAULT_TIMEZONE,
+  isoWeekOf,
+  toLocalDate,
+  weekIndexSince,
+} from "@/core/dates";
 import type { LogSetData, SessionFeedbackData } from "@/core/schemas/workout";
 import { estimateOneRepMax } from "@/core/training/e1rm";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
+import { wasDeloadRecommended } from "@/server/services/fatigue.service";
 
 /**
  * Servicio de sesiones de entrenamiento (Fase 2A). Sin progresión ni
  * recomendaciones: solo crear/reanudar sesiones, registrar series de forma
  * idempotente, sustituir ejercicios manualmente, finalizar y descartar.
+ *
+ * Al cerrar una sesión se decide además si fue una DESCARGA ejecutada
+ * (`weekKind`), que es lo único que el motor de fatiga necesita para no
+ * penalizarte por obedecer su propia recomendación.
  */
+
+/** La sesión ya no estaba en curso: otra pestaña la cerró, o nunca existió. */
+export class SessionNotInProgressError extends Error {
+  constructor() {
+    super("Esa sesión ya no está en curso.");
+    this.name = "SessionNotInProgressError";
+  }
+}
 
 /** Devuelve la sesión activa (IN_PROGRESS) del perfil, si existe. */
 export async function getActiveSession(profileId: string) {
@@ -160,11 +180,30 @@ export async function logSet(profileId: string, data: LogSetData) {
 }
 
 /** Borra una serie registrada (corrección del usuario). */
+/**
+ * Borra una serie registrada. Si la sesión ya no está en curso NO se borra
+ * nada, así que se avisa en vez de devolver "ok": el usuario creería haber
+ * corregido un dato que sigue ahí.
+ *
+ * Borrar una serie que ya no existe (doble toque) NO es un error: el resultado
+ * que el usuario quería ya se cumple.
+ */
 export async function deleteSet(
   profileId: string,
   workoutExerciseId: string,
   setNumber: number,
 ) {
+  const enCurso = await prisma.workoutExercise.count({
+    where: {
+      id: workoutExerciseId,
+      session: {
+        status: "IN_PROGRESS",
+        mesocycle: { program: { profileId } },
+      },
+    },
+  });
+  if (enCurso === 0) throw new SessionNotInProgressError();
+
   await prisma.setLog.deleteMany({
     where: {
       workoutExerciseId,
@@ -246,13 +285,107 @@ export async function substituteExercise(
 }
 
 /** Finaliza la sesión y guarda el feedback (no modifica el programa en F2A). */
+/**
+ * ¿Esta sesión es una DESCARGA ejecutada?
+ *
+ * Hacen falta las DOS cosas, y por eso no basta con mirar los datos:
+ *
+ *   1. que el motor estuviera recomendando una descarga cuando entraste al
+ *      gimnasio (se consulta ANTES de marcar la sesión como completada, así
+ *      que esta sesión no se cuenta a sí misma); y
+ *   2. que de verdad hayas recortado — series registradas por debajo del
+ *      `COMPLETION_LOW` de lo que ese día prescribe la PLANTILLA.
+ *
+ * Se compara contra la plantilla y no contra `plannedSets` de la sesión porque
+ * "− Quitar serie" baja las previstas: quien recorta así saldría al 100 % de
+ * cumplimiento y nunca se detectaría el recorte.
+ *
+ * Exigir las dos condiciones es lo que impide que una sesión suelta y floja se
+ * disfrace de descarga: sin recomendación previa, un día corto es un día corto.
+ *
+ * [HEURÍSTICA]: el umbral de "recortada" reutiliza `COMPLETION_LOW` (70 %), que
+ * es el mismo que define una sesión acortada en el motor de fatiga. La
+ * prescripción es la mitad de las series, así que hay margen de sobra.
+ */
+async function isExecutedDeload(
+  tx: Prisma.TransactionClient,
+  session: {
+    id: string;
+    templateId: string | null;
+    localDate: string;
+    mesocycleId: string;
+  },
+  profileId: string,
+): Promise<boolean> {
+  const logged = await tx.setLog.count({
+    where: {
+      setType: "WORKING",
+      completed: true,
+      workoutExercise: { sessionId: session.id },
+    },
+  });
+  if (logged === 0) return false;
+
+  const plantilla = session.templateId
+    ? await tx.templateExercise.aggregate({
+        where: { templateId: session.templateId },
+        _sum: { baseSets: true },
+      })
+    : null;
+  const prescritas = plantilla?._sum.baseSets ?? 0;
+  if (prescritas === 0) return false;
+  if (logged / prescritas >= FATIGUE.COMPLETION_LOW) return false;
+
+  // Una descarga son varias sesiones. Si ya hay una marcada esta semana ISO, el
+  // resto de la semana también cuenta: si no, solo se marcaría la primera
+  // (al recortar, el veredicto de fatiga baja y deja de recomendar descarga).
+  const desdeElLunes = isoWeekOf(session.localDate).weekStartDate;
+  const yaEnDescarga = await tx.workoutSession.count({
+    where: {
+      status: "COMPLETED",
+      weekKind: "DELOAD",
+      localDate: { gte: desdeElLunes, lte: session.localDate },
+      mesocycle: { program: { profileId } },
+    },
+  });
+  if (yaEnDescarga > 0) return true;
+
+  return wasDeloadRecommended(profileId, session.localDate);
+}
+
+/**
+ * Cierra la sesión. Lanza si ya no estaba en curso: la UI dice "guardado", así
+ * que tiene que haberse guardado. Antes usaba `updateMany` sin mirar el
+ * resultado, y una pestaña vieja (o un reintento tras un timeout) devolvía
+ * "ok" habiendo perdido el feedback en silencio — y el feedback es la ÚNICA
+ * entrada del motor de fatiga.
+ */
 export async function finishSession(
   profileId: string,
   sessionId: string,
   feedback: SessionFeedbackData,
   now: Date = new Date(),
 ) {
-  await prisma.workoutSession.updateMany({
+  const session = await prisma.workoutSession.findFirst({
+    where: {
+      id: sessionId,
+      status: "IN_PROGRESS",
+      mesocycle: { program: { profileId } },
+    },
+    select: {
+      id: true,
+      templateId: true,
+      localDate: true,
+      mesocycleId: true,
+    },
+  });
+  if (!session) throw new SessionNotInProgressError();
+
+  // Se decide FUERA de la transacción porque consulta el motor de fatiga
+  // (varias lecturas); dentro alargaría el bloqueo de escritura de SQLite.
+  const deload = await isExecutedDeload(prisma, session, profileId);
+
+  const { count } = await prisma.workoutSession.updateMany({
     where: {
       id: sessionId,
       status: "IN_PROGRESS",
@@ -260,6 +393,7 @@ export async function finishSession(
     },
     data: {
       status: "COMPLETED",
+      weekKind: deload ? "DELOAD" : "ACCUMULATION",
       finishedAt: now,
       perceivedPerformance: feedback.perceivedPerformance ?? null,
       pump: feedback.pump ?? null,
@@ -269,11 +403,15 @@ export async function finishSession(
       notes: feedback.notes ?? null,
     },
   });
+  // Carrera real: otra pestaña la cerró entre la lectura y la escritura.
+  if (count === 0) throw new SessionNotInProgressError();
+  return { deload };
 }
 
 /** Descarta una sesión (ABORTED). Queda fuera del historial y las estadísticas. */
+/** Descarta la sesión. Lanza si ya no estaba en curso (ver `finishSession`). */
 export async function discardSession(profileId: string, sessionId: string) {
-  await prisma.workoutSession.updateMany({
+  const { count } = await prisma.workoutSession.updateMany({
     where: {
       id: sessionId,
       status: "IN_PROGRESS",
@@ -281,4 +419,5 @@ export async function discardSession(profileId: string, sessionId: string) {
     },
     data: { status: "ABORTED" },
   });
+  if (count === 0) throw new SessionNotInProgressError();
 }

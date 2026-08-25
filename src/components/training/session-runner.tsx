@@ -303,7 +303,11 @@ export function SessionRunner({
         router.push("/train");
         router.refresh();
       } else {
-        toast.error(res.error ?? "No se pudo finalizar");
+        // Si falló porque la sesión ya no estaba en curso, reintentar no sirve
+        // de nada y quedarse aquí deja al usuario en una pantalla muerta: se
+        // refresca para que el servidor decida qué mostrar.
+        toast.error(res.error ?? "No se pudo finalizar", { duration: 8000 });
+        router.refresh();
       }
     });
   }
@@ -316,7 +320,8 @@ export function SessionRunner({
     )
       return;
     startTransition(async () => {
-      await discardSessionAction(session.id);
+      const res = await discardSessionAction(session.id);
+      if (!res.ok) toast.error(res.error ?? "No se pudo descartar");
       router.push("/train");
       router.refresh();
     });
