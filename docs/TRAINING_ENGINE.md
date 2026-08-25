@@ -1,6 +1,6 @@
 # Training Engine — especificación v1.0
 
-Motor puro determinista (`src/core/engines/training/`, F3; el generador de programa inicial en `src/core/program/` desde F1). Todos los umbrales viven en `src/core/config/`. Ninguna decisión con datos aislados. Señales de recuperación: las produce el Recovery Engine (RECOVERY_ENGINE.md); este motor solo las consume.
+Motor puro determinista (`src/core/engines/training/`, F3; el generador de programa inicial en `src/core/program/` desde F1). Todos los umbrales viven en `src/core/config/`. Ninguna decisión con datos aislados. Señales de recuperación: las calcula el propio motor de fatiga (§1e) a partir de los chips de sesión. RECOVERY_ENGINE.md describe un motor separado que NO se construyó.
 
 ## 0. Grupos musculares y prioridades
 
@@ -12,7 +12,7 @@ Motor puro determinista (`src/core/engines/training/`, F3; el generador de progr
 
 Implementada en `src/core/program/generate-initial-program.ts` (versión **3.0.0**, modelo de **volumen efectivo** de Fase 3.2; ver `docs/PHASE_3_2_VOLUME_PLAN.md`). Reparte un **objetivo de volumen efectivo semanal por grupo** sobre los menús de la división elegida. Determinista, sin progresión ni ajuste adaptativo (eso es F3.3/F3.4).
 
-**Volumen efectivo** = `series directas × 1.0 + Σ(series indirectas × factor)`. El conteo fraccional directo/indirecto está respaldado por la literatura (Pelland 2025 lo modela) **[EVIDENCIA RAZONABLE]**; los NÚMEROS concretos son un **punto de partida conservador de PRODUCTO**, no óptimos universales.
+**Volumen efectivo** = `series directas × 1.0 + Σ(series indirectas × factor)`. El conteo fraccional directo/indirecto está respaldado por la literatura (Pelland 2026 lo modela) **[EVIDENCIA RAZONABLE]**; los NÚMEROS concretos son un **punto de partida conservador de PRODUCTO**, no óptimos universales.
 
 **Objetivos de partida** (`training-config.ts`, `EFFECTIVE_TARGET`): banda inicial conservadora (~6–10 efectivas/músculo) con margen para progresar — **[HEURÍSTICA DE PRODUCTO]**, no un "óptimo científico" (la evidencia indica dosis-respuesta con rendimientos decrecientes y sin techo claro). Se escala por **experiencia** (`EXPERIENCE_MULT`: 0.75/1.0/1.15 según `trainingYears`) **[heurística conservadora]** y por **días** (`DAY_MULT`: 5d +8 %, 6d +12 %) **[heurística de generación; más días REPARTEN, no una dosis-respuesta demostrada]**. En déficit se reduce un 15 % (`FAT_LOSS_VOLUME_FACTOR`).
 
@@ -51,7 +51,7 @@ válidas de la variante (series WORKING completadas de sesiones COMPLETED), de l
 más reciente.
 
 **Banda de RIR**: un esfuerzo es COMPATIBLE si `rir ≥ targetRir − RIR_BAND` (1), y claramente MÁS
-DURO si `rir < targetRir − RIR_BAND` o `rir = 0` con objetivo ≥ 1. Motivo: el error típico de
+DURO si `rir < targetRir − RIR_BAND` o `rir = 0` con objetivo ≥ 2. Motivo: el error típico de
 estimación del RIR es ~1 repetición (Halperin 2022), así que exigir igualdad estricta decide dentro
 del ruido. Se conserva la distinción: `8/8/8 @0` **no** recibe el mismo trato que `8/8/8 @2`.
 
@@ -254,7 +254,23 @@ acotan a la ventana, porque ahí lo que se mide es el periodo reciente.
 **Meseta**: `PLATEAU_SIGNAL` sigue siendo solo evidencia. F3.3 la contextualiza (varias mesetas a la
 vez suman a la fatiga) pero **jamás** deriva en añadir o quitar series.
 
-## 2. Progressive overload — double progression (F3)
+> ## ⚠️ Las secciones 2 a 6 están SUPERSEDED
+>
+> Describen el diseño ORIGINAL de F3, que no es lo que se construyó. Se
+> conservan como registro de por dónde se empezó, no como especificación.
+> **Lo implementado está en §1b–§1e y es lo que manda.**
+>
+> Contradicciones concretas, para que nadie las reintroduzca por leer la mitad
+> equivocada del documento: §4 prescribe una descarga con **−10 % de carga y
+> RIR 3–4**, cuando la receta real mantiene carga y RIR y solo baja un 10 % si
+> hay dolor articular (§1e); §2 imputa `RIR = objetivo` cuando falta, y la
+> regla desde F3.2c es que **el RIR ausente no se imputa jamás** (§1c); §2
+> describe modos `CALIBRACION`/`RECONSTRUCCION` y un `BAJAR_CARGA −7,5 %` fijo
+> que no existen (la bajada se dimensiona por equivalencia, §1b); §4 habla de
+> una ventana de 2 semanas (real: 21 días) y de que el dolor puntúa 2 (real:
+> **el dolor no puntúa**, va por su vía y veta subidas).
+
+## 2. Progressive overload — double progression (F3, SUPERSEDED por §1b)
 
 ### Inputs
 
@@ -293,7 +309,7 @@ Cambio de variante: historial por `exerciseVariantId`, jamás comparar cargas en
 
 Los 12 casos numéricos del plan aprobado (subida limpia, progresión por reps, post-subida, primera caída, segunda caída −7,5 %, anómala descartada, salto relativo >10 % → reps extendidas, técnica 2/5, estancamiento largo, dolor articular → sustituir, calibración desde hermana 107×0,85 → 60 kg en máquina de 5 kg, RIR faltante → confianza MEDIA). Ver TEST_PLAN.md.
 
-## 3. Volumen (F3)
+## 3. Volumen (F3, SUPERSEDED por §1)
 
 Serie efectiva: `completed && rir ≤ 4 && !warmup`, contada fraccionalmente vía `ExerciseMuscleContribution` (press inclinado: PECHO_SUPERIOR 1.0, PECHO_MI 0.5, DELT_ANT 0.5, TRICEPS 0.5 — tabla completa en el seed; aproximaciones operativas editables).
 
@@ -301,17 +317,17 @@ Defaults semanales (config): Tier A inicio 8–10 (mín 6–8, máx 16–20); B 
 
 Cambios (evaluación semanal): **+1 serie/grupo/sem** solo si ≥2 sesiones válidas del grupo + tendencia de rendimiento estable/positiva + recuperación GOOD + sin dolor MM3 ≥3 + bajo el máx. **−2 series** si 2 semanas de tendencia negativa con esfuerzo presente, o dolor sostenido. Límites: máx 4 grupos modificados/sem, cambio neto ±4 series/sem. Prioridad de cupo: Tier A > B > C.
 
-## 4. Deload (F3)
+## 4. Deload (F3, SUPERSEDED por §1e)
 
 Score multi-señal (ventana 2 semanas): caída de rendimiento ≥2 grupos ×2 sem (3 pts) · fatiga alta sostenida (2) · dolor ≥2 articulaciones (2) · ≥50 % ejercicios clave estancados (2) · sueño malo (1) · motivación baja (1) · ≥6 sem sin deload (1; ≥8 sem: 2). **Score ≥5 → recomendar deload** (jamás automático), listando cada señal con números; 3–4 → aviso. Posponer suma +1 la semana siguiente (cap +2).
 
 Prescripción: 1 semana, −50 % series (mín 1/ejercicio), −10 % carga, RIR 3–4, mismos ejercicios. No alimenta tendencias; al acabar se restauran las prescripciones previas y el contador se resetea.
 
-## 5. Mesociclos (F3)
+## 5. Mesociclos (F3, no implementado)
 
 4–8 semanas (default 6, deload final opcional). Estados PLANNED|ACTIVE|COMPLETED|ABORTED. Al terminar: resumen (Δe1RM por clave, volúmenes, adherencia, estancados/sustituidos) y transición: grupo que terminó bien → siguiente meso arranca en `min(volFinal−2, inicioDefault+2)`; mal → `inicioDefault`. Nada se borra; historial global por variante.
 
-## 6. Estancamiento y caída (F3)
+## 6. Estancamiento y caída (F3, SUPERSEDED por §1b)
 
 Por ejercicio: regresión lineal de e1RM sobre las últimas 4 sesiones válidas. PROGRESANDO > +0,5 %/sesión · ESTANCADO |Δ acumulado| <1 % con RIR ≤ objetivo · EN_CAIDA ≤ −1,5 %/sesión (3 sesiones) o ≤ −5 % acumulado · <4 sesiones = SIN_DATOS (nunca dispara nada).
 

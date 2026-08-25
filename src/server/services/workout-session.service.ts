@@ -65,6 +65,15 @@ export async function startOrResumeSession(
       orderBy: { localDate: "asc" },
       select: { localDate: true },
     });
+    // Red de seguridad por si una plantilla llegase vacía por otra vía: una
+    // sesión de cero ejercicios se puede "completar" sin registrar nada y
+    // ensucia el historial y el conteo de semanas.
+    if (template.exercises.length === 0) {
+      throw new Error(
+        "Ese día no tiene ejercicios. Añade alguno antes de entrenarlo.",
+      );
+    }
+
     const weekNumber = weekIndexSince(
       firstSession?.localDate ?? localDate,
       localDate,

@@ -8,7 +8,7 @@ import type { MuscleGroupCode } from "@/core/enums";
  * MODELO DE VOLUMEN (Fase 3.2): todo razona en VOLUMEN EFECTIVO semanal por músculo
  * = series directas×1.0 + Σ(series indirectas × factor de contribución del catálogo).
  * El conteo fraccional directo/indirecto está respaldado por la literatura
- * (Pelland 2025 lo modela explícitamente) [EVIDENCIA RAZONABLE]. Los NÚMEROS
+ * (Pelland 2026 lo modela explícitamente) [EVIDENCIA RAZONABLE]. Los NÚMEROS
  * concretos de abajo son un PUNTO DE PARTIDA conservador de PRODUCTO, no óptimos
  * fisiológicos universales — se pueden recalibrar sin contradecir la ciencia
  * (ver COACH_PHILOSOPHY §7 y PHASE_3_RESEARCH). Sin sesgo estético oculto: la única
@@ -18,7 +18,7 @@ import type { MuscleGroupCode } from "@/core/enums";
 /**
  * Objetivo de VOLUMEN EFECTIVO semanal por músculo (intermedio, punto de partida).
  * [HEURÍSTICA DE PRODUCTO] Banda inicial conservadora (~6–10) con margen para
- * progresar; NO es un "óptimo científico". La evidencia (Pelland 2025, Schoenfeld
+ * progresar; NO es un "óptimo científico". La evidencia (Pelland 2026, Schoenfeld
  * 2017) indica dosis-respuesta con rendimientos decrecientes y SIN techo claro, y
  * ganancias ya a volúmenes bajos: por eso se arranca bajo y se progresa.
  */

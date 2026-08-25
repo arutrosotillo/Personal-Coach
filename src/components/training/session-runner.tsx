@@ -329,7 +329,7 @@ export function SessionRunner({
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
-            aria-label="Salir"
+            aria-label="Descartar sesión"
             className="text-muted-foreground min-h-9 px-1 text-sm"
             onClick={discard}
           >
@@ -1064,7 +1064,7 @@ function SubstitutionSheet({
             aria-label="Buscar ejercicio para sustituir"
             className="border-border bg-card mb-3 h-11 w-full rounded-md border px-3 text-base"
           />
-          <ul className="max-h-[50vh] space-y-3 overflow-y-auto">
+          <ul className="space-y-3">
             {filtered.map((o) => (
               <li key={o.exerciseName}>
                 <p className="mb-1 text-sm font-medium">{o.exerciseName}</p>

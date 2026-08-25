@@ -157,7 +157,7 @@ export const CITATIONS: Citation[] = [
   },
   {
     id: "enes2024",
-    authors: "Enes A, Alves RC, Schoenfeld BJ, et al.",
+    authors: "Enes A, De Souza EO, Souza-Junior TP",
     year: 2024,
     title:
       "Effects of Different Weekly Set Progressions on Muscular Adaptations in Trained Males: Is There a Dose-Response Effect?",
@@ -176,7 +176,7 @@ export const CITATIONS: Citation[] = [
     doi: "10.1249/MSS.0000000000003897",
     pmid: "41843416",
     caveat:
-      "Cita verificada. Las cifras concretas que resumimos proceden de resúmenes públicos del position stand, no del texto completo (de pago).",
+      "Cita verificada contra PubMed. El texto completo es de acceso abierto (PMC12965823); lo que resumimos aquí son sus conclusiones sobre volumen y proximidad al fallo, no el documento entero.",
   },
 ];
 
@@ -250,10 +250,12 @@ export const PHILOSOPHY: PhilosophySection[] = [
     principles: [
       {
         id: "reps-o-carga",
-        title: "Subir reps o subir carga funciona igual para hipertrofia",
+        title: "Subir reps o subir carga: parecido para hipertrofia",
         summary:
-          "En un ensayo de 8 semanas con 43 personas entrenadas, progresar en carga o en repeticiones produjo el mismo crecimiento.",
-        evidence: "STRONG",
+          "En un ensayo de 8 semanas con personas entrenadas, progresar en carga o en repeticiones produjo un crecimiento parecido.",
+        detail:
+          "Un solo ensayo, no un cuerpo de meta-análisis: por eso la etiqueta no es «fuerte». Y «parecido» no es «idéntico» — el 1RM favoreció ligeramente a progresar en carga y el grosor del recto femoral a progresar en repeticiones, ambos con intervalos que cruzan el cero. La doble progresión de esta app usa las dos palancas en orden, así que no depende de que una gane.",
+        evidence: "REASONABLE",
         citations: ["plotkin2022"],
       },
       {
@@ -295,10 +297,12 @@ export const PHILOSOPHY: PhilosophySection[] = [
       },
       {
         id: "fuerza-carga",
-        title: "Para fuerza manda la carga, no la proximidad al fallo",
+        title: "Para fuerza, la proximidad al fallo importa poco",
         summary:
-          "En la meta-regresión de 243 efectos sobre 55 estudios, el RIR no tiene relación apreciable con las ganancias de fuerza.",
-        evidence: "STRONG",
+          "En la meta-regresión de 243 efectos sobre 55 estudios, el RIR no muestra relación apreciable con las ganancias de fuerza.",
+        detail:
+          "Los propios autores acotan el hallazgo: es un análisis exploratorio, sin búsqueda sistemática ni preregistro, con un ajuste de modelo modesto e intervalos amplios, y el RIR de los estudios está estimado, no medido. La dirección es sólida; la magnitud, no. Por eso la etiqueta es «razonable» y no «fuerte».",
+        evidence: "REASONABLE",
         citations: ["robinson2024"],
       },
       {
@@ -342,9 +346,11 @@ export const PHILOSOPHY: PhilosophySection[] = [
       },
       {
         id: "dosis-respuesta",
-        title: "Más volumen ayuda, con rendimientos decrecientes",
+        title: "Más volumen ayuda, pero no igual para músculo y para fuerza",
         summary:
-          "La relación es positiva y sin techo claro en el rango estudiado, pero cada serie extra aporta menos que la anterior y cuesta fatiga y tiempo.",
+          "Para hipertrofia la relación sigue subiendo en el rango estudiado, sin un techo claro, aunque cada serie extra aporta menos que la anterior. Para fuerza la curva se aplana pronto: unas pocas series semanales ya capturan casi todo.",
+        detail:
+          "Los rendimientos decrecientes y la meseta de fuerza salen de la meta-regresión de 2026 (modelo raíz cuadrada para hipertrofia, recíproco para fuerza). El meta-análisis de 2017 aporta la dirección —más volumen, más músculo— pero su modelo es lineal y su comparación por tramos no llegó a ser significativa, así que no es el que sostiene la parte de «decrecientes».",
         evidence: "STRONG",
         citations: ["pelland2026", "schoenfeld2017"],
       },
@@ -360,7 +366,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
       },
       {
         id: "frecuencia",
-        title: "Frecuencia: repartir, no multiplicar",
+        title: "Frecuencia: repartir, no multiplicar (para hipertrofia)",
         summary:
           "Con el volumen igualado, entrenar un músculo 1, 2 o 3 veces por semana da lo mismo. Repartimos en ≥2 días porque las sesiones salen más cortas y manejables.",
         evidence: "STRONG",

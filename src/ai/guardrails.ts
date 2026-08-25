@@ -1,5 +1,5 @@
 import type { CoachContext } from "@/ai/context";
-import type { CoachResponse, CoachTask } from "@/ai/types";
+import type { CoachResponse } from "@/ai/types";
 
 /**
  * Guardrails de Coach AI: se ejecutan DESPUÉS del modelo y antes de enseñar
@@ -238,7 +238,6 @@ function collect(regex: RegExp, text: string): string[] {
 export function checkResponse(
   response: CoachResponse,
   context: CoachContext,
-  task: CoachTask = "WEEKLY",
 ): GuardrailResult {
   const text = [
     response.headline,

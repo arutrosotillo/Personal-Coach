@@ -14,7 +14,7 @@ import type {
  *
  * Factores (cubos; evita falsa precisión): PRIMARY = 1.0 (músculo objetivo);
  * SECONDARY ∈ {0.75 alto · 0.5 moderado · 0.25 ligero}. El volumen EFECTIVO de un
- * músculo = Σ(series × factor) (directo + indirecto), respaldado por Pelland 2025.
+ * músculo = Σ(series × factor) (directo + indirecto), respaldado por Pelland 2026.
  */
 
 export interface ContributionSeed {

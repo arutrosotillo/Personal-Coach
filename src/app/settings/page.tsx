@@ -100,6 +100,32 @@ export default async function SettingsPage() {
                 analítica.
               </p>
               <p>
+                {coachReady ? (
+                  <>
+                    <span className="text-foreground">
+                      El AI Coach está activo
+                    </span>
+                    , así que es la única salida de datos de la app: cuando
+                    pulsas un botón del coach, tu entrenamiento reciente
+                    (sesiones, cargas, repeticiones, RIR y las notas que
+                    escribas) viaja a OpenAI. No se envían tu nombre, tu edad,
+                    tu peso ni tus medidas, y nada se guarda allí. Para
+                    desactivarlo, quita <code>OPENAI_API_KEY</code> de tu
+                    fichero <code>.env</code> y reinicia.
+                  </>
+                ) : (
+                  <>
+                    El AI Coach está desactivado (no hay{" "}
+                    <code>OPENAI_API_KEY</code>), así que ahora mismo{" "}
+                    <span className="text-foreground">
+                      no sale ni un dato de tu máquina
+                    </span>
+                    . Si lo activas, tu entrenamiento reciente viajará a OpenAI
+                    cuando pulses un botón del coach.
+                  </>
+                )}
+              </p>
+              <p>
                 Copia de seguridad manual: copia la carpeta <code>data/</code>{" "}
                 con la app cerrada.
               </p>

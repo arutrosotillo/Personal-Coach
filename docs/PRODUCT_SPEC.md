@@ -13,7 +13,7 @@ Aplicación personal de entrenamiento de hipertrofia, nutrición y seguimiento c
 - Registrar peso, cintura, fotos y rendimiento.
 - Detectar progreso, estancamiento o fatiga acumulada.
 
-Prioridades estéticas (sesgan volumen y selección de ejercicios, ver TRAINING_ENGINE.md): hombro lateral/posterior → espalda ancha → pecho superior → brazos proporcionados → cintura visualmente estrecha → piernas desarrolladas → simetría. Objetivo cambiable entre pérdida de grasa, recomposición, ganancia controlada y mantenimiento.
+Prioridades: las **elige el usuario** en el onboarding y suben el objetivo de volumen semanal de esos grupos. No hay ninguna tabla de prioridades estéticas por defecto ni ningún «tier» oculto — la UI dice literalmente «No hay prioridades por defecto». Objetivo cambiable entre pérdida de grasa, recomposición, ganancia controlada y mantenimiento.
 
 Tono y filosofía: `COACH_PHILOSOPHY.md` (documento normativo para todo texto de usuario).
 

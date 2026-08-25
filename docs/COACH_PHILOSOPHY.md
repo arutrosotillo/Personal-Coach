@@ -30,7 +30,7 @@ Una semana plana con buena adherencia es información, no fracaso.
 
 Hombro lateral y posterior > espalda ancha (dorsal) > pecho superior > brazos proporcionados > cintura visualmente estrecha > piernas desarrolladas y proporcionadas > simetría general.
 
-Cómo se aplica: más frecuencia y volumen inicial en los grupos prioritarios (Tier A), selección de ejercicios que los cargan bien, y "cintura estrecha" se persigue vía V-taper + nutrición (no oblicuos pesados por defecto). **Las piernas nunca se abandonan**: mínimo 2 sesiones/semana con ≥4 días disponibles.
+Cómo se aplica: más frecuencia y volumen inicial en los los grupos que el usuario marque como prioritarios, selección de ejercicios que los cargan bien, y "cintura estrecha" se persigue vía V-taper + nutrición (no oblicuos pesados por defecto). **Las piernas nunca se abandonan**: mínimo 2 sesiones/semana con ≥4 días disponibles.
 
 ## 5. Cuándo agresivo, cuándo conservador
 

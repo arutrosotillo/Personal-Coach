@@ -265,7 +265,7 @@ export async function seedDemoHistory(
       });
       sessionsCreated += 1;
 
-      for (const [i, we] of session.exercises.entries()) {
+      for (const we of session.exercises) {
         const te = template.exercises.find(
           (x) => x.exerciseVariantId === we.exerciseVariantId,
         )!;
@@ -343,8 +343,13 @@ export async function seedDemoHistory(
     where: { rir: null, notes: DEMO_MARKER },
   });
   if (setsSinRir === 0) {
+    // Lanzar aquí dejaba las filas escritas: el usuario leía "no ha escrito
+    // ninguna" con 8 sesiones ficticias ya dentro de su programa. Se limpia lo
+    // sembrado antes de avisar.
+    await clearDemoHistory(prisma);
     throw new Error(
-      "El seed de demo dice incluir series sin RIR y no ha escrito ninguna.",
+      "El seed de demo dice incluir series sin RIR y no ha escrito ninguna. " +
+        "No se ha dejado nada sembrado.",
     );
   }
 

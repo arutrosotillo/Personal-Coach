@@ -38,6 +38,23 @@ async function main() {
   // vale NULL —no TRUE— cuando `notes` es NULL, y la fila NO se cuenta. Como
   // la app nunca rellena `notes` sola, casi todas las sesiones reales la tienen
   // a NULL: el guardarraíl veía cero siempre y no protegía nada.
+  // Idempotencia: sin esto, ejecutarlo dos veces duplicaba el historial en
+  // silencio. Y no es cosmético — dos sesiones el mismo día y de la misma
+  // plantilla entran como DOS exposiciones distintas, así que la ventana del
+  // motor se llena con dos días reales en vez de cuatro y la tendencia, el
+  // e1RM y las señales de meseta se calculan sobre una historia falsa.
+  const yaSembrado = await prisma.workoutSession.count({
+    where: { notes: { startsWith: DEMO_MARKER } },
+  });
+  if (yaSembrado > 0) {
+    console.error(
+      `Ya hay ${yaSembrado} sesiones de demo en esta base de datos.\n` +
+        "Bórralas antes con: SEED_DEMO=1 pnpm seed:demo -- --clear",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const realSessions = await prisma.workoutSession.count({
     where: {
       status: "COMPLETED",

@@ -1,5 +1,11 @@
 # Recovery Engine — especificación v1.0
 
+> ## ⚠️ NO IMPLEMENTADO
+>
+> Este documento describe un motor de recuperación separado (`src/core/engines/recovery/`) que **no existe**. Lo que sí existe es el motor de fatiga de F3.3 (`src/core/training/fatigue.ts`), documentado en `TRAINING_ENGINE.md §1e`, que calcula sus propias señales a partir de los chips de sesión.
+>
+> Ojo con una diferencia de fondo: este documento propone **imputar 3 (neutro)** cuando falta una señal. La regla vigente desde F3.2c es la contraria — **lo que no se registró no se imputa nunca**.
+
 Motor puro determinista e independiente (`src/core/engines/recovery/`, F3). Produce **señales estructuradas**, jamás un "recovery score" numérico pseudocientífico. Training Engine y Nutrition Engine consumen su salida; Coach AI (F6) la usa para explicar relaciones, nunca la calcula.
 
 ## Inputs

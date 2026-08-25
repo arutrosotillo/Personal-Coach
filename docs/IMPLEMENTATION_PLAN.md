@@ -26,7 +26,7 @@ Fases pequeñas y verificables. Regla: la app es completamente utilizable al fin
 - Next.js 16 + TS estricto + Tailwind 4 + shadcn/ui + Prisma 7/SQLite + Zod + RHF + Vitest + Playwright + Prettier; scripts `dev/build/lint/typecheck/test/test:e2e/db:*/check`.
 - Schema completo de entidades centrales (sin tablas de IA — decisión en DATA_MODEL.md), migración inicial, seed idempotente (16 grupos, ~50 ejercicios con variantes y contribuciones).
 - Onboarding de 8 pasos con validación Zod cliente+servidor y creación transaccional (perfil, objetivo, preferencias, target nutricional inicial, programa inicial con su `AlgorithmDecision`).
-- Generador de programa inicial determinista en `src/core/program/` (reglas simples: 3d full body, 4d torso/pierna, 5d T/P+especialización, 6d PPL×2; sesgo moderado Tier A; respeta equipamiento/tiempo/exclusiones/molestias).
+- Generador de programa inicial determinista en `src/core/program/` (reglas simples: 3d full body, 4d torso/pierna, 5d T/P+especialización, 6d PPL×2; el usuario elige sus prioridades; respeta equipamiento/tiempo/exclusiones/molestias).
 - UI: layout mobile-first dark, bottom nav, dashboard (estados pendiente/completado), página de programa, ajustes básicos; futuras funciones marcadas sin botones muertos.
 - Tests de F1 (TEST_PLAN.md §F1) + 1 E2E.
 
@@ -34,7 +34,7 @@ Fases pequeñas y verificables. Regla: la app es completamente utilizable al fin
 
 ## F2 — Entrenamientos y registro de series
 
-Biblioteca con filtros y ficha; programa editable; pantalla de ejecución (<3 s/serie: filas pre-rellenadas, steppers con `loadStepKg`, RIR chips, completar=1 tap + temporizador con vibración, optimistic UI + TanStack Query, autosave/reanudar); feedback post-sesión (3 chips + 2 opcionales); historial. Aceptación: E2E de sesión completa; sesión interrumpida recuperable.
+Biblioteca con filtros y ficha; programa editable; pantalla de ejecución (<3 s/serie: filas pre-rellenadas, steppers con `loadStepKg`, RIR chips, completar=1 tap + temporizador con vibración, optimistic UI con `useTransition` + server actions, autosave/reanudar); feedback post-sesión (3 chips + 2 opcionales); historial. Aceptación: E2E de sesión completa; sesión interrumpida recuperable.
 
 ## F3 — Motores de entrenamiento y recuperación
 

@@ -32,7 +32,7 @@ export default async function DashboardPage() {
             Empezar — crear mi plan
           </Button>
           <p className="text-muted-foreground text-xs">
-            ~4 minutos. Tus datos no salen de tu ordenador.
+            ~4 minutos. Se guarda todo en tu ordenador.
           </p>
         </div>
       </AppShell>

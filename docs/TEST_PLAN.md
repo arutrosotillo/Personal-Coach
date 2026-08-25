@@ -12,7 +12,7 @@ Principio: los motores son funciones puras `(inputs) → { valor, explicación, 
 
 ### F1 (actual)
 
-- Unit: schemas Zod del onboarding (válidos/inválidos, límites), `core/dates.ts` (medianoche, DST Europe/Madrid, timezone del perfil), generador de programa inicial (división correcta por días 2–6, respeto de equipamiento, exclusiones y molestias, sesgo Tier A presente, piernas no ignoradas, presupuesto de tiempo, determinismo: mismo input → mismo output).
+- Unit: schemas Zod del onboarding (válidos/inválidos, límites), `core/dates.ts` (medianoche, DST Europe/Madrid, timezone del perfil), generador de programa inicial (división correcta por días 2–6, respeto de equipamiento, exclusiones y molestias, las prioridades que el usuario elija suben el volumen de esos grupos, piernas no ignoradas, presupuesto de tiempo, determinismo: mismo input → mismo output).
 - Integración: seed idempotente (2 ejecuciones → mismos conteos, sin duplicados); onboarding transaccional (crea perfil+objetivo+preferencias+programa de una vez; input inválido → 0 escrituras; re-ejecutar onboarding no crea segundo perfil activo; datos incompletos válidos aceptados).
 - E2E: usuario nuevo → onboarding completo → dashboard con objetivo y programa → recarga → persiste.
 

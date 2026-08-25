@@ -92,7 +92,8 @@ export function RecoveryCard({ fatigue }: { fatigue: FatigueAssessment }) {
 
         {fatigue.decision !== "INSUFFICIENT_DATA" ? (
           <p className="text-muted-foreground mt-3 text-xs">
-            {fatigue.numbers.sessionsInWindow} sesiones en{" "}
+            {fatigue.numbers.sessionsInWindow}{" "}
+            {fatigue.numbers.sessionsInWindow === 1 ? "sesión" : "sesiones"} en{" "}
             {fatigue.numbers.windowDays} días ·{" "}
             {CONFIDENCE_LABEL[fatigue.confidence]}
           </p>

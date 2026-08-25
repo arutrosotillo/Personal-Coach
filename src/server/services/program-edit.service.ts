@@ -110,6 +110,19 @@ export async function removeTemplateExercise(
 ) {
   const te = await assertTemplateExerciseOwned(profileId, templateExerciseId);
   await prisma.$transaction(async (tx) => {
+    // Un día no puede quedarse sin ejercicios. Si se vacía, sigue apareciendo
+    // como entrenable: se puede empezar una sesión de 0 ejercicios, terminarla
+    // sin registrar nada, y esa sesión fantasma marca el día como hecho y
+    // puede convertirse en el ancla desde la que se cuentan las semanas del
+    // mesociclo. El plan de F3.1 ya lo daba por bloqueado; no lo estaba.
+    const quedan = await tx.templateExercise.count({
+      where: { templateId: te.templateId },
+    });
+    if (quedan <= 1) {
+      throw new Error(
+        "Un día necesita al menos un ejercicio. Quita el día entero si no lo quieres.",
+      );
+    }
     await tx.templateExercise.delete({ where: { id: te.id } });
     const rest = await tx.templateExercise.findMany({
       where: { templateId: te.templateId },

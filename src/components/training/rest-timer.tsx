@@ -50,7 +50,7 @@ export function RestTimer({
           type="button"
           variant="secondary"
           size="sm"
-          className="min-h-9"
+          className="min-h-11"
           onClick={() => onAdd(30_000)}
         >
           +30 s
@@ -59,7 +59,7 @@ export function RestTimer({
           type="button"
           variant="secondary"
           size="sm"
-          className="min-h-9"
+          className="min-h-11"
           onClick={onSkip}
         >
           {done ? "Cerrar" : "Omitir"}
