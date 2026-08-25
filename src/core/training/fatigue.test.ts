@@ -173,9 +173,12 @@ describe("D · rendimiento cae + fatiga alta → recomendación con números", (
     expect(r.objectiveScore).toBeGreaterThanOrEqual(
       FATIGUE.MIN_OBJECTIVE_SCORE,
     );
+    // La explicación LARGA (la que consume Coach AI) conserva los números.
     expect(r.explanation).toMatch(/2 ejercicios/);
     expect(r.explanation).toMatch(/fatiga ≥4\/5 en 3 de las últimas 4/);
-    expect(r.explanation).toMatch(/No la aplico: la decides tú/i);
+    // El titular que se enseña en pantalla es corto y no repite cada señal.
+    expect(r.headline).toMatch(/No la aplico, la decides tú/i);
+    expect(r.headline.length).toBeLessThan(120);
   });
 
   it("el plan recorta VOLUMEN y mantiene la carga", () => {
@@ -216,7 +219,12 @@ describe("E · dolor articular → vía propia, con precedencia", () => {
   });
 
   it("un aviso leve aislado solo se vigila", () => {
-    const r = run([session(12), session(9), session(5), session(2, { jointPain: 3 })]);
+    const r = run([
+      session(12),
+      session(9),
+      session(5),
+      session(2, { jointPain: 3 }),
+    ]);
     expect(r.jointPain.level).toBe("WATCH");
     expect(r.jointPain.message).toMatch(/solo lo vigilo/i);
   });
@@ -269,12 +277,7 @@ describe("F · señales subjetivas solas → NUNCA recomiendan descarga", () => 
       motivation: 1,
     };
     const r = run(
-      [
-        session(12, bad),
-        session(9, bad),
-        session(5, bad),
-        session(2, bad),
-      ],
+      [session(12, bad), session(9, bad), session(5, bad), session(2, bad)],
       [exercise("Press banca"), exercise("Sentadilla")],
     );
     // 2 + 1 + 1 = 4 puntos, todos subjetivos.
@@ -282,7 +285,7 @@ describe("F · señales subjetivas solas → NUNCA recomiendan descarga", () => 
     expect(r.objectiveScore).toBe(0);
     expect(r.decision).toBe("DELOAD_WATCH");
     expect(r.plan).toBeNull();
-    expect(r.explanation).toMatch(/falta evidencia de que el rendimiento/i);
+    expect(r.headline).toMatch(/no basta para recomendarte una descarga/i);
   });
 });
 

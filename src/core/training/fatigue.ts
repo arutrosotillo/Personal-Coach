@@ -90,6 +90,12 @@ export interface DeloadPlan {
 
 export interface FatigueAssessment {
   level: FatigueLevel;
+  /**
+   * Veredicto en una frase, con el recuento de señales. Es lo que se enseña en
+   * pantalla: el detalle numérico de cada señal ya viaja en `signals`, y
+   * repetirlo entero convertía la tarjeta en un muro de texto.
+   */
+  headline: string;
   score: number;
   objectiveScore: number;
   signals: FatigueSignal[];
@@ -187,6 +193,7 @@ export function assessFatigue(
   if (sessions.length < config.MIN_SESSIONS) {
     return {
       level: "INSUFFICIENT_DATA",
+      headline: `Sin datos suficientes: ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} en ${config.WINDOW_DAYS} días.`,
       score: 0,
       objectiveScore: 0,
       signals: [],
@@ -349,17 +356,29 @@ export function assessFatigue(
         }
       : null;
 
-  const explanation =
+  const objectiveCount = signals.filter((s) => s.kind === "OBJECTIVE").length;
+  const otherCount = signals.length - objectiveCount;
+  const tally = `${objectiveCount} ${objectiveCount === 1 ? "señal objetiva" : "señales objetivas"}${otherCount > 0 ? ` y ${otherCount} subjetiva${otherCount === 1 ? "" : "s"}` : ""}`;
+
+  const headline =
     decision === "DELOAD_RECOMMENDED"
-      ? `${signals.map((s) => s.message).join(" ")} Con eso te recomiendo una semana de descarga. No la aplico: la decides tú.`
+      ? `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
       : decision === "DELOAD_WATCH"
-        ? `${signals.map((s) => s.message).join(" ")} No es suficiente para recomendarte una descarga —falta evidencia de que el rendimiento esté cayendo— pero lo estoy vigilando.`
+        ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
         : signals.length > 0
-          ? `${signals.map((s) => s.message).join(" ")} Nada de esto indica fatiga acumulada: sigue con el plan.`
-          : `Sin señales de fatiga acumulada en ${sessions.length} sesiones de los últimos ${config.WINDOW_DAYS} días. Sigue con el plan.`;
+          ? `${tally}, nada que indique fatiga acumulada. Sigue con el plan.`
+          : `Sin señales de fatiga en ${sessions.length} sesiones de ${config.WINDOW_DAYS} días. Sigue con el plan.`;
+
+  // Explicación LARGA con todos los números: la consume Coach AI y el fallback
+  // determinista, no la tarjeta (que ya lista las señales una a una).
+  const explanation =
+    signals.length > 0
+      ? `${signals.map((s) => s.message).join(" ")} ${headline}`
+      : headline;
 
   return {
     level,
+    headline,
     score,
     objectiveScore,
     signals,

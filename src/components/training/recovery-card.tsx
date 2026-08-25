@@ -61,7 +61,7 @@ export function RecoveryCard({ fatigue }: { fatigue: FatigueAssessment }) {
           </p>
         ) : null}
 
-        <p className="text-muted-foreground text-sm">{fatigue.explanation}</p>
+        <p className="text-muted-foreground text-sm">{fatigue.headline}</p>
 
         {fatigue.signals.length > 0 ? (
           <ul className="mt-3 space-y-1">

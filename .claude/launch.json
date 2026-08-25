@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "personal-coach-review",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd /private/tmp/claude-501/-Users-arturosotillobarraca-Developer-personal-Personal-Coach/01e2fd1d-a504-412c-aaa6-dceff3a4ffe4/scratchpad/r4/wt && DATABASE_URL='file:./data/e2e.db' AI_COACH_FAKE=1 OPENAI_API_KEY='' exec ./node_modules/.bin/next dev --port 3211"
+      ],
+      "port": 3211
+    }
+  ]
+}
