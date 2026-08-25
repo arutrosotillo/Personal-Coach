@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "qa",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "set -a; . ./.env; set +a; DATABASE_URL='file:/private/tmp/claude-501/-Users-arturosotillobarraca-Developer-personal-Personal-Coach/01e2fd1d-a504-412c-aaa6-dceff3a4ffe4/scratchpad/qa.db' exec ./node_modules/.bin/next dev --port 3210"],
-      "port": 3210
+      "name": "dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000
     }
   ]
 }
