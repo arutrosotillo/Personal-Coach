@@ -31,6 +31,7 @@ export type FatigueSignalCode =
   | "LOW_PERCEIVED_PERFORMANCE"
   | "LOW_MOTIVATION_SUSTAINED"
   | "SINGLE_LIFT_DECLINE"
+  | "SEVERE_PERFORMANCE_DECLINE"
   | "LONG_ACCUMULATION";
 
 export type JointPainLevel = "NONE" | "WATCH" | "ACTION";
@@ -251,9 +252,21 @@ export function assessFatigue(
     config.DECLINE_MIN_EXERCISES,
     Math.ceil(exercises.length * config.DECLINE_FRACTION),
   );
+  // El peso escala con la FRACCIÓN afectada. Era plano: valía lo mismo que
+  // cayeran 2 de 8 ejercicios que los 8 de 8, y como el tope objetivo quedaba
+  // en 3 y el umbral de recomendación es 5, a quien el motor le había bajado la
+  // carga en TODOS los levantamientos se le decía "lo vigilo" si no rellenaba
+  // los chips — que son opcionales. La decisión no puede depender de un dato
+  // opcional y subjetivo cuando el rendimiento medido ya está gritando.
+  // Hacen falta las DOS cosas: una fracción alta y un número mínimo. Solo con
+  // la fracción, 2 de 2 ejercicios seguidos ya era "colapso"; con un catálogo
+  // pequeño eso pasa constantemente.
+  const declineWidespread =
+    regressed.length >= config.SEVERE_DECLINE_MIN_EXERCISES &&
+    regressed.length / exercises.length >= config.SEVERE_DECLINE_FRACTION;
   if (regressed.length >= declineThreshold) {
     add(
-      "PERFORMANCE_DECLINE",
+      declineWidespread ? "SEVERE_PERFORMANCE_DECLINE" : "PERFORMANCE_DECLINE",
       "OBJECTIVE",
       `El rendimiento ha caído en ${regressed.length} de ${exercises.length} ejercicios (${namesOf(regressed)}): el motor ha tenido que bajar la carga, o llevas varias sesiones sin alcanzar el rango.`,
       { ejercicios: regressed.length, total: exercises.length },
@@ -422,14 +435,21 @@ export function assessFatigue(
         : `, ${objectiveCount === 1 ? "una de ellas" : `${objectiveCount} de ellas`} de rendimiento medido`
   }`;
 
+  // "Sigue con el plan" no se dice si hay dolor articular accionable: el
+  // titular no miraba el dolor y quedaba justo encima de un aviso rojo que
+  // manda retirar el ejercicio y consultar con un profesional.
+  const sigueConElPlan =
+    jointPainLevel === "ACTION"
+      ? " Pero atento al aviso de dolor de abajo."
+      : " Sigue con el plan.";
   const headline =
     decision === "DELOAD_RECOMMENDED"
       ? `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
       : decision === "DELOAD_WATCH"
         ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
         : signals.length > 0
-          ? `${tally}, nada que indique fatiga acumulada. Sigue con el plan.`
-          : `Sin señales de fatiga en ${sessions.length} sesiones de ${config.WINDOW_DAYS} días. Sigue con el plan.`;
+          ? `${tally}, nada que indique fatiga acumulada.${sigueConElPlan}`
+          : `Sin señales de fatiga en ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} de ${config.WINDOW_DAYS} días.${sigueConElPlan}`;
 
   // Explicación LARGA con todos los números: la consume Coach AI y el fallback
   // determinista, no la tarjeta (que ya lista las señales una a una).

@@ -221,6 +221,13 @@ function summarize(
   // Esfuerzo MAYOR del prescrito: RIR muy por debajo del objetivo, o fallo
   // absoluto cuando la prescripción pedía reserva. El RIR ausente NO cuenta:
   // no saber no es evidencia ni a favor ni en contra.
+  //
+  // El umbral del fallo es `>= 2` A PROPÓSITO, no por descuido: con objetivo 1
+  // la cláusula cancelaría exactamente la banda de ±1 y dejaría la zona muerta
+  // intacta para todos los aislamientos. El fallo voluntario en un aislamiento
+  // tiene poco coste de fatiga y el RIR se estima MEJOR cerca del fallo, así
+  // que no hay motivo para frenar. (docs/TRAINING_ENGINE.md decía "≥ 1"; el
+  // documento estaba desactualizado respecto al código, al test y a /science.)
   const harder = knownRir.some(
     (r) => r < rx.targetRir - config.RIR_BAND || (r === 0 && rx.targetRir >= 2),
   );
@@ -506,12 +513,40 @@ export function suggestProgression(
   // = se paró lejos, eso no es un problema de carga).
   const notSandbagging = (s: ExposureSummary) =>
     s.minKnownRir === null || s.minKnownRir <= targetRir + config.RIR_BAND;
+
+  /**
+   * ¿Es esta exposición la PRIMERA a una carga recién subida, quedándose solo
+   * un poco por debajo del rango?
+   *
+   * Al subir tras cerrar el rango al fallo, el motor acepta aterrizar 1–2 reps
+   * por debajo del mínimo y se lo dice al usuario por escrito ("es normal justo
+   * después de subir"). Las reglas de bajada no sabían nada de esa promesa, así
+   * que castigaban al usuario por cumplir exactamente lo prescrito: subía a 50,
+   * hacía las 4 reps que le pidieron, y a la segunda sesión el motor lo
+   * devolvía a 45. Y vuelta a empezar — un ciclo de tres sesiones que no
+   * terminaba nunca.
+   */
+  const justRaised = (s: ExposureSummary, index: number): boolean => {
+    const previousExposure = usable[index - 1];
+    return (
+      previousExposure !== undefined &&
+      previousExposure.weight > 0 &&
+      s.weight > previousExposure.weight &&
+      // Solo si la subida se GANÓ cerrando el rango: ahí es donde el motor
+      // promete por escrito que quedarse algo corto es normal. Si la exposición
+      // anterior ya estaba por debajo del rango, fallar de nuevo al peso
+      // siguiente sí es motivo para bajar.
+      previousExposure.rangeClosed &&
+      s.medianReps >= repRangeMin - config.ACCEPTABLE_SHORTFALL_REPS
+    );
+  };
   const underRun: ExposureSummary[] = [];
   let underRef = last.weight;
   for (let i = usable.length - 1; i >= 0; i--) {
     const s = usable[i];
     if (s.weight > underRef) break; // ya había bajado por su cuenta
     if (s.medianReps >= repRangeMin || !notSandbagging(s)) break;
+    if (justRaised(s, i)) break; // el motor pidió esas reps; no las castiga
     const newer = underRun[0];
     if (newer && gapBreaks(s, newer)) break;
     underRun.unshift(s);
@@ -747,6 +782,10 @@ export function suggestProgression(
       return done({
         action: "HOLD",
         reasonCode: "MIXED_LOADS",
+        // `maxWeight`, no la mediana: un "sube" jamás puede acabar proponiendo
+        // menos de lo que el usuario ya movió. Ojo — esto es una REFERENCIA,
+        // no una prescripción para las tres series; por eso la UI no deja
+        // aplicar esta sugerencia de un toque (ver `session-runner`).
         suggestedWeightKg: last.maxWeight,
         suggestedReps: repRangeMax,
         setTargets,

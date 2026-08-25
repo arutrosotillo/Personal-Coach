@@ -187,3 +187,50 @@ describe("veto de recuperación (COACH_PHILOSOPHY §2)", () => {
     );
   });
 });
+
+describe("un mal día tras haberse recuperado no es una caída", () => {
+  /** 85 falla → el motor baja a 82,5 → reconstruye hasta 8/8/8 → un mal día. */
+  const recuperado = variant("Press banca", [
+    { localDate: addDays(TODAY, -28), sets: sets(85, [5, 5, 5], 0) },
+    { localDate: addDays(TODAY, -21), sets: sets(82.5, [7, 7, 7]) },
+    { localDate: addDays(TODAY, -14), sets: sets(82.5, [8, 8, 8]) },
+    { localDate: addDays(TODAY, -7), sets: sets(82.5, [8, 8, 8]) },
+    { localDate: addDays(TODAY, -2), sets: sets(82.5, [5, 5, 5], 0) },
+  ]);
+
+  it("no cuenta como regresión, aunque el peso siga por debajo del máximo", () => {
+    // `walkedBack` mira si el peso actual está por debajo del máximo de la
+    // ventana, y aquí lo está (82,5 < 85). Pero el usuario ya había
+    // reconstruido: lo de hoy es un mal día, no una caída.
+    const r = analyzeTraining(context([recuperado]));
+    expect(r.variants[0].suggestion.reasonCode).toBe(
+      "ONE_OFF_UNDERPERFORMANCE",
+    );
+    expect(r.variants[0].regressed).toBe(false);
+  });
+
+  it("y con dos ejercicios así NO se recomienda una descarga", () => {
+    // El caso completo: era `DELOAD_RECOMMENDED` con un mensaje que decía "el
+    // motor ha tenido que bajar la carga" cuando el motor acababa de decir
+    // exactamente lo contrario en la pantalla de al lado.
+    const otro = {
+      ...recuperado,
+      variantId: "Sentadilla",
+      exerciseName: "Sentadilla",
+    };
+    const r = analyzeTraining(context([recuperado, otro], sessions()));
+    expect(r.fatigue.decision).not.toBe("DELOAD_RECOMMENDED");
+  });
+
+  it("pero si nunca llegó a reconstruir, sí lo es", () => {
+    const nuncaRecuperado = variant("Press banca", [
+      { localDate: addDays(TODAY, -21), sets: sets(85, [8, 8, 8]) },
+      { localDate: addDays(TODAY, -14), sets: sets(85, [4, 4, 4], 0) },
+      { localDate: addDays(TODAY, -7), sets: sets(85, [4, 4, 3], 0) },
+      { localDate: addDays(TODAY, -2), sets: sets(80, [5, 5, 4], 0) },
+    ]);
+    expect(
+      analyzeTraining(context([nuncaRecuperado])).variants[0].regressed,
+    ).toBe(true);
+  });
+});

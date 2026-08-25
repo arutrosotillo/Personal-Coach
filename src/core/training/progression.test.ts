@@ -909,3 +909,56 @@ describe("12 · un parón hace incomparables dos exposiciones", () => {
     );
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("13 · el motor no castiga lo que él mismo pidió", () => {
+  it("cumplir un objetivo por debajo del rango tras subir no cuenta como fallo", () => {
+    // Al subir tras cerrar el rango al fallo, el motor acepta aterrizar 1–2
+    // reps por debajo del mínimo y lo dice por escrito ("es normal justo
+    // después de subir"). Las reglas de bajada no lo sabían: el usuario subía
+    // a 50, hacía las 4 reps que le habían pedido, y a la segunda sesión el
+    // motor lo devolvía a 45. Y vuelta a empezar, cada tres sesiones, sin fin.
+    const rx = { repRangeMin: 5, repRangeMax: 8, loadStepKg: 5 };
+    const subida = run(
+      [s(45, [9, 8, 8], [0, 1, 1]), s(45, [9, 8, 8], [0, 1, 1])],
+      rx,
+    );
+    expect(subida.action).toBe("INCREASE_LOAD");
+    expect(subida.suggestedWeightKg).toBe(50);
+    expect(subida.setTargets).toEqual([4, 4, 4]); // por debajo del mínimo, a propósito
+    expect(subida.explanation).toMatch(/es normal justo después de subir/i);
+
+    const cumple = run(
+      [
+        s(45, [9, 8, 8], [0, 1, 1]),
+        s(45, [9, 8, 8], [0, 1, 1]),
+        s(50, [4, 4, 4], 0),
+        s(50, [4, 4, 4], 0),
+      ],
+      rx,
+    );
+    expect(cumple.action).not.toBe("DECREASE_LOAD");
+    expect(cumple.suggestedWeightKg).toBe(50);
+  });
+
+  it("pero si de verdad se atasca por debajo, acaba bajando", () => {
+    const rx = { repRangeMin: 5, repRangeMax: 8, loadStepKg: 5 };
+    const atascado = run(
+      [
+        s(45, [9, 8, 8], [0, 1, 1]),
+        s(45, [9, 8, 8], [0, 1, 1]),
+        ...[0, 1, 2].map(() => s(50, [4, 4, 4], 0)),
+      ],
+      rx,
+    );
+    expect(atascado.action).toBe("DECREASE_LOAD");
+  });
+
+  it("y fallar, subir igualmente y volver a fallar SÍ baja (la subida no se ganó)", () => {
+    // La exención solo vale cuando la subida se ganó cerrando el rango. Aquí
+    // la exposición previa ya estaba por debajo, así que no hay promesa que
+    // respetar.
+    const r = run([s(80, [5, 4, 4], 2), s(82.5, [5, 4, 4], 2)]);
+    expect(r.action).toBe("DECREASE_LOAD");
+  });
+});

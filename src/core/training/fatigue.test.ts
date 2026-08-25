@@ -548,3 +548,48 @@ describe("K · regresiones de revisión", () => {
     expect(Object.keys(r.plan!)).not.toContain("rirIncrease");
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("L · calibración: ni un mal día basta, ni el colapso pasa desapercibido", () => {
+  it("el colapso medido recomienda descarga aunque no haya un solo chip", () => {
+    // Peso plano: caer en 2 de 8 valía lo mismo que caer en 8 de 8, y el tope
+    // objetivo (3) no llegaba al umbral (5). Quien no rellena los chips
+    // —opcionales— podía tener el motor bajándole la carga en todos los
+    // levantamientos y recibir "lo vigilo".
+    const todos = ["Press", "Sentadilla", "Remo", "Peso muerto"].map((n) =>
+      exercise(n, { regressed: true }),
+    );
+    const r = run(NORMAL, todos);
+    expect(r.signals.map((s) => s.code)).toContain(
+      "SEVERE_PERFORMANCE_DECLINE",
+    );
+    expect(r.objectiveScore).toBeGreaterThanOrEqual(
+      FATIGUE.MIN_OBJECTIVE_SCORE,
+    );
+    expect(r.decision).toBe("DELOAD_RECOMMENDED");
+  });
+
+  it("una minoría en caída sigue pesando lo de siempre", () => {
+    const pocos = ["Press", "Sentadilla", "Remo", "Peso muerto"].map((n, i) =>
+      exercise(n, { regressed: i < 2 }),
+    );
+    const r = run(NORMAL, pocos);
+    expect(r.signals.map((s) => s.code)).toContain("PERFORMANCE_DECLINE");
+    expect(r.decision).not.toBe("DELOAD_RECOMMENDED");
+  });
+
+  it("con dolor accionable el titular NO dice 'sigue con el plan'", () => {
+    const r = run(
+      [
+        session(12, { jointPain: 5 }),
+        session(9, { jointPain: 5 }),
+        session(5),
+        session(2),
+      ],
+      [exercise("Press"), exercise("Sentadilla")],
+    );
+    expect(r.jointPain.level).toBe("ACTION");
+    expect(r.headline).not.toMatch(/Sigue con el plan/i);
+    expect(r.headline).toMatch(/aviso de dolor/i);
+  });
+});

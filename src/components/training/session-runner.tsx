@@ -529,8 +529,18 @@ function SuggestionBadge({
   onApply: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  /**
+   * Con cargas mezcladas (serie top + descargas, o series ascendentes) el
+   * `suggestedWeightKg` es el peso MÁS ALTO que ya moviste: una referencia para
+   * que el motor no te proponga menos, NO una prescripción para las tres
+   * series. Aplicarlo de un toque escribía 3×100 a quien había hecho
+   * 1×100 + 2×70. La explicación sigue disponible; lo que se retira es el
+   * atajo que la malinterpreta.
+   */
   const canApply =
-    suggestion.suggestedWeightKg != null && suggestion.action !== "START";
+    suggestion.suggestedWeightKg != null &&
+    suggestion.action !== "START" &&
+    !suggestion.signals.some((x) => x.code === "MIXED_LOADS");
   const tentative = suggestion.confidence !== "HIGH";
 
   const explanationId = `sug-why-${suggestion.reasonCode}`;

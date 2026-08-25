@@ -391,7 +391,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
         summary:
           "Las señales objetivas (rendimiento medido) pesan más que los chips subjetivos. Recomendar una descarga exige al menos una señal objetiva: tres días seguidos sintiéndote mal no bastan.",
         detail:
-          "Objetivas (rendimiento medido): caída en varios ejercicios (3 pts), un solo ejercicio en caída (1), meseta generalizada (2). Conductual: sesiones acortadas repetidas (2). Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas seguidas sin parar (1). Se recomienda con ≥5 puntos y ≥2 de ellos objetivos. Acortar sesiones NO cuenta como objetiva: correlaciona con la fatiga, pero también con la agenda.",
+          "Objetivas (rendimiento medido): caída en varios ejercicios (3 pts; 5 si afecta a la mitad o más), un solo ejercicio en caída (1), meseta generalizada (2). Conductual: sesiones acortadas repetidas (2). Subjetivas: fatiga ≥4/5 repetida (2), rendimiento percibido bajo (1), motivación baja (1). Calendario: ≥8 semanas seguidas sin parar (1). Se recomienda con ≥5 puntos y ≥2 de ellos objetivos. Acortar sesiones NO cuenta como objetiva: correlaciona con la fatiga, pero también con la agenda.",
         evidence: "HEURISTIC",
         citations: ["coleman2024"],
       },

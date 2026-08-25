@@ -269,6 +269,8 @@ export const FATIGUE = {
   /** Puntos por señal. Objetivas pesan más que subjetivas. */
   WEIGHTS: {
     PERFORMANCE_DECLINE: 3,
+    /** La misma señal cuando afecta a la MITAD o más de tus ejercicios. */
+    SEVERE_PERFORMANCE_DECLINE: 5,
     WIDESPREAD_PLATEAU: 2,
     SESSION_COMPLETION_DROP: 2,
     HIGH_FATIGUE_SUSTAINED: 2,
@@ -293,6 +295,9 @@ export const FATIGUE = {
    */
   DECLINE_MIN_EXERCISES: 2,
   DECLINE_FRACTION: 0.25,
+  /** A partir de esta fracción de ejercicios en caída, la señal pesa más. */
+  SEVERE_DECLINE_FRACTION: 0.5,
+  SEVERE_DECLINE_MIN_EXERCISES: 3,
   /** Fracción de ejercicios en meseta para contar WIDESPREAD_PLATEAU. */
   PLATEAU_FRACTION: 0.5,
   /** Sesiones con feedback malo repetido (de las últimas `RECENT_SESSIONS`). */

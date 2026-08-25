@@ -121,10 +121,33 @@ function workWeight(exposure: ContextExposure): number | null {
  * propiedad que hace falta: un mal día no mueve la carga, así que no puede
  * disparar esto. Solo lo dispara una bajada que el motor ya ejecutó.
  */
+/**
+ * Códigos con los que el motor ya ha dicho "esto NO es accionable": un mal día
+ * suelto, una carga que parece un error de tecleo, media sesión. Si el motor no
+ * actúa sobre ellos, la tarjeta de recuperación tampoco puede tratarlos como
+ * caída del rendimiento.
+ */
+const NOT_ACTIONABLE = new Set([
+  "ONE_OFF_UNDERPERFORMANCE",
+  "ATYPICAL_LOAD_DROP",
+  "SESSION_INCOMPLETE",
+]);
+
 function walkedBack(
   exposures: ContextExposure[],
   suggestion: ProgressionSuggestion,
 ): boolean {
+  // Cuando el motor ha declarado la ÚLTIMA exposición no accionable (un mal
+  // día, un peso que parece un error de tecleo, media sesión), se juzga sin
+  // ella. Si no, `walkedBack` reintroducía por la puerta de atrás lo que
+  // `REGRESSION_CODES` sacó por la de delante: un único mal día tras una
+  // bajada ya consolidada volvía a producir "el rendimiento ha caído" —con un
+  // mensaje falso y confianza media-alta— mientras la pantalla de sesión decía
+  // "no cambio nada por una sesión". Descartar el dato en vez de la variante
+  // entera conserva el caso opuesto: si el peso ya venía bajado y las
+  // exposiciones ANTERIORES también estaban por debajo, sigue siendo una
+  // caída real.
+  const considered = exposures;
   // Si el motor ya está pidiendo avanzar (más carga o más reps), el ejercicio
   // está reconstruyendo, no cayendo. Bajar una vez de más y volver a subir es
   // el funcionamiento normal de la doble progresión, no una regresión.
@@ -134,12 +157,50 @@ function walkedBack(
   ) {
     return false;
   }
-  const weights = exposures
+  const weights = considered
     .map(workWeight)
     .filter((w): w is number => w !== null);
   if (weights.length < 2) return false;
   const current = weights[weights.length - 1];
   return current > 0 && current < Math.max(...weights);
+}
+
+/**
+ * ¿Este ejercicio ha ido hacia atrás, de verdad?
+ *
+ * Cuando la última exposición es un dato que el motor mismo ha declarado no
+ * accionable —un mal día, una carga que parece un error de tecleo, media
+ * sesión— no basta con ignorarla: hay que preguntarse si, sin ella, el
+ * ejercicio venía RECUPERÁNDOSE. Se vuelve a correr el motor sobre el resto del
+ * historial y, si dice "avanza" (subir carga o sumar repeticiones), es que el
+ * usuario ya había reconstruido y lo de hoy fue solo un mal día.
+ *
+ * Sin esto, `walkedBack` reintroducía por la puerta de atrás lo que
+ * `REGRESSION_CODES` sacó por la de delante: un único mal día tras una bajada
+ * ya consolidada producía "el rendimiento ha caído" —con un mensaje falso y
+ * confianza media-alta— mientras la pantalla de sesión decía, a la vez, "no
+ * cambio nada por una sesión".
+ */
+function hasRegressed(
+  v: ContextVariant,
+  suggestion: ProgressionSuggestion,
+  todayLocalDate: string,
+): boolean {
+  if (suggestion.action === "DECREASE_LOAD") return true;
+  if (REGRESSION_CODES.has(suggestion.reasonCode)) return true;
+  if (!walkedBack(v.exposures, suggestion)) return false;
+
+  if (NOT_ACTIONABLE.has(suggestion.reasonCode) && v.exposures.length > 1) {
+    const sinHoy = suggestProgression({
+      prescription: v.prescription,
+      history: v.exposures.slice(0, -1),
+      todayLocalDate,
+    });
+    if (sinHoy.action === "INCREASE_LOAD" || sinHoy.action === "ADD_REP") {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
@@ -158,10 +219,7 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
       suggestion,
       // Una regresión "de verdad": el motor bajó la carga, o lleva varias
       // exposiciones sin alcanzar el rango. Un mal día suelto no cuenta.
-      regressed:
-        suggestion.action === "DECREASE_LOAD" ||
-        REGRESSION_CODES.has(suggestion.reasonCode) ||
-        walkedBack(v.exposures, suggestion),
+      regressed: hasRegressed(v, suggestion, context.todayLocalDate),
       plateaued: suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
     };
   });
