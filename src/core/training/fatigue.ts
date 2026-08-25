@@ -410,7 +410,6 @@ export function assessFatigue(
       : null;
 
   const objectiveCount = signals.filter((s) => s.kind === "OBJECTIVE").length;
-  const otherCount = signals.length - objectiveCount;
   // "objetiva / no objetiva" obligaba al usuario a saber qué significan esas
   // etiquetas. Se cuentan señales (que puede contar él mismo en la lista de
   // abajo) y se nombra la categoría por lo que es: rendimiento medido.
