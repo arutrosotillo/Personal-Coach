@@ -42,23 +42,13 @@ export default async function TrainPage() {
   return (
     <AppShell>
       <h1 className="mb-1 text-2xl font-semibold">Entrenar</h1>
+      {/* Sin "de 6": nada ocurre al llegar a la semana 6 —el mesociclo no
+          avanza ni se cierra solo—, así que un contador con final implicaba una
+          periodización que no existe. La referencia del bloque vive en
+          /program, que es donde hay sitio para explicarla. */}
       <p className="text-muted-foreground mb-4 text-sm">
         {overview.programName} · Semana{" "}
         <span className="tnum">{overview.weekNumber}</span>
-        {/* Pasar del plan es un estado normal hoy: nada cierra el mesociclo
-            todavía (eso es F3.4). Decir "semana 9 de 6" parecería un error. */}
-        {overview.weekNumber <= overview.weeksPlanned ? (
-          <>
-            {" de "}
-            <span className="tnum">{overview.weeksPlanned}</span>
-          </>
-        ) : (
-          <>
-            {" · plan de "}
-            <span className="tnum">{overview.weeksPlanned}</span>
-            {" semanas cumplido"}
-          </>
-        )}
       </p>
 
       {overview.active ? (

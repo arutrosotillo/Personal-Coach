@@ -63,14 +63,21 @@ export default async function ProgramPage() {
   return (
     <AppShell>
       <h1 className="mb-1 text-2xl font-semibold">{program.name}</h1>
+      {/* `Mesocycle` es hoy un contenedor, no una periodización: se crea una
+          vez con `status: "PLANNED"` y `weeksPlanned: 6`, y NADIE lo actualiza
+          jamás. Decía "planificado" para siempre y sugería que en la semana 6
+          pasaba algo. No pasa nada: el bloque no se cierra solo, la semana 7
+          es como la 6, y los ejercicios y series solo los cambias tú. */}
       <p className="text-muted-foreground mb-4 text-sm">
-        <span className="tnum">{program.daysPerWeek}</span> días/semana ·
-        Mesociclo 1 (<span className="tnum">{mesocycle.weeksPlanned}</span>{" "}
-        semanas,{" "}
-        {mesocycle.status === "PLANNED"
-          ? "planificado"
-          : mesocycle.status.toLowerCase()}
-        )
+        <span className="tnum">{program.daysPerWeek}</span> días/semana · Bloque
+        de entrenamiento · referencia inicial{" "}
+        <span className="tnum">{mesocycle.weeksPlanned}</span> semanas
+      </p>
+      <p className="text-muted-foreground mb-4 text-xs">
+        Esa referencia es orientativa: el bloque no se cierra solo al llegar a
+        las <span className="tnum">{mesocycle.weeksPlanned}</span> semanas. Las
+        cargas y repeticiones se ajustan sesión a sesión; los ejercicios, los
+        días y las series solo cambian si los cambias tú.
       </p>
 
       {rationale ? (
