@@ -1,6 +1,14 @@
 # Personal Coach en el iPhone — auditoría, decisión y plan
 
-> **Estado**: plan aprobado pendiente. Nada implementado.
+> **Estado**: SUPERSEDIDO en parte. El requisito cambió el 2026-08-26: la app
+> NO puede depender del Mac, así que Mac + Tailscale deja de ser arquitectura
+> del producto y queda solo como herramienta de desarrollo. La fase IPHONE.0
+> de este documento no se ejecuta.
+>
+> La arquitectura elegida (Vercel + Neon + contraseña única + PWA) se mantiene
+> y ya está implementada en su mayor parte. El runbook operativo vivo es
+> **`docs/CLOUD_DEPLOYMENT.md`**; este documento se conserva por el análisis y
+> las alternativas descartadas.
 > **Motor de entrenamiento CONGELADO**: ninguna fase de este documento toca
 > `src/core/training/**`, `src/core/program/**`, `src/core/science/**` ni la
 > filosofía. Si una fase parece necesitar tocarlos, está mal planteada.
