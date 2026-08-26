@@ -247,13 +247,23 @@ async function accumulationWeeks(
       where: {
         status: "COMPLETED",
         weekKind: "DELOAD",
+        // Cota superior, igual que la consulta de sesiones: sin ella, una
+        // sesión con fecha por delante del "hoy" evaluado dejaba el ancla en
+        // el futuro y el contador salía NEGATIVO — y un número negativo nunca
+        // alcanza el umbral, así que la señal de calendario se apagaba para
+        // siempre.
+        localDate: { lte: todayLocalDate },
         mesocycle: { program: scope },
       },
       orderBy: { localDate: "desc" },
       select: { localDate: true },
     }),
     prisma.workoutSession.findMany({
-      where: { status: "COMPLETED", mesocycle: { program: scope } },
+      where: {
+        status: "COMPLETED",
+        localDate: { lte: todayLocalDate },
+        mesocycle: { program: scope },
+      },
       orderBy: { localDate: "asc" },
       select: { localDate: true },
       distinct: ["localDate"],
@@ -286,5 +296,5 @@ async function accumulationWeeks(
   const sinceLast = diffDays(dates[dates.length - 1].localDate, todayLocalDate);
   if (sinceLast >= FATIGUE.ACCUMULATION_RESET_GAP_DAYS) return 0;
 
-  return Math.floor(diffDays(anchor, todayLocalDate) / 7);
+  return Math.max(0, Math.floor(diffDays(anchor, todayLocalDate) / 7));
 }

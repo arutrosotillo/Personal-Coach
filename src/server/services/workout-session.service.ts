@@ -392,33 +392,49 @@ async function isExecutedDeload(
     return false;
   }
 
-  const { WINDOW_DAYS, COOLDOWN_DAYS } = FATIGUE.DELOAD_DETECTION;
-  const desde = addDays(session.localDate, -WINDOW_DAYS);
+  const { WINDOW_DAYS, EXTENSION_DAYS, COOLDOWN_DAYS } =
+    FATIGUE.DELOAD_DETECTION;
+  const deloadsEntre = (desde: string, hasta: string) =>
+    tx.workoutSession.count({
+      where: {
+        status: "COMPLETED",
+        weekKind: "DELOAD",
+        localDate: { gte: desde, lte: hasta },
+        mesocycle: { program: { profileId } },
+      },
+    });
 
-  // 4 · ¿vienes de otra descarga reciente? Entonces esto no es una descarga:
-  // es tu forma habitual de entrenar.
-  const anteriores = await tx.workoutSession.count({
-    where: {
-      status: "COMPLETED",
-      weekKind: "DELOAD",
-      localDate: { gte: addDays(session.localDate, -COOLDOWN_DAYS), lt: desde },
-      mesocycle: { program: { profileId } },
-    },
-  });
-  if (anteriores > 0) return false;
+  // 4a · ¿es otra sesión de la MISMA tanda? Hace falta preguntarlo porque el
+  // veredicto baja en cuanto recortas: sin esto solo se marcaría la primera
+  // sesión de la semana y las otras dos contarían como acortadas.
+  //
+  // La tanda se mide en SESIONES, no en días: ninguna ventana de días separa
+  // "el viernes" de "el lunes siguiente", pero una descarga son como mucho las
+  // sesiones que entrenas en una semana. Pasadas esas, hace falta que el motor
+  // siga recomendándola.
+  const mismaTanda = await deloadsEntre(
+    addDays(session.localDate, -WINDOW_DAYS),
+    session.localDate,
+  );
+  const porSemana =
+    (
+      await tx.trainingProgram.findFirst({
+        where: { profileId, isActive: true, deletedAt: null },
+        select: { daysPerWeek: true },
+      })
+    )?.daysPerWeek ?? 3;
+  if (mismaTanda > 0 && mismaTanda < porSemana) return true;
 
-  // Una descarga son varias sesiones seguidas. Si ya hay una marcada en la
-  // ventana, el resto de la tanda también cuenta: si no, solo se marcaría la
-  // primera, porque al recortar el veredicto baja y deja de recomendarla.
-  const enCurso = await tx.workoutSession.count({
-    where: {
-      status: "COMPLETED",
-      weekKind: "DELOAD",
-      localDate: { gte: desde, lte: session.localDate },
-      mesocycle: { program: { profileId } },
-    },
-  });
-  return enCurso > 0 || recomendada;
+  // 4b · Si el motor ya no la recomienda, esto no es una descarga.
+  if (!recomendada) return false;
+
+  // 4c · Alargarla mientras SIGUE recomendada, sí. Empezar otra al mes de la
+  // anterior, no: eso ya no es descargar, es entrenar siempre a media sesión.
+  const reciente = await deloadsEntre(
+    addDays(session.localDate, -COOLDOWN_DAYS),
+    addDays(session.localDate, -EXTENSION_DAYS),
+  );
+  return reciente === 0;
 }
 
 /**

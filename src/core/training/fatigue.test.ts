@@ -651,3 +651,36 @@ describe("M · conciencia de descarga", () => {
     expect(r.headline).toMatch(/Te recomiendo una semana de descarga/i);
   });
 });
+
+describe("N · el titular de descarga no sobrevive a su semana", () => {
+  const DURO = [
+    session(20, { fatigue: 5, perceivedPerformance: 2 }),
+    session(17, { fatigue: 5, perceivedPerformance: 2 }),
+    session(14, { fatigue: 5, perceivedPerformance: 2 }),
+  ];
+  const EJ = [
+    exercise("Press", { regressed: true }),
+    exercise("Sentadilla", { regressed: true }),
+    exercise("Remo"),
+  ];
+
+  it("mientras la haces, lo dice", () => {
+    const r = run(
+      [...DURO, session(2, { completionRate: 0.5, deload: true })],
+      EJ,
+    );
+    expect(r.headline).toMatch(/Estás haciendo la descarga/i);
+  });
+
+  it("pero una semana después ya no", () => {
+    // Con la descarga terminada, seguir diciendo "sigue así el resto de la
+    // semana" invita a alargarla sin motivo.
+    const r = run(
+      [...DURO, session(9, { completionRate: 0.5, deload: true })],
+      EJ,
+    );
+    if (r.decision === "DELOAD_RECOMMENDED") {
+      expect(r.headline).not.toMatch(/Estás haciendo la descarga/i);
+    }
+  });
+});

@@ -452,7 +452,13 @@ export function assessFatigue(
   // ¿Está el usuario HACIENDO ya la descarga? Si su última sesión se registró
   // como descarga, seguir diciéndole "te recomiendo una semana de descarga" es
   // insistir en algo que ya está haciendo. No es falso, pero no ayuda.
-  const enDescarga = sessions.at(-1)?.deload === true;
+  // Acotado a la semana: mirar solo "la última sesión fue descarga" hacía que
+  // el titular siguiera diciendo "sigue así el resto de la semana" el domingo
+  // siguiente, con la descarga ya terminada — y eso invita a alargarla.
+  const ultima = sessions.at(-1);
+  const enDescarga =
+    ultima?.deload === true &&
+    diffDays(ultima.localDate, input.todayLocalDate) < 7;
   const headline =
     decision === "DELOAD_RECOMMENDED"
       ? enDescarga

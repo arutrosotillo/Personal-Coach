@@ -358,15 +358,28 @@ export const FATIGUE = {
      * registraba como descarga y reiniciaba diez semanas de contador.
      */
     MIN_EXERCISE_FRACTION: 0.5,
-    /** Días hacia atrás que agrupan las sesiones de una misma descarga. */
-    WINDOW_DAYS: 6,
     /**
-     * Una descarga es UNA semana, no un régimen. Si ya hubo una en este plazo
-     * (fuera de la ventana actual), no se marca otra: sin este freno, quien
+     * Días hacia atrás en los que se buscan las sesiones de una MISMA tanda.
+     * El corte real no es este número sino el de sesiones por semana del
+     * programa: ninguna ventana de días separa "el viernes" del "lunes
+     * siguiente", pero una descarga son como mucho las sesiones de una semana.
+     */
+    WINDOW_DAYS: 10,
+    /**
+     * Hasta aquí, seguir recortando con la descarga TODAVÍA recomendada cuenta
+     * como alargarla. Si la fatiga no se resuelve en una semana, extenderla es
+     * razonable y sigue siendo obedecer: cortar el reconocimiento ahí dejaba
+     * las sesiones cortas de la segunda semana contando como evidencia a favor
+     * de la misma descarga que las había causado.
+     */
+    EXTENSION_DAYS: 14,
+    /**
+     * Pero una descarga no es un modo de vida. Pasada la extensión hace falta
+     * entrenar de verdad antes de que otra cuente: sin este freno, quien
      * entrena siempre a media sesión se auto-certificaba indefinidamente y la
      * señal de sesiones acortadas —justo la que debería sonar— desaparecía.
      */
-    COOLDOWN_DAYS: 21,
+    COOLDOWN_DAYS: 28,
     /** Sesiones marcadas que hacen falta para reiniciar la acumulación. */
     MIN_SESSIONS_TO_RESET: 2,
   },
