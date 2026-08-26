@@ -338,6 +338,39 @@ export const FATIGUE = {
    * cese total, que es justo donde Coleman et al. encontraron pérdida de
    * fuerza. Mantener los kilos es lo que preserva las adaptaciones.
    */
+  /**
+   * Detección de una descarga EJECUTADA (`weekKind: "DELOAD"`).
+   *
+   * El umbral se deriva de la PRESCRIPCIÓN, no de `COMPLETION_LOW`. El plan
+   * pide la mitad de las series, pero redondeando hacia arriba la ratio real es
+   * `ceil(n/2)/n` — 0,67 con 3 series y 1,0 con ejercicios de 1 serie. Con el
+   * 70 % el margen era de tres centésimas, y una plantilla con un par de
+   * accesorios a 1 serie dejaba la descarga SIN detectar. El punto medio entre
+   * "media sesión" y "sesión completa" da aire por los dos lados.
+   */
+  DELOAD_DETECTION: {
+    /** Ratio máximo de series registradas para considerarlo un recorte. */
+    MAX_FRACTION: 0.75,
+    /**
+     * Suelo de abandono: una descarga es una sesión ENTERA más suave, así que
+     * hay que haber pasado por al menos la mitad de los ejercicios. Sin esto,
+     * una serie de dieciocho —el perfil de quien se larga del gimnasio— se
+     * registraba como descarga y reiniciaba diez semanas de contador.
+     */
+    MIN_EXERCISE_FRACTION: 0.5,
+    /** Días hacia atrás que agrupan las sesiones de una misma descarga. */
+    WINDOW_DAYS: 6,
+    /**
+     * Una descarga es UNA semana, no un régimen. Si ya hubo una en este plazo
+     * (fuera de la ventana actual), no se marca otra: sin este freno, quien
+     * entrena siempre a media sesión se auto-certificaba indefinidamente y la
+     * señal de sesiones acortadas —justo la que debería sonar— desaparecía.
+     */
+    COOLDOWN_DAYS: 21,
+    /** Sesiones marcadas que hacen falta para reiniciar la acumulación. */
+    MIN_SESSIONS_TO_RESET: 2,
+  },
+
   DELOAD_PLAN: {
     /** Fracción de las series habituales. Mantener carga, recortar volumen. */
     SET_FRACTION: 0.5,

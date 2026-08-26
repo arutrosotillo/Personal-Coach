@@ -1,7 +1,7 @@
 import { FATIGUE } from "@/core/config/training-config";
 import {
+  addDays,
   DEFAULT_TIMEZONE,
-  isoWeekOf,
   toLocalDate,
   weekIndexSince,
 } from "@/core/dates";
@@ -289,71 +289,136 @@ export async function substituteExercise(
 /**
  * ¿Esta sesión es una DESCARGA ejecutada?
  *
- * Hacen falta las DOS cosas, y por eso no basta con mirar los datos:
+ * Hacen falta CUATRO cosas, y cada una tapa una forma distinta de colarse:
  *
- *   1. que el motor estuviera recomendando una descarga cuando entraste al
- *      gimnasio (se consulta ANTES de marcar la sesión como completada, así
- *      que esta sesión no se cuenta a sí misma); y
- *   2. que de verdad hayas recortado — series registradas por debajo del
- *      `COMPLETION_LOW` de lo que ese día prescribe la PLANTILLA.
+ *   1. que el motor recomendara descarga cuando entraste al gimnasio (se
+ *      consulta antes de marcar la sesión completada, así que no se cuenta a
+ *      sí misma);
+ *   2. que hayas pasado por la sesión ENTERA, no que te largaras: series en al
+ *      menos la mitad de los ejercicios. Sin esto, una serie de dieciocho —con
+ *      fatiga 5/5, el perfil de quien abandona— se registraba como descarga;
+ *   3. que de verdad hayas recortado (`MAX_FRACTION` de lo prescrito);
+ *   4. que no vengas de otra descarga reciente. Una descarga es UNA semana, no
+ *      un régimen: sin este freno, quien entrena siempre a media sesión se
+ *      auto-certificaba indefinidamente y la señal de sesiones acortadas —la
+ *      que debería estar sonando— desaparecía para siempre.
  *
- * Se compara contra la plantilla y no contra `plannedSets` de la sesión porque
- * "− Quitar serie" baja las previstas: quien recorta así saldría al 100 % de
- * cumplimiento y nunca se detectaría el recorte.
- *
- * Exigir las dos condiciones es lo que impide que una sesión suelta y floja se
- * disfrace de descarga: sin recomendación previa, un día corto es un día corto.
- *
- * [HEURÍSTICA]: el umbral de "recortada" reutiliza `COMPLETION_LOW` (70 %), que
- * es el mismo que define una sesión acortada en el motor de fatiga. La
- * prescripción es la mitad de las series, así que hay margen de sobra.
+ * El denominador sale del SNAPSHOT de la sesión, no de la plantilla viva:
+ * `max(plannedSets, baseSets)` sobre los ejercicios que la sesión tenía al
+ * arrancar. Con la plantilla viva fallaba en los dos sentidos — quien hace la
+ * descarga recortando series en `/program` no se detectaba (acababa de bajar el
+ * denominador), y quien entrenaba completo y luego AÑADÍA ejercicios al día
+ * veía su sesión completa registrada como descarga.
  */
 async function isExecutedDeload(
   tx: Prisma.TransactionClient,
-  session: {
-    id: string;
-    templateId: string | null;
-    localDate: string;
-    mesocycleId: string;
-  },
+  session: { id: string; localDate: string },
   profileId: string,
   recomendada: boolean,
 ): Promise<boolean> {
-  const logged = await tx.setLog.count({
-    where: {
-      setType: "WORKING",
-      completed: true,
-      // Mismo criterio que `completionRate` en el repositorio: una serie a 0
-      // repeticiones no es trabajo registrado.
-      reps: { gt: 0 },
-      workoutExercise: { sessionId: session.id },
+  const ejercicios = await tx.workoutExercise.findMany({
+    where: { sessionId: session.id },
+    select: {
+      plannedSets: true,
+      exerciseVariantId: true,
+      _count: {
+        select: {
+          setLogs: {
+            where: { setType: "WORKING", completed: true, reps: { gt: 0 } },
+          },
+        },
+      },
     },
   });
-  if (logged === 0) return false;
+  if (ejercicios.length === 0) return false;
 
-  const plantilla = session.templateId
-    ? await tx.templateExercise.aggregate({
-        where: { templateId: session.templateId },
-        _sum: { baseSets: true },
+  // 2 · ¿pasaste por la sesión, o te fuiste?
+  const conSeries = ejercicios.filter((e) => e._count.setLogs > 0).length;
+  const minimoEjercicios = Math.ceil(
+    ejercicios.length * FATIGUE.DELOAD_DETECTION.MIN_EXERCISE_FRACTION,
+  );
+  if (conSeries < minimoEjercicios) return false;
+
+  // 3 · ¿recortaste? La referencia es "lo que este día es NORMALMENTE para ti":
+  // el mayor volumen previsto entre la propia sesión, la plantilla actual y las
+  // últimas veces que entrenaste ese mismo día.
+  //
+  // Hacen falta las tres. Solo con la sesión, "− Quitar serie" baja el
+  // denominador y sales al 100 %. Solo con la plantilla, quien hace la descarga
+  // recortando series en `/program` ANTES de entrenar tampoco se detecta
+  // (acaba de bajar el denominador él mismo). El histórico de ese día es lo
+  // único inmune a las dos cosas — y si algún día reduces tu programa de
+  // verdad, en pocas semanas esa referencia baja sola y deja de contar como
+  // descarga, que es justo lo correcto: ese pasa a ser tu volumen normal.
+  const { templateId } = await tx.workoutSession.findUniqueOrThrow({
+    where: { id: session.id },
+    select: { templateId: true },
+  });
+  const base = templateId
+    ? await tx.templateExercise.findMany({
+        where: { templateId },
+        select: { exerciseVariantId: true, baseSets: true },
       })
-    : null;
-  const prescritas = plantilla?._sum.baseSets ?? 0;
+    : [];
+  const baseByVariant = new Map(
+    base.map((b) => [b.exerciseVariantId, b.baseSets]),
+  );
+  const enLaSesion = ejercicios.reduce(
+    (t, e) =>
+      t + Math.max(e.plannedSets, baseByVariant.get(e.exerciseVariantId) ?? 0),
+    0,
+  );
+  const previas = templateId
+    ? await tx.workoutSession.findMany({
+        where: {
+          templateId,
+          status: "COMPLETED",
+          weekKind: "ACCUMULATION",
+          localDate: { lt: session.localDate },
+          mesocycle: { program: { profileId } },
+        },
+        orderBy: { localDate: "desc" },
+        take: 4,
+        select: { exercises: { select: { plannedSets: true } } },
+      })
+    : [];
+  const habitual = previas.map((x) =>
+    x.exercises.reduce((t, e) => t + e.plannedSets, 0),
+  );
+  const prescritas = Math.max(enLaSesion, ...habitual, 0);
+  const registradas = ejercicios.reduce((t, e) => t + e._count.setLogs, 0);
   if (prescritas === 0) return false;
-  if (logged / prescritas >= FATIGUE.COMPLETION_LOW) return false;
+  if (registradas / prescritas > FATIGUE.DELOAD_DETECTION.MAX_FRACTION) {
+    return false;
+  }
 
-  // Una descarga son varias sesiones. Si ya hay una marcada esta semana ISO, el
-  // resto de la semana también cuenta: si no, solo se marcaría la primera
-  // (al recortar, el veredicto de fatiga baja y deja de recomendar descarga).
-  const desdeElLunes = isoWeekOf(session.localDate).weekStartDate;
-  const yaEnDescarga = await tx.workoutSession.count({
+  const { WINDOW_DAYS, COOLDOWN_DAYS } = FATIGUE.DELOAD_DETECTION;
+  const desde = addDays(session.localDate, -WINDOW_DAYS);
+
+  // 4 · ¿vienes de otra descarga reciente? Entonces esto no es una descarga:
+  // es tu forma habitual de entrenar.
+  const anteriores = await tx.workoutSession.count({
     where: {
       status: "COMPLETED",
       weekKind: "DELOAD",
-      localDate: { gte: desdeElLunes, lte: session.localDate },
+      localDate: { gte: addDays(session.localDate, -COOLDOWN_DAYS), lt: desde },
       mesocycle: { program: { profileId } },
     },
   });
-  return yaEnDescarga > 0 || recomendada;
+  if (anteriores > 0) return false;
+
+  // Una descarga son varias sesiones seguidas. Si ya hay una marcada en la
+  // ventana, el resto de la tanda también cuenta: si no, solo se marcaría la
+  // primera, porque al recortar el veredicto baja y deja de recomendarla.
+  const enCurso = await tx.workoutSession.count({
+    where: {
+      status: "COMPLETED",
+      weekKind: "DELOAD",
+      localDate: { gte: desde, lte: session.localDate },
+      mesocycle: { program: { profileId } },
+    },
+  });
+  return enCurso > 0 || recomendada;
 }
 
 /**
@@ -394,7 +459,19 @@ export async function finishSession(
   // 167 % del volumen podía acabar grabada como descarga ejecutada, que es
   // justo lo que le dice al motor de fatiga "obedeció, no le penalices".
   const { count, deload } = await prisma.$transaction(async (tx) => {
-    const deload = await isExecutedDeload(tx, session, profileId, recomendada);
+    // Si algo falla decidiendo esto, la sesión se cierra igual: no saber si
+    // fue una descarga no puede impedirte terminar el entrenamiento ni
+    // perderte el feedback.
+    const deload = await isExecutedDeload(
+      tx,
+      session,
+      profileId,
+      recomendada,
+    ).catch((e) => {
+      if (process.env.DELOAD_DEBUG === "1")
+        console.error("isExecutedDeload:", e);
+      return false;
+    });
     const { count } = await tx.workoutSession.updateMany({
       where: {
         id: sessionId,

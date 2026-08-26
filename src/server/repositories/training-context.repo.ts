@@ -169,6 +169,19 @@ export async function getTrainingContext(
         plannedSets: we.plannedSets,
         loadStepKg: we.exerciseVariant.loadStepKg,
       };
+      // Las sesiones de DESCARGA no entran como exposición: hiciste menos
+      // series a propósito, así que no dicen nada nuevo sobre tu capacidad a
+      // esa carga. Si entraran, obedecer la descarga se penalizaba OTRA VEZ,
+      // ahora en el motor de progresión: media sesión dispara
+      // `SESSION_INCOMPLETE` ("repite y complétala", de la sesión que la propia
+      // app te mandó recortar) y las repeticiones totales partidas por la mitad
+      // fabrican `PLATEAU_SIGNAL` → `WIDESPREAD_PLATEAU` → dos puntos
+      // OBJETIVOS que sostienen la SIGUIENTE recomendación de descarga. Es
+      // decir: hacer la descarga alimentaba el bucle que pide otra.
+      //
+      // Los datos NO se pierden: las series, cargas, reps y RIR siguen en la
+      // base, en el historial y en el e1RM (`getVariantHistory` los lee).
+      if (session.weekKind === "DELOAD") continue;
       entry.exposures.push({
         localDate: session.localDate,
         sets: we.setLogs.map((x) => ({
@@ -229,8 +242,8 @@ async function accumulationWeeks(
   todayLocalDate: string,
 ): Promise<number | null> {
   const scope = PROGRAM_SCOPE(profileId);
-  const [lastDeload, dates] = await Promise.all([
-    prisma.workoutSession.findFirst({
+  const [deloadDates, dates] = await Promise.all([
+    prisma.workoutSession.findMany({
       where: {
         status: "COMPLETED",
         weekKind: "DELOAD",
@@ -253,8 +266,21 @@ async function accumulationWeeks(
     const gap = diffDays(dates[i - 1].localDate, dates[i].localDate);
     if (gap >= FATIGUE.ACCUMULATION_RESET_GAP_DAYS) anchor = dates[i].localDate;
   }
-  if (lastDeload && lastDeload.localDate > anchor)
-    anchor = lastDeload.localDate;
+  // Hace falta una TANDA de sesiones marcadas, no una suelta: una sola sesión
+  // etiquetada no puede borrar diez semanas de acumulación.
+  if (deloadDates.length > 0) {
+    const ultima = deloadDates[0].localDate;
+    const tanda = deloadDates.filter(
+      (d) =>
+        diffDays(d.localDate, ultima) < FATIGUE.DELOAD_DETECTION.WINDOW_DAYS,
+    );
+    if (
+      tanda.length >= FATIGUE.DELOAD_DETECTION.MIN_SESSIONS_TO_RESET &&
+      ultima > anchor
+    ) {
+      anchor = ultima;
+    }
+  }
 
   // Un parón que sigue abierto hoy también cuenta.
   const sinceLast = diffDays(dates[dates.length - 1].localDate, todayLocalDate);

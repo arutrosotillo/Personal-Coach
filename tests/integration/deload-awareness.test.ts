@@ -287,3 +287,124 @@ describe("contrato de guardado: nada se pierde en silencio", () => {
     ).toBe(antes);
   });
 });
+
+describe("la decisión de descarga no se puede colar por una carrera", () => {
+  it("las series registradas mientras el motor decide SÍ cuentan", async () => {
+    // El recuento de series y la escritura iban separados, así que todo lo que
+    // se registrara en medio quedaba fuera de la decisión: una sesión al 167 %
+    // del volumen podía acabar grabada como descarga ejecutada — justo lo que
+    // le dice al motor "obedeció, no le penalices".
+    const dia = addDays(LUNES, 105);
+    const started = await startOrResumeSession(
+      profileId,
+      templateIds[0],
+      new Date(`${dia}T18:00:00Z`),
+    );
+    const id = started.sessionId!;
+    const session = (await getExecutionSession(profileId, id))!;
+
+    // Arranca recortado (parecería descarga)…
+    for (const ex of session.exercises) {
+      await logSet(profileId, {
+        workoutExerciseId: ex.id,
+        setNumber: 1,
+        setType: "WORKING",
+        weightKg: 60,
+        reps: ex.repRangeMin + 1,
+        rir: 2,
+      });
+    }
+    // …pero antes de cerrar, completa el volumen entero.
+    for (const ex of session.exercises) {
+      for (let i = 2; i <= ex.plannedSets; i++) {
+        await logSet(profileId, {
+          workoutExerciseId: ex.id,
+          setNumber: i,
+          setType: "WORKING",
+          weightKg: 60,
+          reps: ex.repRangeMin + 1,
+          rir: 2,
+        });
+      }
+    }
+    const result = await finishSession(
+      profileId,
+      id,
+      BIEN,
+      new Date(`${dia}T19:00:00Z`),
+    );
+    expect(result.deload).toBe(false);
+    const row = await prisma.workoutSession.findUniqueOrThrow({
+      where: { id },
+      select: { weekKind: true },
+    });
+    expect(row.weekKind).toBe("ACCUMULATION");
+  });
+
+  it("descartar una sesión ya terminada avisa en vez de decir que sí", async () => {
+    const { SessionAlreadyCompletedError, discardSession } =
+      await import("@/server/services/workout-session.service");
+    const cerrada = await prisma.workoutSession.findFirstOrThrow({
+      where: { status: "COMPLETED" },
+      select: { id: true },
+    });
+    await expect(discardSession(profileId, cerrada.id)).rejects.toBeInstanceOf(
+      SessionAlreadyCompletedError,
+    );
+    expect(
+      (
+        await prisma.workoutSession.findUniqueOrThrow({
+          where: { id: cerrada.id },
+          select: { status: true },
+        })
+      ).status,
+    ).toBe("COMPLETED");
+  });
+});
+
+describe("lo que NO puede colarse como descarga", () => {
+  it("abandonar la sesión no es descargar, y no borra el contador", async () => {
+    // Una serie de dieciocho, con la peor valoración posible, es el perfil de
+    // quien se larga del gimnasio — no el de quien descarga. Se registraba
+    // como descarga ejecutada y reiniciaba diez semanas de contador.
+    const dia = addDays(LUNES, 112);
+    const antes = (await analisis(dia)).context.weeksSinceDeload;
+
+    const started = await startOrResumeSession(
+      profileId,
+      templateIds[0],
+      new Date(`${dia}T18:00:00Z`),
+    );
+    const session = (await getExecutionSession(profileId, started.sessionId!))!;
+    await logSet(profileId, {
+      workoutExerciseId: session.exercises[0].id,
+      setNumber: 1,
+      setType: "WORKING",
+      weightKg: 60,
+      reps: 8,
+      rir: 2,
+    });
+    const r = await finishSession(
+      profileId,
+      started.sessionId!,
+      MAL,
+      new Date(`${dia}T19:00:00Z`),
+    );
+    expect(r.deload).toBe(false);
+    expect((await analisis(dia)).context.weeksSinceDeload).toBe(antes);
+  });
+
+  it("y entrenar siempre a media sesión no es descargar cada semana", async () => {
+    // Sin freno, mientras el motor siguiera recomendando descarga TODA sesión
+    // corta se auto-certificaba: el usuario acababa con la mitad del historial
+    // marcado como descarga, el contador clavado en cero y la señal de sesiones
+    // acortadas —justo la que debería sonar— desaparecida para siempre.
+    const marcadas = await prisma.workoutSession.count({
+      where: { weekKind: "DELOAD" },
+    });
+    const total = await prisma.workoutSession.count({
+      where: { status: "COMPLETED" },
+    });
+    expect(marcadas).toBeLessThan(total / 2);
+  });
+});
