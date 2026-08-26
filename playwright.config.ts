@@ -22,7 +22,7 @@ export default defineConfig({
     {
       // Prueba la puerta: corre sin sesión, a propósito.
       name: "acceso",
-      testMatch: /auth\.spec\.ts/,
+      testMatch: /(auth|pwa)\.spec\.ts/,
       use: { ...devices["Pixel 7"] },
     },
     {
@@ -33,7 +33,7 @@ export default defineConfig({
     },
     {
       name: "mobile-chrome",
-      testIgnore: /auth\.(spec|setup)\.ts/,
+      testIgnore: /(auth\.(spec|setup)|pwa\.spec)\.ts/,
       use: { ...devices["Pixel 7"], storageState: STORAGE_STATE },
       dependencies: ["setup"],
     },
