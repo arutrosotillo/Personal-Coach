@@ -1,6 +1,6 @@
 # Personal Coach
 
-Aplicación **personal** (un único usuario, sin login, sin nube) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Local-first: todos los datos viven en tu ordenador.
+Aplicación **personal** (un único usuario, sin registro) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Se usa desde el iPhone como PWA; los datos viven en una base PostgreSQL propia.
 
 Estado: **Fase 1** — onboarding, catálogo de ejercicios y programa inicial funcionando. Fases siguientes en `docs/IMPLEMENTATION_PLAN.md`.
 
@@ -8,13 +8,16 @@ Estado: **Fase 1** — onboarding, catálogo de ejercicios y programa inicial fu
 
 - Node.js ≥ 20 (probado con 24)
 - pnpm ≥ 10
+- PostgreSQL 17 en local, para desarrollo y para los tests:
+  `brew install postgresql@17 && brew services start postgresql@17`
 
 ## Puesta en marcha
 
 ```bash
 pnpm install
-cp .env.example .env        # DATABASE_URL apunta a data/app.db
-pnpm db:deploy              # aplica las migraciones (crea data/app.db)
+createdb personal_coach_dev # base de datos local de desarrollo
+cp .env.example .env        # y pon tu usuario de macOS en DATABASE_URL
+pnpm db:deploy              # aplica las migraciones
 pnpm db:seed                # catálogo: 16 grupos, 42 ejercicios (idempotente)
 pnpm dev                    # http://localhost:3000
 ```
@@ -26,20 +29,18 @@ pnpm build
 pnpm start                  # http://localhost:3000
 ```
 
-## Uso desde el móvil (misma red Wi-Fi)
+## Uso desde el móvil
 
-1. Arranca escuchando en la red local: `pnpm start -- -H 0.0.0.0`
-2. Averigua la IP del ordenador: `ipconfig getifaddr en0` (macOS)
-3. En el móvil abre `http://<esa-ip>:3000`
-
-Fuera de tu red local no funciona (decisión del MVP; ver `docs/ARCHITECTURE.md` — offline).
+La app se despliega en la nube y se instala en el iPhone como PWA, sin
+depender de que el ordenador esté encendido. Plan y arquitectura:
+`docs/IPHONE_DEPLOYMENT_PLAN.md`.
 
 ## Tus datos
 
-- Todo se guarda en **`data/app.db`** (SQLite). Las fotos de progreso (Fase 4) irán a `data/photos/`.
+- Todo se guarda en **PostgreSQL** (`DATABASE_URL`). En desarrollo, un Postgres local; en producción, Neon. Las fotos de progreso (Fase 4) necesitarán almacenamiento aparte.
 - `data/` y `exports/` están excluidos de git: **nunca** se suben datos personales.
-- Copia de seguridad manual: copia la carpeta `data/` con la app cerrada.
-- Empezar de cero: borra `data/app.db` y repite `pnpm db:deploy && pnpm db:seed`.
+- Empezar de cero en local: `dropdb personal_coach_dev && createdb personal_coach_dev`
+  y repite `pnpm db:deploy && pnpm db:seed`.
 
 ## Comandos
 

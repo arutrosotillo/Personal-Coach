@@ -7,7 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Personal Coach
 
-App personal (un único usuario, sin login, sin SaaS) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Local-first: Next.js + SQLite en la máquina del usuario, accesible desde el móvil vía LAN como PWA (fase futura).
+App personal (un único usuario, sin registro, sin SaaS) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Next.js + PostgreSQL, desplegada en la nube y usada desde el iPhone como PWA. Un solo perfil: `completeOnboarding` reutiliza siempre el existente.
 
 ## Comandos
 
@@ -16,8 +16,9 @@ pnpm dev                # desarrollo (http://localhost:3000)
 pnpm build && pnpm start
 pnpm lint               # ESLint
 pnpm typecheck          # tsc --noEmit
-pnpm test               # Vitest (unit + integration)
-pnpm test:e2e           # Playwright (perfil móvil, DB e2e separada)
+pnpm test               # Vitest (unit + integration; necesita Postgres local)
+pnpm test:e2e           # Playwright (perfil móvil, DB e2e Postgres separada)
+pnpm db:test:clean      # borra bases de test huérfanas del Postgres local
 pnpm db:generate        # prisma generate
 pnpm db:migrate         # prisma migrate dev
 pnpm db:seed            # seed idempotente (catálogo)
@@ -39,7 +40,7 @@ app/, components/  →  server/actions/  →  server/services/  →  core/  +  s
 
 - **DB siempre métrica** (kg/cm/kcal). Conversión imperial solo en presentación.
 - **Fechas**: timestamps `DateTime` (UTC) para auditoría; días del usuario como `String` `YYYY-MM-DD` (`localDate`) calculados SOLO en `src/core/dates.ts`. Los motores operan sobre `localDate`.
-- **Enums**: SQLite no tiene enums → columnas `String` validadas por Zod. Fuente de verdad: `src/core/enums.ts`.
+- **Enums**: no se usan enums nativos de la base de datos → columnas `String` validadas por Zod, para que cambiarlos no exija migración. Fuente de verdad: `src/core/enums.ts`.
 - **Umbrales y defaults de motores**: solo en `src/core/config/`, nunca hardcodeados en la lógica.
 - **Trazabilidad**: toda `Recommendation` nace 1:1 de una `AlgorithmDecision` (inputs serializados + ruleId + versión del motor) en la misma transacción.
 - **Toda recomendación explica su porqué** con los números usados; confianza en 3 niveles (nunca porcentajes).
@@ -60,7 +61,8 @@ app/, components/  →  server/actions/  →  server/services/  →  core/  +  s
 4. Suelos de seguridad: kcal ≥ max(BMR×0.9, 1500 H / 1200 M) — inviolable.
 5. Registro de comidas por totales + plantillas; sin base de datos de alimentos.
 6. pnpm; Prisma 7 (config en `prisma.config.ts`, client generado en `src/generated/prisma`); Zod 4; shadcn/ui (base-ui); Tailwind 4.
-7. `data/` (DB, fotos) y `exports/` NUNCA en git.
+7. `data/` (fotos) y `exports/` NUNCA en git. La DB es PostgreSQL: local en desarrollo, Neon en producción; `DATABASE_URL` solo server-side.
+8. Los tests de integración y E2E crean y DESTRUYEN bases de datos. Sus helpers solo aceptan hosts locales a propósito: nunca apuntes `TEST_DATABASE_URL` a Neon.
 
 ## Documentación
 

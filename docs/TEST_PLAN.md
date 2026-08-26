@@ -5,7 +5,7 @@ Principio: los motores son funciones puras `(inputs) → { valor, explicación, 
 ## Pirámide
 
 - **Unit (~70 %, Vitest)** — motores y cálculos, colocados junto al código (`src/**/*.test.ts`). Objetivo desde F3: ≥90 % líneas y ramas en `src/core/**` (en F1 se priorizan tests que protegen decisiones reales, sin perseguir cobertura arbitraria).
-- **Integración (~20 %, Vitest, proyecto `integration`)** — server actions completas contra SQLite en archivo temporal por suite (no `:memory:`: Prisma abre varias conexiones). `tests/integration/helpers/test-db.ts` crea la DB, aplica migraciones y la borra.
+- **Integración (~20 %, Vitest, proyecto `integration`)** — server actions completas contra PostgreSQL real. `tests/integration/helpers/test-db.ts` da a cada suite una base de datos propia, clonada de una plantilla ya migrada (`CREATE DATABASE ... TEMPLATE`), y la destruye al terminar. Requiere un Postgres local (`brew services start postgresql@17`). Por seguridad el helper solo acepta hosts locales y solo borra bases con el prefijo `personal_coach_test_`: los tests hacen `DROP DATABASE` y apuntar esto a Neon destruiría datos reales. `pnpm db:test:clean` limpia huérfanas.
 - **E2E (~10 %, Playwright, perfil móvil Pixel 7)** — flujos felices en `tests/e2e/`, con `global-setup.ts` que migra y siembra `data/e2e.db`.
 
 ## Cobertura por fase

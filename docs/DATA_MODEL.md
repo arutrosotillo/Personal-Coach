@@ -5,7 +5,7 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 ## Convenciones
 
 - IDs `cuid()` (portables a Postgres).
-- Columnas "enum" = `String` validado por Zod (`src/core/enums.ts` es la fuente de verdad; SQLite no soporta enums nativos). Al migrar a Postgres pueden promoverse.
+- Columnas "enum" = `String` validado por Zod (`src/core/enums.ts` es la fuente de verdad). Se mantienen como `String` a propósito, también en PostgreSQL: añadir un valor no debe requerir una migración.
 - `localDate` = `String` `YYYY-MM-DD` para días del usuario (único campo autoritativo para unicidad diaria y gráficas); `DateTime` UTC solo para auditoría.
 - DB siempre métrica (kg/cm/kcal).
 - Soft-delete (`deletedAt`) solo en entidades referenciadas por historial (Exercise, ExerciseVariant, plantillas, programas, fotos). Los logs se borran hard (borrar un log es una corrección deliberada).

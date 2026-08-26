@@ -235,7 +235,8 @@ export async function restoreInitialProgram(
     });
     // Las plantillas con historial se conservan (soft-delete). Su `ordinal` se
     // mueve a un valor negativo distinto: @@unique([mesocycleId, ordinal]) NO
-    // excluye filas borradas en SQLite, así que hay que liberar los ordinales
+    // no excluye filas borradas (el @@unique no filtra deletedAt), así que hay
+    // que liberar los ordinales
     // 1..N antes de recrear el plan. El contador arranca POR DEBAJO de todos los
     // ordinales existentes (incluidos días ya soft-borrados por removeDay).
     const minOrd = await tx.workoutTemplate.aggregate({
@@ -470,7 +471,7 @@ export async function reorderDay(
   const other = siblings[swapIdx];
   // Ordinal temporal por debajo de TODOS los existentes (incluidos los días
   // soft-borrados aparcados en negativo): un `-1` fijo colisionaría con un día
-  // borrado que removeDay dejó en -1 (@@unique no filtra deletedAt en SQLite).
+  // borrado que removeDay dejó en -1 (@@unique no filtra deletedAt).
   const { _min } = await prisma.workoutTemplate.aggregate({
     where: { mesocycleId: template.mesocycleId },
     _min: { ordinal: true },

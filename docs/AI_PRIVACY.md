@@ -49,4 +49,4 @@ no se anuncian.
 
 ## Recordatorio del resto de la app (sin IA)
 
-Todo local: SQLite en `data/`, fotos en `data/photos/`, ambos gitignored. Cero trackers, analítica o CDNs; fuentes locales. Test E2E que falla ante cualquier request externo con IA desactivada. Export/import y borrado total en F7.
+Los datos viven en una base PostgreSQL propia del usuario (Postgres local en desarrollo, un proyecto Neon privado en producción), no compartida con nadie. Cero trackers, analítica o CDNs; fuentes locales. Test E2E que falla ante cualquier request externo con IA desactivada. Export/import y borrado total en F7.

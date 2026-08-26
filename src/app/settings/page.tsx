@@ -94,10 +94,9 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent className="text-muted-foreground space-y-2 text-sm">
               <p>
-                Todo se guarda localmente en{" "}
-                <code className="text-foreground">data/app.db</code> (SQLite)
-                dentro de la carpeta del proyecto. Sin cuentas, sin nube, sin
-                analítica.
+                Todo se guarda en tu propia base de datos PostgreSQL, a la que
+                solo accedes tú. Sin cuentas de terceros, sin analítica, sin
+                rastreadores.
               </p>
               <p>
                 {coachReady ? (

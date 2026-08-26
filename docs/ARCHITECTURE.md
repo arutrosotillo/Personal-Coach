@@ -2,7 +2,7 @@
 
 ## Stack
 
-Next.js 16 (App Router) · TypeScript estricto · Tailwind CSS 4 · shadcn/ui · Prisma 7 + SQLite · Zod 4 · React Hook Form · Vitest · Playwright · pnpm. Futuro (fases 5–7): Recharts, Serwist (PWA), TanStack Query (solo pantalla de ejecución).
+Next.js 16 (App Router) · TypeScript estricto · Tailwind CSS 4 · shadcn/ui · Prisma 7 + PostgreSQL (Neon) · Zod 4 · React Hook Form · Vitest · Playwright · pnpm. Futuro (fases 5–7): Recharts, Serwist (PWA), TanStack Query (solo pantalla de ejecución).
 
 Explícitamente evitado: microservicios, Redux, GraphQL, event sourcing, buses de eventos, login en MVP, analítica de terceros, dependencias sin consumidor real.
 
@@ -50,12 +50,12 @@ El servidor corre en la máquina del usuario, así que "sin Internet" funciona p
 
 ## Migración futura a Postgres/Vercel — qué se evita hoy
 
-1. Sin SQL crudo específico de SQLite; agregados complejos en `core` sobre filas leídas o `groupBy` de Prisma.
+1. Sin SQL crudo salvo la introspección de índices en tests; agregados complejos en `core` sobre filas leídas o `groupBy` de Prisma.
 2. Enums como `String` + Zod (promovibles a enums nativos en Postgres).
 3. IDs `cuid()` portables.
 4. Fotos tras interfaz `PhotoStorage` (filesystem hoy, blob storage mañana) — F4.
 5. `src/server/db.ts` único punto de conexión; cambiar provider = 1 línea + baseline de migraciones.
-6. Columnas `Json` (preferencias, snapshots de decisiones, contraindicaciones) se almacenan como TEXT en SQLite: la migración a Postgres requiere cast `TEXT→jsonb` explícito, y cualquier filtrado por contenido JSON se hace hoy en memoria en `core` (nunca con operadores JSON de SQL).
+6. Columnas `Json` (preferencias, snapshots de decisiones, contraindicaciones) son `jsonb`. El filtrado por contenido JSON se hace en memoria en `core`, nunca con operadores JSON de SQL: mantiene la lógica en el dominio y el motor testeable sin base de datos.
 
 ## Decisiones registradas (ADR abreviado)
 

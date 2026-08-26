@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Fuente de verdad de todos los "enums" del dominio.
- * SQLite no soporta enums nativos: las columnas correspondientes son String
+ * Las columnas de enum no son enums nativos de la base de datos: son String
  * y se validan SIEMPRE contra estos schemas en la frontera (actions/repos).
  * Ver docs/DATA_MODEL.md.
  */

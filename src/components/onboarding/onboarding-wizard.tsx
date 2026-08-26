@@ -990,10 +990,11 @@ function ReviewStep({
       </section>
 
       <p className="text-muted-foreground text-xs">
-        Todos los datos se guardan únicamente en tu ordenador (SQLite local). No
-        hay cuentas, ni nube, ni analítica. La única excepción, y solo si tú la
-        activas, es el AI Coach: entonces tu historial de entrenamiento reciente
-        viaja a OpenAI para que lo interprete.
+        Todos los datos se guardan en tu propia base de datos, a la que solo
+        accedes tú. No hay cuentas de terceros, ni analítica, ni rastreadores.
+        La única salida de datos, y solo si tú la activas, es el AI Coach:
+        entonces tu historial de entrenamiento reciente viaja a OpenAI para que
+        lo interprete.
       </p>
     </div>
   );
