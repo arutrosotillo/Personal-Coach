@@ -11,7 +11,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
  * no crea programas ni traza, no toca plantillas/sesiones/snapshots/historial.
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

@@ -1,6 +1,7 @@
 // Personal Coach — modelo de datos (F1).
 // Decisiones y convenciones: docs/DATA_MODEL.md
-// - SQLite no soporta enums: columnas "enum" son String validadas por Zod (src/core/enums.ts).
+// - Las columnas "enum" son String validadas por Zod (src/core/enums.ts), no enums nativos:
+//   la fuente de verdad es src/core/enums.ts y cambiarlos no debe requerir migración.
 // - localDate = String "YYYY-MM-DD" (día del usuario, timezone del perfil); DateTime UTC solo auditoría.
 // - DB siempre en métrico (kg / cm / kcal).
 // - Tablas de Coach AI pospuestas a la migración de Fase 6 (docs/AI_COACH.md).
@@ -11,7 +12,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 // ============ PERFIL, OBJETIVO Y PREFERENCIAS ============

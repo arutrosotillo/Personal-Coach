@@ -16,7 +16,7 @@ import { createTestDatabase } from "./helpers/test-db";
  * y "Hoy toca" no volvía a proponer un entrenamiento jamás.
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

@@ -11,7 +11,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
  * construya desde datos reales y que la IA sea estrictamente READ-ONLY.
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 delete process.env.OPENAI_API_KEY;
 delete process.env.AI_COACH_FAKE;

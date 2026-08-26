@@ -23,7 +23,7 @@ import { createTestDatabase } from "./helpers/test-db";
  * descarga.
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

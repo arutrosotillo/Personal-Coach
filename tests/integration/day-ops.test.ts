@@ -9,7 +9,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 /** Integración Fase 3.1: CRUD/reorder de días (WorkoutTemplate) sobre el programa
  * activo, con la danza de ordinales y el soft-delete de días con sesiones. */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

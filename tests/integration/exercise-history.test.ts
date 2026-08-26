@@ -11,7 +11,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
  * agrupa por sesión el trabajo real. DB temporal real.
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

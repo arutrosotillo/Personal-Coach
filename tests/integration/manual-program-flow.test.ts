@@ -12,7 +12,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
  * conserva las sesiones y el historial por variante (Caso B).
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

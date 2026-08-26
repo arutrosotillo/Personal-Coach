@@ -11,7 +11,7 @@ import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
  * historial real + el snapshot de la sesión, y es EFÍMERA (no escribe en DB).
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");

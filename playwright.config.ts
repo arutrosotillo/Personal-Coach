@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { e2eDatabaseUrl } from "./tests/e2e/db-url";
+
 const PORT = 3100;
 
 export default defineConfig({
@@ -18,14 +20,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // prepare-db resetea/migra/siembra data/e2e.db antes de arrancar el server
+    // prepare-db recrea/migra/siembra la base Postgres E2E antes del server
     // (el webServer de Playwright arranca antes que globalSetup).
     command: `pnpm exec tsx tests/e2e/prepare-db.ts && pnpm dev --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     // Siempre servidor (y DB e2e) frescos: el spec asume base de datos limpia.
     reuseExistingServer: false,
     env: {
-      DATABASE_URL: "file:./data/e2e.db",
+      DATABASE_URL: e2eDatabaseUrl(),
       // Coach AI en modo FALSO: los E2E nunca llaman a OpenAI ni necesitan
       // clave. `OPENAI_API_KEY` se deja vacía a propósito.
       AI_COACH_FAKE: "1",

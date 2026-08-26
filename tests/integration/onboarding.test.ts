@@ -11,7 +11,7 @@ import { createTestDatabase } from "./helpers/test-db";
  * servidor (el singleton de Prisma la lee al crearse).
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 // Imports dinámicos tras fijar el entorno.

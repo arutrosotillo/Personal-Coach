@@ -11,7 +11,7 @@ import { createTestDatabase } from "./helpers/test-db";
  * INITIAL_PROGRAM (por eso es "manual" derivable).
  */
 
-const testDb = createTestDatabase();
+const testDb = await createTestDatabase();
 process.env.DATABASE_URL = testDb.url;
 
 const { prisma } = await import("@/server/db");
