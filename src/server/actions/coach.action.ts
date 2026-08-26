@@ -6,6 +6,7 @@ import {
   coachRequestSchema,
   type CoachRequestInput,
 } from "@/core/schemas/coach";
+import { requireSession } from "@/server/auth/require-session";
 import { askCoach } from "@/server/services/coach.service";
 
 /**
@@ -32,6 +33,7 @@ function overRateLimit(now: number): boolean {
 export async function askCoachAction(
   input: CoachRequestInput,
 ): Promise<CoachResult> {
+  await requireSession();
   const parsed = coachRequestSchema.safeParse(input);
   if (!parsed.success) {
     return {

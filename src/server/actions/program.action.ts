@@ -10,6 +10,7 @@ import {
   templateExerciseEditSchema,
   type TemplateExerciseEdit,
 } from "@/core/schemas/template-edit";
+import { requireSession } from "@/server/auth/require-session";
 import { requireProfileId } from "@/server/repositories/profile.repo";
 import { createManualProgram } from "@/server/services/manual-program.service";
 import {
@@ -48,6 +49,7 @@ export async function createManualProgramAction(
     };
   }
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     const { programId } = await createManualProgram(profileId, parsed.data);
     revalidatePath("/program");
@@ -77,6 +79,7 @@ export async function editTemplateExerciseAction(
         error: parsed.error.issues[0]?.message ?? "Valores inválidos.",
       };
     }
+    await requireSession();
     const profileId = await requireProfileId();
     await editTemplateExercise(profileId, templateExerciseId, parsed.data);
     revalidatePath("/program");
@@ -91,6 +94,7 @@ export async function changeTemplateVariantAction(
   newVariantId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await changeTemplateVariant(profileId, templateExerciseId, newVariantId);
     revalidatePath("/program");
@@ -105,6 +109,7 @@ export async function reorderTemplateExerciseAction(
   direction: "up" | "down",
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await reorderTemplateExercise(profileId, templateExerciseId, direction);
     revalidatePath("/program");
@@ -118,6 +123,7 @@ export async function removeTemplateExerciseAction(
   templateExerciseId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await removeTemplateExercise(profileId, templateExerciseId);
     revalidatePath("/program");
@@ -132,6 +138,7 @@ export async function addTemplateExerciseAction(
   variantId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await addTemplateExercise(profileId, templateId, variantId);
     revalidatePath("/program");
@@ -146,6 +153,7 @@ export async function addDayAction(
   firstVariantId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await addDay(profileId, name, firstVariantId);
     revalidatePath("/program");
@@ -160,6 +168,7 @@ export async function renameDayAction(
   name: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await renameDay(profileId, templateId, name);
     revalidatePath("/program");
@@ -173,6 +182,7 @@ export async function removeDayAction(
   templateId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await removeDay(profileId, templateId);
     revalidatePath("/program");
@@ -192,6 +202,7 @@ export async function reorderDayAction(
   direction: "up" | "down",
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await reorderDay(profileId, templateId, direction);
     revalidatePath("/program");
@@ -205,6 +216,7 @@ export async function reactivateProgramAction(
   programId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await reactivateProgram(profileId, programId);
     revalidatePath("/program");
@@ -223,6 +235,7 @@ export async function reactivateProgramAction(
 
 export async function restoreInitialProgramAction(): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await restoreInitialProgram(profileId);
     revalidatePath("/program");

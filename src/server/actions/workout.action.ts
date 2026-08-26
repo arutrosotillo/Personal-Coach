@@ -9,6 +9,7 @@ import {
   type LogSetInput,
   type SessionFeedbackData,
 } from "@/core/schemas/workout";
+import { requireSession } from "@/server/auth/require-session";
 import { requireProfileId } from "@/server/repositories/profile.repo";
 import {
   getExerciseHistorySummary,
@@ -42,6 +43,7 @@ export async function getExerciseHistoryAction(
   { ok: true; summary: ExerciseHistorySummary } | { ok: false; error: string }
 > {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     const since = addDays(
       toLocalDate(new Date(), DEFAULT_TIMEZONE),
@@ -63,6 +65,7 @@ export async function startSessionAction(
   templateId: string,
 ): Promise<ActionResult & { sessionId?: string }> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     const { sessionId } = await startOrResumeSession(profileId, templateId);
     revalidatePath("/train");
@@ -86,6 +89,7 @@ export async function logSetAction(input: LogSetInput): Promise<ActionResult> {
     };
   }
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await logSet(profileId, parsed.data);
     return { ok: true };
@@ -100,6 +104,7 @@ export async function deleteSetAction(
   setNumber: number,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await deleteSet(profileId, workoutExerciseId, setNumber);
     return { ok: true };
@@ -120,6 +125,7 @@ export async function setPlannedSetsAction(
   plannedSets: number,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await setPlannedSets(profileId, workoutExerciseId, plannedSets);
     return { ok: true };
@@ -134,6 +140,7 @@ export async function substituteExerciseAction(
   newVariantId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await substituteExercise(profileId, workoutExerciseId, newVariantId);
     return { ok: true };
@@ -156,6 +163,7 @@ export async function finishSessionAction(
   if (!parsed.success) return { ok: false, error: "Feedback inválido" };
   let finishedAsDeload = false;
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     const { deload } = await finishSession(profileId, sessionId, parsed.data);
     finishedAsDeload = deload;
@@ -184,6 +192,7 @@ export async function discardSessionAction(
   sessionId: string,
 ): Promise<ActionResult> {
   try {
+    await requireSession();
     const profileId = await requireProfileId();
     await discardSession(profileId, sessionId);
     revalidatePath("/train");

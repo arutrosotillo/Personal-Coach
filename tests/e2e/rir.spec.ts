@@ -69,6 +69,10 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
   await dontKnow(1).click();
   await expect(dontKnow(1)).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Completar" }).first().click();
+  // Esperar a "✓ Hecha" antes de recargar: es la señal de que la escritura
+  // terminó. Recargar antes es una carrera, y perderla no probaría nada sobre
+  // la persistencia.
+  await expect(page.getByRole("button", { name: "✓ Hecha" })).toHaveCount(2);
 
   // ── 5. Persistencia exacta tras recargar ─────────────────────────────────
   await page.reload();
@@ -83,10 +87,16 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
   await expect(rirChip(2, 2)).toHaveAttribute("aria-pressed", "false");
   await page.getByRole("button", { name: /Quitar serie/i }).click();
 
-  // Corregir el RIR de una serie YA completada también se guarda.
+  // Corregir el RIR de una serie YA completada también se guarda. Aquí no hay
+  // un "✓ Hecha" nuevo que esperar (la serie ya estaba completada), así que la
+  // señal es la respuesta de la server action. Dormir 500 ms era una carrera
+  // disfrazada.
+  const guardado = page.waitForResponse(
+    (r) => r.request().method() === "POST" && r.status() < 400,
+  );
   await rirChip(0, 3).click();
   await expect(rirChip(0, 3)).toHaveAttribute("aria-pressed", "true");
-  await page.waitForTimeout(500);
+  await guardado;
   await page.reload();
   await expect(rirChip(0, 3)).toHaveAttribute("aria-pressed", "true");
 

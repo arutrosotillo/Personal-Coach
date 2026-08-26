@@ -4,6 +4,7 @@ import { isCoachConfigured } from "@/ai/config";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { logoutAction } from "@/server/actions/auth.action";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { workActivityLabel } from "@/lib/labels";
 import { getProfileOverview } from "@/server/repositories/profile.repo";
@@ -117,7 +118,7 @@ export default async function SettingsPage() {
                     El AI Coach está desactivado (no hay{" "}
                     <code>OPENAI_API_KEY</code>), así que ahora mismo{" "}
                     <span className="text-foreground">
-                      no sale ni un dato de tu máquina
+                      tus datos no salen hacia ningún tercero
                     </span>
                     . Si lo activas, tu entrenamiento reciente viajará a OpenAI
                     cuando pulses un botón del coach.
@@ -125,8 +126,8 @@ export default async function SettingsPage() {
                 )}
               </p>
               <p>
-                Copia de seguridad manual: copia la carpeta <code>data/</code>{" "}
-                con la app cerrada.
+                Copia de seguridad manual: <code>pnpm db:backup</code> guarda un
+                volcado completo en <code>exports/</code>.
               </p>
               <p className="flex items-center gap-2">
                 <Badge variant="outline">Fase 7</Badge> Exportación JSON/CSV,
@@ -147,6 +148,23 @@ export default async function SettingsPage() {
           </Button>
         </div>
       )}
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle className="text-base">Sesión</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-muted-foreground text-sm">
+            Estás dentro en este dispositivo. La sesión se renueva sola mientras
+            uses la app y caduca a los 90 días sin usarla.
+          </p>
+          <form action={logoutAction}>
+            <Button type="submit" variant="outline" className="min-h-11">
+              Cerrar sesión
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }

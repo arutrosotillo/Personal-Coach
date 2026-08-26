@@ -6,6 +6,7 @@ import {
   onboardingSchema,
   type OnboardingInput,
 } from "@/core/schemas/onboarding";
+import { requireSession } from "@/server/auth/require-session";
 import { completeOnboarding } from "@/server/services/onboarding.service";
 
 export interface OnboardingActionResult {
@@ -18,6 +19,7 @@ export interface OnboardingActionResult {
 export async function submitOnboarding(
   input: OnboardingInput,
 ): Promise<OnboardingActionResult> {
+  await requireSession();
   // Frontera de confianza: SIEMPRE se re-valida en el servidor.
   const parsed = onboardingSchema.safeParse(input);
   if (!parsed.success) {
