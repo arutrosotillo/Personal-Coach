@@ -344,7 +344,10 @@ export function checkResponse(
       warnings,
     };
   }
-  if (PROGRAM_MUTATION.test(text)) {
+  // Vía `matchesAffirmative`: "NO añadas series para compensar" es justo lo
+  // que queremos que diga tras una descarga, y con un `.test()` a secas se
+  // bloqueaba por contener "añad… series".
+  if (matchesAffirmative(PROGRAM_MUTATION, text)) {
     return {
       block: true,
       reason:

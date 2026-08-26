@@ -725,3 +725,39 @@ describe("guardrails · hablar de una descarga no es recetarla", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("guardrails · negarse a cambiar el programa no es cambiarlo", () => {
+  it("'no añadas series para compensar' pasa", async () => {
+    // Es exactamente lo que el coach debe decir tras una descarga. El filtro
+    // de mutación del programa lo bloqueaba por contener "añad… series".
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation:
+            "No añadas series para compensar; la reducción estaba prevista.",
+        }),
+      ),
+      {
+        task: "ASK",
+        analysis: analysis(),
+        profile: PROFILE,
+        question: "¿Recupero el volumen?",
+      },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("pero mandar añadirlas sigue bloqueado", async () => {
+    const result = await runCoach(
+      new FakeCoachProvider(
+        ok({
+          ...GOOD_RESPONSE,
+          recommendation: "Añade 2 series más de press banca cada sesión.",
+        }),
+      ),
+      { task: "WEEKLY", analysis: analysis(), profile: PROFILE },
+    );
+    expect(result.ok).toBe(false);
+  });
+});
