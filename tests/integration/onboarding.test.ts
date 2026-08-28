@@ -4,6 +4,7 @@ import type { OnboardingData } from "@/core/schemas/onboarding";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 
 /**
  * Integración: seed + onboarding transaccional contra una DB real temporal.
@@ -20,6 +21,15 @@ const { runSeed } = await import("../../prisma/seed/run-seed");
 const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
 const workout = await import("@/server/services/workout-session.service");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const VALID: OnboardingData = onboardingSchema.parse({
   sex: "MALE",
@@ -65,6 +75,7 @@ describe("seed", () => {
 describe("completeOnboarding", () => {
   it("crea perfil, objetivo, medición, target, preferencias, programa y trazabilidad en una transacción", async () => {
     const result = await completeOnboarding(
+      await ownerId(),
       VALID,
       new Date("2026-07-14T10:00:00Z"),
     );
@@ -152,6 +163,7 @@ describe("completeOnboarding", () => {
 
   it("re-ejecutar el onboarding NO crea un segundo perfil y archiva objetivo y programa anteriores", async () => {
     const second = await completeOnboarding(
+      await ownerId(),
       { ...VALID, strategy: "MAINTENANCE", daysPerWeek: 3 },
       new Date("2026-07-14T18:00:00Z"),
     );
@@ -194,6 +206,7 @@ describe("completeOnboarding", () => {
       priorityMuscles: [],
     });
     const result = await completeOnboarding(
+      await ownerId(),
       minimal,
       new Date("2026-07-15T08:00:00Z"),
     );
@@ -217,7 +230,9 @@ describe("completeOnboarding", () => {
     const programsBefore = await prisma.trainingProgram.count();
     const decisionsBefore = await prisma.algorithmDecision.count();
 
-    await expect(completeOnboarding(VALID)).rejects.toThrow(/sesión en curso/);
+    await expect(completeOnboarding(await ownerId(), VALID)).rejects.toThrow(
+      /sesión en curso/,
+    );
     expect(await prisma.trainingProgram.count()).toBe(programsBefore);
     expect(await prisma.algorithmDecision.count()).toBe(decisionsBefore);
     expect(

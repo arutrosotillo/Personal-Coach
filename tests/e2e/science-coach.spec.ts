@@ -43,7 +43,7 @@ test("Ciencia: filosofía, etiquetas de evidencia y bibliografía verificada", a
   await expect(page.getByRole("heading", { name: "Coach AI" })).toBeVisible();
 
   // El ejemplo concreto de progresión aparece.
-  await expect(page.getByText(/3×6–8 @2 RIR/).first()).toBeVisible();
+  await expect(page.getByText(/3×6–8 @1 RIR/).first()).toBeVisible();
 
   // Bibliografía: al menos una referencia con DOI y enlace clicable.
   await expect(

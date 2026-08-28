@@ -8,6 +8,12 @@ import {
   e2eAdminUrl,
   e2eDatabaseUrl,
 } from "./db-url";
+import {
+  E2E_DISABLED_PASSWORD,
+  E2E_DISABLED_USERNAME,
+  E2E_PASSWORD,
+  E2E_USERNAME,
+} from "./auth-constants";
 
 /**
  * Prepara una base de datos E2E limpia en PostgreSQL: la recrea desde cero,
@@ -55,6 +61,41 @@ async function main(): Promise<void> {
     env,
     stdio: "inherit",
   });
+
+  await crearCuentasDePrueba(env.DATABASE_URL);
+}
+
+/**
+ * Cuentas de prueba. Se crean aquí y no con `pnpm user:create` porque ese
+ * script pide la contraseña por teclado a propósito.
+ */
+async function crearCuentasDePrueba(connectionString: string): Promise<void> {
+  // Import dinámico: el cliente de Prisma se genera durante el build y este
+  // fichero se ejecuta antes de que arranque el servidor.
+  const { PrismaClient } = await import("../../src/generated/prisma/client");
+  const { PrismaPg } = await import("@prisma/adapter-pg");
+  const { hashPassword } = await import("../../src/server/auth/password");
+
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString }),
+  });
+  try {
+    await prisma.user.create({
+      data: {
+        username: E2E_USERNAME,
+        passwordHash: await hashPassword(E2E_PASSWORD),
+      },
+    });
+    await prisma.user.create({
+      data: {
+        username: E2E_DISABLED_USERNAME,
+        passwordHash: await hashPassword(E2E_DISABLED_PASSWORD),
+        isActive: false,
+      },
+    });
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
 main().catch((error: unknown) => {

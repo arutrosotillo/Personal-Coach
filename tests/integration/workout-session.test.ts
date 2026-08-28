@@ -4,6 +4,7 @@ import type { OnboardingData } from "@/core/schemas/onboarding";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 
 /**
  * Integración Fase 2A: ciclo de vida de una sesión (crear/reanudar, registro
@@ -23,6 +24,15 @@ const session = await import("@/server/services/workout-session.service");
 const programEdit = await import("@/server/services/program-edit.service");
 const { getExecutionSession, listCompletedSessions } =
   await import("@/server/repositories/workout.repo");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const ONBOARDING: OnboardingData = onboardingSchema.parse({
   sex: "MALE",
@@ -46,6 +56,7 @@ let templateIds: string[];
 beforeAll(async () => {
   await runSeed(prisma);
   const result = await completeOnboarding(
+    await ownerId(),
     ONBOARDING,
     new Date("2026-07-14T10:00:00Z"),
   );

@@ -4,6 +4,7 @@ import { addDays } from "@/core/dates";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 
 /**
  * La semana del programa, de punta a punta.
@@ -27,6 +28,15 @@ const { startOrResumeSession, finishSession, logSet } =
   await import("@/server/services/workout-session.service");
 const { getTodayOverview, getExecutionSession } =
   await import("@/server/repositories/workout.repo");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const LUNES = "2026-06-01";
 let profileId: string;
@@ -63,6 +73,7 @@ const overview = (localDate: string) =>
 beforeAll(async () => {
   await runSeed(prisma);
   const result = await completeOnboarding(
+    await ownerId(),
     onboardingSchema.parse({
       sex: "MALE",
       birthDate: "1992-03-10",

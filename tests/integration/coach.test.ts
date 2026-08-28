@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 
 /**
@@ -24,6 +25,15 @@ const { askCoach } = await import("@/server/services/coach.service");
 const { FakeCoachProvider } = await import("@/ai/provider");
 const { seedDemoHistory, clearDemoHistory, DEMO_MARKER } =
   await import("../../prisma/seed/demo-history");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 let profileId: string;
 let mesocycleId: string;
@@ -71,6 +81,7 @@ beforeAll(async () => {
     priorityMuscles: [],
   });
   const result = await completeOnboarding(
+    await ownerId(),
     data,
     new Date("2026-07-01T10:00:00Z"),
   );
@@ -89,7 +100,7 @@ afterAll(async () => {
 
 describe("Coach AI sobre datos reales", () => {
   it("sin API key devuelve NOT_CONFIGURED con instrucciones, sin romper nada", async () => {
-    const result = await askCoach({ task: "WEEKLY" }, null);
+    const result = await askCoach(profileId, { task: "WEEKLY" }, null);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toBe("NOT_CONFIGURED");
@@ -129,6 +140,7 @@ describe("Coach AI sobre datos reales", () => {
     };
 
     const result = await askCoach(
+      profileId,
       { task: "WEEKLY" },
       fake(),
       new Date("2026-08-25T10:00:00Z"),
@@ -148,6 +160,7 @@ describe("Coach AI sobre datos reales", () => {
 
   it("una respuesta con cargas inventadas se bloquea y cae al motor", async () => {
     const result = await askCoach(
+      profileId,
       { task: "WEEKLY" },
       fake(
         JSON.stringify({

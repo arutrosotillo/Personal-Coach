@@ -4,6 +4,7 @@ import { onboardingSchema } from "@/core/schemas/onboarding";
 import { equivalentReps } from "@/core/training/progression";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 
 /**
@@ -23,6 +24,15 @@ const { getExecutionSession } =
 const { buildSuggestions, getExerciseHistorySummary } =
   await import("@/server/services/progression.service");
 const wsService = await import("@/server/services/workout-session.service");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 let profileId: string;
 let mesocycleId: string;
@@ -46,6 +56,7 @@ beforeAll(async () => {
     priorityMuscles: [],
   });
   const result = await completeOnboarding(
+    await ownerId(),
     data,
     new Date("2026-07-14T10:00:00Z"),
   );

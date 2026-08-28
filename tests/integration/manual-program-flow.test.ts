@@ -4,6 +4,7 @@ import { onboardingSchema } from "@/core/schemas/onboarding";
 import type { ManualProgramInput } from "@/core/schemas/manual-program";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 
 /**
@@ -27,6 +28,15 @@ const { buildSuggestions, getExerciseHistorySummary } =
   await import("@/server/services/progression.service");
 const ws = await import("@/server/services/workout-session.service");
 
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
+
 let profileId: string;
 let variantIds: string[];
 let bandVariantId: string;
@@ -48,7 +58,11 @@ beforeAll(async () => {
     balancedProgram: true,
     priorityMuscles: [],
   });
-  const r = await completeOnboarding(data, new Date("2026-07-14T10:00:00Z"));
+  const r = await completeOnboarding(
+    await ownerId(),
+    data,
+    new Date("2026-07-14T10:00:00Z"),
+  );
   profileId = r.profileId;
   // Variantes CON incremento de carga: las que no lo tienen (bandas) progresan
   // solo por repeticiones y se cubren aparte, más abajo.

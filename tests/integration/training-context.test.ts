@@ -4,6 +4,7 @@ import { addDays } from "@/core/dates";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 
 /**
@@ -26,6 +27,15 @@ const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
 const { getTrainingContext } =
   await import("@/server/repositories/training-context.repo");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const TODAY = "2026-08-25";
 
@@ -52,6 +62,7 @@ beforeAll(async () => {
     priorityMuscles: [],
   });
   const result = await completeOnboarding(
+    await ownerId(),
     data,
     new Date("2026-07-14T10:00:00Z"),
   );

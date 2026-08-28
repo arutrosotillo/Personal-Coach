@@ -7,7 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # Personal Coach
 
-App personal (un único usuario, sin registro, sin SaaS) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Next.js + PostgreSQL, desplegada en la nube y usada desde el iPhone como PWA. Un solo perfil: `completeOnboarding` reutiliza siempre el existente.
+App personal multi-usuario ligera (cuentas creadas a mano, sin registro público, sin SaaS) de entrenamiento de hipertrofia, nutrición y seguimiento corporal. Next.js + PostgreSQL, desplegada en la nube y usada desde el iPhone como PWA. Un usuario = un perfil (relación 1:1). `completeOnboarding` reutiliza el perfil DE ESE usuario.
 
 ## Comandos
 
@@ -19,6 +19,7 @@ pnpm typecheck          # tsc --noEmit
 pnpm test               # Vitest (unit + integration; necesita Postgres local)
 pnpm test:e2e           # Playwright (perfil móvil, DB e2e Postgres separada)
 pnpm db:test:clean      # borra bases de test huérfanas del Postgres local
+pnpm user:create        # crear cuenta (list / password / disable / enable / rename)
 pnpm db:generate        # prisma generate
 pnpm db:migrate         # prisma migrate dev
 pnpm db:seed            # seed idempotente (catálogo)

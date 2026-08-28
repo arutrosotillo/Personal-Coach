@@ -66,9 +66,11 @@ En tu Mac, en una terminal:
 openssl rand -base64 32
 ```
 
-Eso es tu `AUTH_SECRET`. Ejecútalo **otra vez** para tener una contraseña
-larga, o inventa una tuya larga: será tu `APP_PASSWORD`, lo único que separa
-tu historial de Internet. Guárdalas en tu gestor de contraseñas.
+Eso es tu `AUTH_SECRET`: firma las cookies de sesión y nunca lo teclearás.
+Guárdalo en tu gestor de contraseñas.
+
+Tu contraseña de acceso NO es una variable de entorno: se guarda hasheada en la
+base de datos y se fija con `pnpm user:create`. Ver §9.
 
 ### 1.4 Variables de entorno en Vercel
 
@@ -76,14 +78,13 @@ tu historial de Internet. Guárdalas en tu gestor de contraseñas.
 aparecer nunca en el cliente: ninguna lleva el prefijo `NEXT_PUBLIC_`, y por
 eso Next no las expone.
 
-| Variable              | Valor                             | Entornos            |
-| --------------------- | --------------------------------- | ------------------- |
-| `DATABASE_URL`        | cadena de Neon **con** `-pooler`  | Production          |
-| `DIRECT_DATABASE_URL` | cadena de Neon **sin** `-pooler`  | Production          |
-| `APP_PASSWORD`        | tu contraseña (larga y tecleable) | Production, Preview |
-| `AUTH_SECRET`         | el `openssl rand -base64 32`      | Production, Preview |
-| `OPENAI_API_KEY`      | tu clave de OpenAI                | Production          |
-| `AI_COACH_MODEL`      | `gpt-5.6-luna`                    | Production          |
+| Variable              | Valor                            | Entornos            |
+| --------------------- | -------------------------------- | ------------------- |
+| `DATABASE_URL`        | cadena de Neon **con** `-pooler` | Production          |
+| `DIRECT_DATABASE_URL` | cadena de Neon **sin** `-pooler` | Production          |
+| `AUTH_SECRET`         | el `openssl rand -base64 32`     | Production, Preview |
+| `OPENAI_API_KEY`      | tu clave de OpenAI               | Production          |
+| `AI_COACH_MODEL`      | `gpt-5.6-luna`                   | Production          |
 
 > Con la integración de Neon instalada, `DIRECT_DATABASE_URL` es opcional: la
 > integración inyecta `DATABASE_URL_UNPOOLED`, que `prisma.config.ts` también
@@ -220,8 +221,8 @@ pnpm db:deploy && pnpm db:seed
 pnpm dev
 ```
 
-`.env` necesita `DATABASE_URL`, `APP_PASSWORD` y `AUTH_SECRET` (la app falla
-cerrada sin las dos últimas, a propósito).
+`.env` necesita `DATABASE_URL` y `AUTH_SECRET` (sin el secreto la app falla
+cerrada, a propósito). Las cuentas se crean con `pnpm user:create`.
 
 Los tests de integración y los E2E crean y **destruyen** bases de datos en el
 Postgres local. Sus helpers rechazan cualquier host que no sea local: nunca
@@ -263,3 +264,34 @@ no es parte del producto.
 
 Dimensionamiento: una base con 32 sesiones y 413 series ocupa 88 KB
 comprimida. Años de entrenamiento caben de sobra en 0,5 GB.
+
+---
+
+## 9. Cuentas de usuario
+
+La app es multi-usuario ligera y privada: **no hay registro público**. Las
+cuentas las creas tú desde tu Mac, apuntando a la base de datos que toque.
+
+```bash
+DATABASE_URL="<cadena directa de Neon>" pnpm user:create
+```
+
+Pide usuario y contraseña por teclado; la contraseña **no se muestra ni queda
+en el historial del shell**, y se guarda hasheada con scrypt.
+
+| Comando                            | Para qué                                         |
+| ---------------------------------- | ------------------------------------------------ |
+| `pnpm user:create [usuario]`       | crear una cuenta                                 |
+| `pnpm user:list`                   | ver cuentas, si están activas y si tienen perfil |
+| `pnpm user:password <usuario>`     | fijar o cambiar la contraseña                    |
+| `pnpm user:disable <usuario>`      | dejar fuera **sin borrar** su historial          |
+| `pnpm user:enable <usuario>`       | volver a dejar entrar                            |
+| `pnpm user:rename <viejo> <nuevo>` | cambiar el nombre de usuario                     |
+
+Cada usuario ve **exclusivamente** sus datos: su perfil, su programa, su
+historial, su progresión, su fatiga y su coach. No hay forma de ver los de otro
+ni pasando identificadores a mano; hay una suite de tests dedicada a demostrarlo
+(`tests/integration/user-isolation.test.ts`).
+
+Si alguien pierde su contraseña, se le fija otra: no hay recuperación por email
+porque no hay email.

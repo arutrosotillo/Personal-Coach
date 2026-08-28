@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-import { E2E_PASSWORD } from "./auth-constants";
+import {
+  E2E_DISABLED_PASSWORD,
+  E2E_DISABLED_USERNAME,
+  E2E_PASSWORD,
+  E2E_USERNAME,
+} from "./auth-constants";
 
 /**
  * La app no puede quedar pública. Estas pruebas corren SIN sesión guardada:
@@ -42,11 +47,12 @@ test("con contraseña incorrecta no se entra y no se dice por qué", async ({
   page,
 }) => {
   await page.goto("/login");
+  await page.getByLabel("Usuario").fill(E2E_USERNAME);
   await page.getByLabel("Contraseña").fill("no-es-la-buena");
   await page.getByRole("button", { name: "Entrar" }).click();
 
   await expect(page.locator("#login-error")).toHaveText(
-    "Contraseña incorrecta.",
+    "Usuario o contraseña incorrectos.",
   );
   await expect(page).toHaveURL(/\/login/);
 });
@@ -58,6 +64,7 @@ test("entrar lleva a la ruta que pedías y la sesión sobrevive a cerrar la pest
   await page.goto("/program");
   await expect(page).toHaveURL(/\/login\?next=%2Fprogram/);
 
+  await page.getByLabel("Usuario").fill(E2E_USERNAME);
   await page.getByLabel("Contraseña").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).toHaveURL(/\/program$/);
@@ -74,6 +81,7 @@ test("la cookie de sesión es httpOnly: el JavaScript de la página no la ve", a
   context,
 }) => {
   await page.goto("/login");
+  await page.getByLabel("Usuario").fill(E2E_USERNAME);
   await page.getByLabel("Contraseña").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -90,6 +98,7 @@ test("la cookie de sesión es httpOnly: el JavaScript de la página no la ve", a
 
 test("cerrar sesión echa fuera de verdad", async ({ page }) => {
   await page.goto("/login");
+  await page.getByLabel("Usuario").fill(E2E_USERNAME);
   await page.getByLabel("Contraseña").fill(E2E_PASSWORD);
   await page.getByRole("button", { name: "Entrar" }).click();
   await expect(page).not.toHaveURL(/\/login/);
@@ -100,4 +109,54 @@ test("cerrar sesión echa fuera de verdad", async ({ page }) => {
 
   await page.goto("/train");
   await expect(page).toHaveURL(/\/login/);
+});
+
+test("un usuario que no existe recibe el mismo mensaje que una contraseña mala", async ({
+  page,
+}) => {
+  // Distinguirlos revelaría qué cuentas existen.
+  await page.goto("/login");
+  await page.getByLabel("Usuario").fill("no-existe-esta-cuenta");
+  await page.getByLabel("Contraseña").fill("da-igual-lo-que-ponga");
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page.locator("#login-error")).toHaveText(
+    "Usuario o contraseña incorrectos.",
+  );
+  await expect(page).toHaveURL(/\/login/);
+});
+
+test("una cuenta desactivada no entra, ni con su contraseña correcta", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page.getByLabel("Usuario").fill(E2E_DISABLED_USERNAME);
+  await page.getByLabel("Contraseña").fill(E2E_DISABLED_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+
+  await expect(page.locator("#login-error")).toHaveText(
+    "Usuario o contraseña incorrectos.",
+  );
+  await expect(page).toHaveURL(/\/login/);
+  // Y tampoco por la puerta de atrás.
+  await page.goto("/train");
+  await expect(page).toHaveURL(/\/login/);
+});
+
+test("un usuario recién creado no ve el historial de otro", async ({
+  page,
+}) => {
+  // `ana` tiene cuenta pero no ha hecho el onboarding. Si las páginas
+  // siguieran resolviendo "el primer perfil de la base de datos" —el fallo
+  // single-user que se ha corregido—, aquí vería el plan de otro.
+  await page.goto("/login");
+  await page.getByLabel("Usuario").fill(E2E_USERNAME);
+  await page.getByLabel("Contraseña").fill(E2E_PASSWORD);
+  await page.getByRole("button", { name: "Entrar" }).click();
+  await expect(page).not.toHaveURL(/\/login/);
+
+  // Sin perfil propio, la app le pide onboarding en vez de enseñarle datos.
+  await page.goto("/train");
+  await expect(page.getByText(/Aún no hay programa/i)).toBeVisible();
+  // Y no aparece nada del plan de nadie más.
+  await expect(page.getByRole("heading", { name: "Hoy" })).toHaveCount(0);
 });

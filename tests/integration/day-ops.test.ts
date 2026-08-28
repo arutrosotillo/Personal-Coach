@@ -4,6 +4,7 @@ import { onboardingSchema } from "@/core/schemas/onboarding";
 import type { ManualProgramInput } from "@/core/schemas/manual-program";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 import { seedCompletedSessionWithSets } from "./helpers/seed-sessions";
 
 /** Integración Fase 3.1: CRUD/reorder de días (WorkoutTemplate) sobre el programa
@@ -19,6 +20,15 @@ const { completeOnboarding } =
 const { createManualProgram } =
   await import("@/server/services/manual-program.service");
 const edit = await import("@/server/services/program-edit.service");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const GEN_ONBOARDING = {
   sex: "MALE",
@@ -56,7 +66,11 @@ beforeAll(async () => {
     balancedProgram: true,
     priorityMuscles: [],
   });
-  const r = await completeOnboarding(data, new Date("2026-07-14T10:00:00Z"));
+  const r = await completeOnboarding(
+    await ownerId(),
+    data,
+    new Date("2026-07-14T10:00:00Z"),
+  );
   profileId = r.profileId;
   const variants = await prisma.exerciseVariant.findMany({
     where: { deletedAt: null },
@@ -253,6 +267,7 @@ describe("restoreInitialProgram tras soft-borrar un día (regresión)", () => {
     // Programa GENERADO fresco (re-onboarding archiva el activo).
     const data = onboardingSchema.parse(GEN_ONBOARDING);
     const gen = await completeOnboarding(
+      await ownerId(),
       data,
       new Date("2026-08-05T10:00:00Z"),
     );

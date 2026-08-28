@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
+import { createTestUser } from "./helpers/users";
 
 /**
  * Invariante estructural: como máximo UN programa activo y no borrado por
@@ -25,6 +26,15 @@ const { prisma } = await import("@/server/db");
 const { runSeed } = await import("../../prisma/seed/run-seed");
 const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
+
+// Todas estas suites prueban el comportamiento del dominio con UN usuario.
+// Se crea una vez y se reutiliza, igual que antes de multi-usuario: reonboardar
+// al MISMO usuario sigue reutilizando su perfil.
+let ownerUserId: string | null = null;
+async function ownerId(): Promise<string> {
+  ownerUserId ??= await createTestUser(prisma, "owner");
+  return ownerUserId;
+}
 
 const ONBOARDING = {
   sex: "MALE",
@@ -50,6 +60,7 @@ let profileId: string;
 beforeAll(async () => {
   await runSeed(prisma);
   const result = await completeOnboarding(
+    await ownerId(),
     onboardingSchema.parse(ONBOARDING),
     new Date("2026-01-05T10:00:00Z"),
   );
@@ -145,8 +156,14 @@ describe("invariante: un solo programa activo por perfil", () => {
     // completeOnboarding: la app es de un solo usuario y ese servicio reutiliza
     // siempre el perfil existente (findFirst sin filtro). Aquí lo que se prueba
     // es el alcance del índice, no el flujo de onboarding.
+    const otroUsuario = await createTestUser(prisma, "otra-persona");
     const other = await prisma.userProfile.create({
-      data: { sex: "FEMALE", birthDate: "1994-05-02", heightCm: 165 },
+      data: {
+        userId: otroUsuario,
+        sex: "FEMALE",
+        birthDate: "1994-05-02",
+        heightCm: 165,
+      },
     });
     const source = await prisma.trainingProgram.findFirstOrThrow({
       where: { id: await currentActiveId(profileId) },
