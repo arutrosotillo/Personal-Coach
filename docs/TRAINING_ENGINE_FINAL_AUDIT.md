@@ -581,7 +581,7 @@ es que la tendencia de 4–8 semanas suba, no que cada sesión sea un récord.
 | ¿RIR 3 es demasiado conservador?        | Para **hipertrofia**, sí es el borde bajo de lo productivo: la pendiente de Robinson implica ~1,5 pp menos de crecimiento vs. 0 RIR. Para **fuerza** no cuesta nada (pendiente nula). Y **a 3 RIR se está recuperado a 24 h** frente a 48 h con fallo.                  | [EVIDENCIA RAZONABLE] |
 | ¿2 RIR?                                 | Es el punto dulce coste/beneficio para casi todo.                                                                                                                                                                                                                       | [EVIDENCIA RAZONABLE] |
 | ¿1 RIR?                                 | Correcto y bien tolerado en aislamientos y máquinas; es donde el RIR además se estima mejor (cerca del fallo).                                                                                                                                                          | [EVIDENCIA RAZONABLE] |
-| ¿Cuándo tiene sentido 0 RIR?            | Cuando el coste de fatiga es bajo y el riesgo técnico mínimo: **última serie de un aislamiento o de una máquina**, y en contextos de **volumen muy bajo** (con 1 serie por ejercicio, el fallo sí parece importar — Hermann 2025, MSSE 57(9):2021-2031, PMID 40249908). | [EVIDENCIA RAZONABLE] |
+| ¿Cuándo tiene sentido 0 RIR? _(desde 2026-08-28 es el objetivo por defecto de TODO aislamiento, no solo de la última serie)_ | Cuando el coste de fatiga es bajo y el riesgo técnico mínimo: **última serie de un aislamiento o de una máquina**, y en contextos de **volumen muy bajo** (con 1 serie por ejercicio, el fallo sí parece importar — Hermann 2025, MSSE 57(9):2021-2031, PMID 40249908). | [EVIDENCIA RAZONABLE] |
 | ¿Fallo regularmente?                    | No como norma. No aporta hipertrofia con volumen igualado, no aporta fuerza, cuesta ~3× fatiga aguda y empeora el afecto de forma sostenida.                                                                                                                            | [EVIDENCIA FUERTE]    |
 | ¿RIR variable dentro del mesociclo?     | **No lo implementamos como mejora de resultados.** El único ECA directo salió neutro. Como MUCHO, −1 punto en la última semana de acumulación, etiquetado como gestión de fatiga.                                                                                       | [HEURÍSTICA]          |
 | ¿Coste de fatiga de acercarse al fallo? | Cuantificado: velocidad −25 % vs −8 % a los 4 min; CK elevada a 48 h; RPE SMD 1,93; caída intra-sesión −22 % vs −6 %.                                                                                                                                                   | [EVIDENCIA FUERTE]    |
@@ -1014,7 +1014,7 @@ queda como **opción futura**, no la propongo ahora (riesgo de sobrecorrección)
 | 15  | `ADD_REP` = primera serie bajo el techo +1                              | `ADD_REP` = **serie más floja** +1                                                                                   | Coherente con el criterio de subida                  |
 | 16  | `technique` no se captura                                               | Se captura (1 tap, opcional)                                                                                         | Desbloquea la regla D3                               |
 | 17  | `jointPain`/`fatigue`/`motivation` no se leen                           | Se leen (primero solo se muestran; F3.3 los usa)                                                                     | Desbloquea el deload reactivo                        |
-| 18  | RIR compuesto pesado = 3                                                | = **2**                                                                                                              | Alineado con ACSM 2026 (2–3 RIR)                     |
+| 18  | RIR compuesto pesado = 3                                                | = **2** ✅ aplicado (y compuesto 2 → **1**, aislamiento 1 → **0**)                                                    | Alineado con ACSM 2026 (2–3 RIR)                     |
 | 19  | `estimated1Rm` se persiste al registrar; `null` sobre 12 reps efectivas | Se deriva en lectura; para rangos altos, **"carga equivalente a `repMin` reps"**                                     | Los aislamientos por fin tienen métrica de tendencia |
 | 20  | `trend()` = primero vs. último, umbral **±1 %**                         | ≥3 sesiones, umbral **±5 %**                                                                                         | Deja de reportar ruido como tendencia                |
 | 21  | El generador no comprueba si cumple su objetivo                         | Aviso cuando el volumen efectivo entregado < 80 % del objetivo; el día no se cierra con presupuesto de tiempo libre  | Cuádriceps 6,0/9,0 deja de ser silencioso            |
@@ -1073,7 +1073,12 @@ alto.**
 18. **Aviso cuando el volumen efectivo entregado < 80 % del objetivo** de un grupo. _(§2.10)_
 19. **No cerrar el día con presupuesto de tiempo libre** si algún grupo del menú sigue necesitado
     (relajar `MAX_SETS_PER_GROUP_PER_SESSION` a 4 cuando quedan minutos y el grupo está bajo objetivo).
-20. **RIR de compuesto pesado 3 → 2.** _(§5.2)_
+20. **RIR de compuesto pesado 3 → 2.** _(§5.2)_ — ✅ **APLICADO el 2026-08-28**, y extendido a
+    los tres roles: `TARGET_RIR = { compoundHeavy: 2, compound: 1, isolation: 0 }`. El motivo
+    de la extensión: la reserva no compra hipertrofia (§3.3, Robinson 2024), solo fatiga más
+    barata, y ese coste solo es real en `systemicFatigue ≥ 3`. Efecto en el motor: con objetivo
+    1 ó 0 la condición `harder` nunca se cumple, así que cerrar el rango al fallo sube la carga
+    **a la primera** en todo salvo sentadilla, peso muerto rumano y remo con barra.
 
 ### Bloque 6 — Documentación
 

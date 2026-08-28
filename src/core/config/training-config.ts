@@ -134,13 +134,34 @@ export const SESSION_OVERHEAD_MIN = 10;
 
 /**
  * RIR objetivo inicial por rol de ejercicio. Los compuestos pesados se dejan
- * más lejos del fallo (más fatiga y riesgo); los aislamientos, más cerca.
- * El rango de repeticiones lo aporta cada variante del catálogo (rol-apropiado).
+ * algo lejos del fallo (más fatiga y riesgo técnico); el resto de compuestos, a
+ * una repetición; los aislamientos, en el fallo. El rango de repeticiones lo
+ * aporta cada variante del catálogo (rol-apropiado).
+ *
+ * **Dejar reserva NO crece más.** La evidencia apunta al revés: acercarse al
+ * fallo mejora ligeramente la hipertrofia y la fuerza es casi indiferente
+ * (Robinson 2024), y el efecto fallo/no-fallo es trivial y desaparece al aislar
+ * el fallo momentáneo (Refalo 2023). Lo único que compra la reserva es fatiga
+ * más barata y menos riesgo técnico — así que solo se paga donde ese coste es
+ * real: `systemicFatigue >= 3`, que en el catálogo son exactamente sentadilla
+ * trasera, peso muerto rumano y remo con barra. En banca, press y dominadas el
+ * fallo con pines o en máquina sale barato; en un aislamiento es gratis.
+ * [HEURÍSTICA: el reparto por rol es elección nuestra, no fisiología medida.]
+ *
+ * Efecto real en el motor de progresión (`RIR_BAND` = 1): un esfuerzo es
+ * compatible si `rir >= objetivo - 1`, y lo único que frena por esfuerzo es
+ * `harder` (`rir < objetivo - 1` ó `rir = 0` con objetivo >= 2). Con objetivo 1
+ * y con 0 esa condición NUNCA se cumple: cerrar el rango al fallo sube la carga
+ * a la primera, sin sesión de consolidación. Con objetivo 2 (compuesto pesado)
+ * se conserva la consolidación de una exposición antes de subir.
+ *
+ * Aplica la recomendación nº 20 (§5.2) de docs/TRAINING_ENGINE_FINAL_AUDIT.md,
+ * extendida de los compuestos pesados a los tres roles.
  */
 export const TARGET_RIR = {
-  compoundHeavy: 3,
-  compound: 2,
-  isolation: 1,
+  compoundHeavy: 2,
+  compound: 1,
+  isolation: 0,
 } as const;
 
 /**

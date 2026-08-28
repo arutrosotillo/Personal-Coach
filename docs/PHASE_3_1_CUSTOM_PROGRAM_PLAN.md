@@ -125,7 +125,7 @@ Al añadir un ejercicio (una variante del catálogo):
 - **Series** (`baseSets`) = **3**: **HEURÍSTICA nueva** (coincide con el default ya usado en
   `addTemplateExercise`). Editable; **el límite de 3 del generador NO aplica al manual**.
 - **RIR** (`targetRir`) por **ROL** *(decisión aprobada)*: reutiliza `TARGET_RIR` de F3.2
-  (compuesto pesado 3 / compuesto 2 / aislamiento 1) vía la lógica `costKindOf`
+  (compuesto pesado 2 / compuesto 1 / aislamiento 0) vía la lógica `costKindOf`
   (patrón de movimiento + `systemicFatigue`). Requiere exponer `systemicFatigue` en el picker
   (`listLibrary()` ya trae `movementPattern`; se añade `systemicFatigue`, lectura, sin
   migración) y un pequeño helper puro `defaultTargetRir(movementPattern, systemicFatigue)` en

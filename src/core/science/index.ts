@@ -260,9 +260,9 @@ export const PHILOSOPHY: PhilosophySection[] = [
       },
       {
         id: "double-progression",
-        title: "Cómo funciona en la práctica: 3×6–8 @2 RIR",
+        title: "Cómo funciona en la práctica: 3×6–8 @1 RIR",
         summary:
-          "Eliges una carga con la que cierres 6 repeticiones dejando ~2 en reserva. Cada sesión subes la serie más floja. Cuando cierras 8 en casi todas, sube la carga.",
+          "Eliges una carga con la que cierres 6 repeticiones dejando ~1 en reserva. Cada sesión subes la serie más floja. Cuando cierras 8 en casi todas, sube la carga.",
         detail:
           "80×6/6/6 → objetivo 7/7/7 · 80×8/8/6 → objetivo 8/8/7 · 80×8/8/7 → sube a 82,5 kg buscando 7 reps (no 6: la equivalencia carga↔repeticiones dice que a 82,5 kg te corresponden ~7). El rango se considera cerrado con n−1 series en el techo y ninguna por debajo de repMax−1.",
         evidence: "HEURISTIC",
@@ -309,7 +309,7 @@ export const PHILOSOPHY: PhilosophySection[] = [
         id: "banda-rir",
         title: "Por qué aceptamos una banda de ±1",
         summary:
-          "El RIR autoinformado tiene ~1 repetición de error típico y se infravalora de media. Exigir «exactamente 2» sería decidir dentro del ruido del propio dato.",
+          "El RIR autoinformado tiene ~1 repetición de error típico y se infravalora de media. Exigir el número exacto que pone la prescripción sería decidir dentro del ruido del propio dato.",
         detail:
           "Por eso el motor acepta como válido cualquier esfuerzo con RIR ≥ objetivo − 1, y solo frena cuando llegas al fallo con una prescripción que pedía reserva. La estimación es además más precisa cerca del fallo, no menos.",
         evidence: "HEURISTIC",
@@ -317,11 +317,11 @@ export const PHILOSOPHY: PhilosophySection[] = [
       },
       {
         id: "objetivos-rir",
-        title: "Nuestros objetivos: 3 / 2 / 1",
+        title: "Nuestros objetivos: 2 / 1 / 0",
         summary:
-          "Compuestos pesados 3 RIR, compuestos 2, aislamientos 1. En un aislamiento llegar al fallo no se penaliza; en un compuesto pesado sí frena la subida la primera vez.",
+          "Compuestos pesados 2 RIR, el resto de compuestos 1, aislamientos 0 (al fallo). Solo sentadilla, peso muerto y remo con barra frenan la subida la primera vez que cierras el rango al fallo; en todo lo demás el fallo es exactamente lo prescrito y la carga sube.",
         detail:
-          "Que el objetivo deba variar por tipo de ejercicio es una elección nuestra: no hay ningún estudio que asigne distintos RIR a distintas categorías de ejercicio, y el subgrupo meta-analítico más pertinente sale nulo. Lo sostenemos por coste de fatiga y riesgo técnico, no por fisiología demostrada.",
+          "Dejar reserva NO te hace crecer más: la evidencia apunta al revés (acercarse al fallo crece igual o algo más, y la fuerza es casi indiferente). Lo único que compra la reserva es fatiga más barata y menos riesgo técnico, así que solo se paga donde ese coste es real: los tres ejercicios del catálogo con mayor fatiga sistémica. Que el objetivo varíe por tipo de ejercicio sigue siendo una elección nuestra: no hay ningún estudio que asigne distintos RIR a distintas categorías, y el subgrupo meta-analítico más pertinente sale nulo.",
         evidence: "HEURISTIC",
         citations: ["remmert2023", "acsm2026"],
       },
@@ -547,6 +547,9 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
   no se resetea al mínimo del rango.
 - Esfuerzo compatible = RIR ≥ objetivo − 1 (banda por el error de medida del RIR).
   Llegar al fallo con objetivo ≥2 frena la subida la primera vez; a la segunda sube igual.
+- Objetivos de RIR por rol: compuesto pesado 2 (sentadilla, peso muerto rumano, remo con
+  barra), resto de compuestos 1, aislamientos 0. Con objetivo 1 ó 0 el fallo es lo prescrito
+  y NO frena nada.
 - DECREASE_LOAD exige DOS exposiciones comparables con la mediana por debajo del
   mínimo del rango (o cuatro ignorando el RIR). Nunca por una sesión mala.
 - El RIR ausente no se imputa: baja la confianza y bloquea el salto doble.

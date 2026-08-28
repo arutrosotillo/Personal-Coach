@@ -22,7 +22,7 @@ PRIMARIO sea ese, y le asigna `ceil(need)` series acotado a `SETS_PER_EXERCISE`
 Descuenta el volumen fraccional de cada contribución (`sets × factor`) del "restante"
 de todos los grupos que el ejercicio toca. Presupuesto de tiempo por minutos/sesión.
 
-**RIR**: fijo por rol (`TARGET_RIR`): compuesto pesado 3, compuesto 2, aislamiento 1.
+**RIR**: fijo por rol (`TARGET_RIR`): compuesto pesado 2, compuesto 1, aislamiento 0 (revisado el 2026-08-28; este documento describe el estado previo 3/2/1 — ver §8).
 No hay progresión de RIR dentro del mesociclo (la doc §2 la menciona pero **no está
 implementada**).
 
@@ -265,6 +265,13 @@ series, sin el aviso contradictorio de glúteo, con pecho/gemelo/bíceps a frecu
 ---
 
 ## 8. Propuesta revisada de RIR
+
+> **SUPERSEDIDO el 2026-08-28.** Los valores vigentes son **2 / 1 / 0**. El análisis de abajo
+> sigue siendo correcto en lo que afirma —dejar reserva no cuesta nada para fuerza y cuesta
+> poco para hipertrofia— pero se leyó al revés de lo que la evidencia sostiene: no hay ningún
+> dato de que 3/2/1 crezca MÁS que 2/1/0, y sí lo hay de que acercarse al fallo crece igual o
+> algo más (Robinson 2024). La reserva compra fatiga barata, no músculo, así que ahora solo se
+> paga en los tres ejercicios de `systemicFatigue ≥ 3`. Ver `training-config.ts` → `TARGET_RIR`.
 
 - **Mantener RIR fijo por rol** (compuesto pesado 3, compuesto 2, aislamiento 1). Está
   bien alineado con la evidencia y es simple. [RAZONABLE/FUERTE].
