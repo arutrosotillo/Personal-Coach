@@ -8,7 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RecoveryCard } from "@/components/training/recovery-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getProfile } from "@/server/repositories/profile.repo";
+import { getCurrentProfile } from "@/server/auth/current-user";
 import {
   DEFAULT_WINDOW_DAYS,
   getTrainingAnalysis,
@@ -17,7 +17,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function CoachPage() {
-  const profile = await getProfile();
+  const profile = await getCurrentProfile();
   const analysis = profile ? await getTrainingAnalysis(profile.id) : null;
   const configured = isCoachConfigured();
 

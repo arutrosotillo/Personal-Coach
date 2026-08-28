@@ -1,20 +1,22 @@
 import { prisma } from "@/server/db";
 
 /**
- * Lecturas del perfil y su estado actual. En la práctica hay un único perfil
- * (app personal); todas las queries toman "el primero" de forma determinista.
+ * Lecturas del perfil y su estado actual.
+ *
+ * Estas funciones NO deciden de quién son los datos: reciben el `profileId` ya
+ * resuelto. Quien lo resuelve es `src/server/auth/current-user.ts`, a partir de
+ * la sesión. Antes vivía aquí un `findFirst` sin filtro que devolvía "el primer
+ * perfil": con varios usuarios eso significaba que todos veían los datos del
+ * más antiguo.
  */
 
-export async function getProfile() {
-  return prisma.userProfile.findFirst({ orderBy: { createdAt: "asc" } });
+export async function getProfileById(profileId: string) {
+  return prisma.userProfile.findUnique({ where: { id: profileId } });
 }
 
-/** id del perfil único (app personal). Lanza si aún no hay onboarding. */
-export async function requireProfileId(): Promise<string> {
-  const profile = await getProfile();
-  if (!profile)
-    throw new Error("No hay perfil: completa el onboarding primero.");
-  return profile.id;
+/** Perfil de un usuario concreto. `null` si aún no ha hecho el onboarding. */
+export async function getProfileByUserId(userId: string) {
+  return prisma.userProfile.findUnique({ where: { userId } });
 }
 
 /** Última medición corporal registrada (para el resumen de progreso). */
@@ -25,8 +27,8 @@ export async function getLatestMeasurement(profileId: string) {
   });
 }
 
-export async function getProfileOverview() {
-  const profile = await getProfile();
+export async function getProfileOverview(profileId: string) {
+  const profile = await getProfileById(profileId);
   if (!profile) return null;
 
   const [goal, nutritionTarget, program, preferences] = await Promise.all([
@@ -59,7 +61,7 @@ export async function getProfileOverview() {
         },
       },
     }),
-    prisma.userPreference.findMany(),
+    prisma.userPreference.findMany({ where: { profileId: profile.id } }),
   ]);
 
   return { profile, goal, nutritionTarget, program, preferences };

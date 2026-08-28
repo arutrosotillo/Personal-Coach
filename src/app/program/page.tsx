@@ -6,14 +6,14 @@ import { ProgramRationaleCard } from "@/components/training/program-rationale-ca
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getProgramRationale } from "@/server/repositories/program.repo";
-import { getProfileOverview } from "@/server/repositories/profile.repo";
+import { getCurrentProfileOverview } from "@/server/auth/current-user";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
 import { canRestoreProgram } from "@/server/services/program-source.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProgramPage() {
-  const overview = await getProfileOverview();
+  const overview = await getCurrentProfileOverview();
   const program = overview?.program;
   const mesocycle = program?.mesocycles[0];
   const [rationale, substitutionOptions, canRestore] = program

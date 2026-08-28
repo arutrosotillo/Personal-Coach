@@ -7,12 +7,12 @@ import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/server/actions/auth.action";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { workActivityLabel } from "@/lib/labels";
-import { getProfileOverview } from "@/server/repositories/profile.repo";
+import { getCurrentProfileOverview } from "@/server/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const overview = await getProfileOverview();
+  const overview = await getCurrentProfileOverview();
   const coachReady = isCoachConfigured();
 
   return (

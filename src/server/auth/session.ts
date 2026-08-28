@@ -1,17 +1,20 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Sesión de un solo usuario. Personal Coach no tiene sistema de usuarios: es
- * una puerta con una llave. No hay registro, ni roles, ni recuperación, ni
- * tabla de sesiones.
+ * Sesión de un usuario concreto. La app es multi-usuario ligera y privada: las
+ * cuentas se crean a mano, no hay registro, ni email, ni recuperación.
  *
- * El token es autocontenido y firmado: `<caducidadMs>.<HMAC-SHA256>`. No se
- * guarda nada en la base de datos, así que cerrar sesión en un dispositivo no
- * cierra los demás. La forma de invalidar TODAS las sesiones es rotar
- * `AUTH_SECRET`, que es justo lo que querrías hacer si sospechas una fuga.
+ * El token es autocontenido y firmado: `base64url(userId:caducidad).HMAC`. No
+ * se guarda nada en la base de datos, así que cerrar sesión en un dispositivo
+ * no cierra los demás. Para invalidar TODAS las sesiones de golpe se rota
+ * `AUTH_SECRET`.
+ *
+ * El token dice QUIÉN eres, no si sigues teniendo permiso: `isActive` se
+ * comprueba contra la base de datos en `current-user.ts`, porque desactivar una
+ * cuenta debe echarla fuera sin esperar 90 días a que caduque la cookie.
  *
  * Este módulo solo usa `node:crypto` y no toca la base de datos, para poder
- * importarse desde `src/proxy.ts` (que en Next 16 corre en runtime Node).
+ * importarse desde `src/proxy.ts`.
  */
 
 export const SESSION_COOKIE = "pc_session";
@@ -39,8 +42,8 @@ function sign(payload: string): string {
 
 /**
  * Comparación en tiempo constante. Se comparan digests y no los valores
- * originales para que la longitud del secreto no se filtre por el tamaño del
- * buffer ni haga fallar a `timingSafeEqual`.
+ * originales para que la longitud no se filtre por el tamaño del buffer ni
+ * haga fallar a `timingSafeEqual`.
  */
 function safeEqual(a: string, b: string): boolean {
   const ha = createHmac("sha256", "cmp").update(a).digest();
@@ -48,43 +51,51 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
-/** ¿Hay contraseña configurada? Sin ella la app no puede publicarse. */
+/** ¿Se puede firmar? Sin secreto, la app se queda cerrada a propósito. */
 export function isAuthConfigured(): boolean {
-  return Boolean(process.env.APP_PASSWORD && process.env.AUTH_SECRET);
+  return Boolean(process.env.AUTH_SECRET);
 }
 
-export function verifyPassword(candidate: string): boolean {
-  const expected = process.env.APP_PASSWORD;
-  if (!expected) return false;
-  return safeEqual(candidate, expected);
-}
-
-/** Emite un token válido durante `SESSION_MAX_AGE_SECONDS`. */
-export function createSessionToken(now: Date = new Date()): string {
+/** Emite un token para `userId`, válido `SESSION_MAX_AGE_SECONDS`. */
+export function createSessionToken(
+  userId: string,
+  now: Date = new Date(),
+): string {
   const expiresAt = now.getTime() + SESSION_MAX_AGE_SECONDS * 1000;
-  const payload = String(expiresAt);
+  // base64url del par completo: así el id puede contener cualquier carácter
+  // sin que un separador ambiguo permita fabricar otro token válido.
+  const payload = Buffer.from(`${userId}:${expiresAt}`, "utf8").toString(
+    "base64url",
+  );
   return `${payload}.${sign(payload)}`;
 }
 
 export interface SessionState {
   valid: boolean;
+  /** Cuenta a la que pertenece la sesión, null si no es válida. */
+  userId: string | null;
   /** Segundos que le quedan de vida (0 si no es válida). */
   remainingSeconds: number;
 }
 
+const INVALID: SessionState = {
+  valid: false,
+  userId: null,
+  remainingSeconds: 0,
+};
+
 /**
- * Verifica firma y caducidad. Cualquier token manipulado, caducado o con
- * formato inesperado se trata igual: sesión inválida.
+ * Verifica firma y caducidad y extrae el usuario. Cualquier token manipulado,
+ * caducado o con formato inesperado se trata igual: sesión inválida.
  */
 export function readSessionToken(
   token: string | undefined,
   now: Date = new Date(),
 ): SessionState {
-  const invalid: SessionState = { valid: false, remainingSeconds: 0 };
-  if (!token) return invalid;
+  if (!token) return INVALID;
 
   const separator = token.lastIndexOf(".");
-  if (separator <= 0) return invalid;
+  if (separator <= 0) return INVALID;
 
   const payload = token.slice(0, separator);
   const signature = token.slice(separator + 1);
@@ -94,17 +105,32 @@ export function readSessionToken(
     expected = sign(payload);
   } catch {
     // AUTH_SECRET ausente o inválida: nadie entra.
-    return invalid;
+    return INVALID;
   }
-  if (!safeEqual(signature, expected)) return invalid;
+  if (!safeEqual(signature, expected)) return INVALID;
 
-  const expiresAt = Number(payload);
-  if (!Number.isFinite(expiresAt)) return invalid;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(payload, "base64url").toString("utf8");
+  } catch {
+    return INVALID;
+  }
+
+  const cut = decoded.lastIndexOf(":");
+  if (cut <= 0) return INVALID;
+
+  const userId = decoded.slice(0, cut);
+  const expiresAt = Number(decoded.slice(cut + 1));
+  if (!userId || !Number.isFinite(expiresAt)) return INVALID;
 
   const remainingMs = expiresAt - now.getTime();
-  if (remainingMs <= 0) return invalid;
+  if (remainingMs <= 0) return INVALID;
 
-  return { valid: true, remainingSeconds: Math.floor(remainingMs / 1000) };
+  return {
+    valid: true,
+    userId,
+    remainingSeconds: Math.floor(remainingMs / 1000),
+  };
 }
 
 /** Renueva la cookie cuando le queda menos de un tercio de vida. */

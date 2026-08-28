@@ -6,7 +6,7 @@ import {
   coachRequestSchema,
   type CoachRequestInput,
 } from "@/core/schemas/coach";
-import { requireSession } from "@/server/auth/require-session";
+import { requireProfileId, requireUser } from "@/server/auth/current-user";
 import { askCoach } from "@/server/services/coach.service";
 
 /**
@@ -16,24 +16,32 @@ import { askCoach } from "@/server/services/coach.service";
  */
 
 /**
- * Ventana deslizante en memoria. La app no tiene login y se sirve por LAN, así
- * que sin esto cualquiera en la wifi tiene un proxy a OpenAI facturado al
- * dueño. No pretende ser seguridad: es un tope de gasto.
+ * Ventana deslizante en memoria, POR USUARIO. Es un tope de gasto, no una
+ * medida de seguridad: la clave de OpenAI la paga el dueño del servidor y sin
+ * esto una pestaña abierta puede dispararla.
+ *
+ * Antes el contador era único para toda la app. Con varias cuentas eso
+ * significaba que un familiar consumiendo su hora dejaba al resto sin coach.
  */
-const calls: number[] = [];
+const callsByUser = new Map<string, number[]>();
 
-function overRateLimit(now: number): boolean {
+function overRateLimit(userId: string, now: number): boolean {
   const cutoff = now - 60 * 60 * 1000;
+  const calls = callsByUser.get(userId) ?? [];
   while (calls.length > 0 && calls[0] < cutoff) calls.shift();
-  if (calls.length >= AI_CONFIG.maxCallsPerHour) return true;
+  if (calls.length >= AI_CONFIG.maxCallsPerHour) {
+    callsByUser.set(userId, calls);
+    return true;
+  }
   calls.push(now);
+  callsByUser.set(userId, calls);
   return false;
 }
 
 export async function askCoachAction(
   input: CoachRequestInput,
 ): Promise<CoachResult> {
-  await requireSession();
+  const { userId } = await requireUser();
   const parsed = coachRequestSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -45,7 +53,7 @@ export async function askCoachAction(
       fallback: null,
     };
   }
-  if (overRateLimit(Date.now())) {
+  if (overRateLimit(userId, Date.now())) {
     return {
       ok: false,
       task: parsed.data.task,
@@ -58,7 +66,11 @@ export async function askCoachAction(
   // Nada que ocurra aquí puede tumbar la pantalla: si algo falla (base de
   // datos, proveedor, lo que sea), el usuario ve un estado controlado.
   try {
-    return await askCoach({
+    // El perfil se resuelve aquí dentro: un usuario recién creado que aún no ha
+    // hecho el onboarding debe ver el mensaje de "todavía no hay perfil", no
+    // una pantalla rota.
+    const profileId = await requireProfileId();
+    return await askCoach(profileId, {
       task: parsed.data.task,
       variantId: parsed.data.variantId ?? undefined,
       question: parsed.data.question ?? undefined,

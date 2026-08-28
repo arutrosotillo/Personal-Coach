@@ -3,13 +3,13 @@ import { redirect } from "next/navigation";
 
 import { ProgramBuilder } from "@/components/training/program-builder";
 import { Button } from "@/components/ui/button";
-import { getProfile } from "@/server/repositories/profile.repo";
+import { getCurrentProfile } from "@/server/auth/current-user";
 import { listBuilderCatalog } from "@/server/repositories/builder-catalog.repo";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewProgramPage() {
-  const profile = await getProfile();
+  const profile = await getCurrentProfile();
   // El builder necesita un perfil (lo crea el onboarding). Sin él, al onboarding.
   if (!profile) redirect("/onboarding");
 

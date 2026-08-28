@@ -33,6 +33,7 @@ function toJson(value: unknown): Prisma.InputJsonValue {
  * Nunca crea un segundo perfil.
  */
 export async function completeOnboarding(
+  userId: string,
   data: OnboardingData,
   now: Date = new Date(),
 ) {
@@ -72,9 +73,10 @@ export async function completeOnboarding(
 
   // 2. Escritura transaccional
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.userProfile.findFirst({
-      orderBy: { createdAt: "asc" },
-    });
+    // El perfil que se reutiliza es el de ESTE usuario. Antes se cogía el más
+    // antiguo de toda la base de datos: con varias cuentas, el onboarding de un
+    // familiar habría sobrescrito el perfil de otro y archivado sus programas.
+    const existing = await tx.userProfile.findUnique({ where: { userId } });
     if (existing) {
       const inProgress = await tx.workoutSession.findFirst({
         where: {
@@ -106,7 +108,7 @@ export async function completeOnboarding(
           where: { id: existing.id },
           data: profileFields,
         })
-      : await tx.userProfile.create({ data: profileFields });
+      : await tx.userProfile.create({ data: { ...profileFields, userId } });
 
     // Re-ejecución: cerrar objetivo activo y desactivar programas anteriores.
     await tx.goal.updateMany({
@@ -183,8 +185,8 @@ export async function completeOnboarding(
     ];
     for (const [key, value] of preferences) {
       await tx.userPreference.upsert({
-        where: { key },
-        create: { key, value: toJson(value) },
+        where: { profileId_key: { profileId: profile.id, key } },
+        create: { profileId: profile.id, key, value: toJson(value) },
         update: { value: toJson(value) },
       });
     }

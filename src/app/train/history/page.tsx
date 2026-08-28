@@ -1,12 +1,12 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { getProfile } from "@/server/repositories/profile.repo";
+import { getCurrentProfile } from "@/server/auth/current-user";
 import { listCompletedSessions } from "@/server/repositories/workout.repo";
 
 export const dynamic = "force-dynamic";
 
 export default async function HistoryPage() {
-  const profile = await getProfile();
+  const profile = await getCurrentProfile();
   const sessions = profile ? await listCompletedSessions(profile.id) : [];
 
   return (

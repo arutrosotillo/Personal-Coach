@@ -22,11 +22,11 @@ export interface CoachInput {
 }
 
 /** Perfil compacto para el contexto. Solo lo que aporta al consejo. */
-async function loadProfile(): Promise<{
+async function loadProfile(profileId: string): Promise<{
   profileId: string;
   profile: CoachProfileInput;
 } | null> {
-  const overview = await getProfileOverview();
+  const overview = await getProfileOverview(profileId);
   if (!overview) return null;
   const daysPerWeek = overview.program?.daysPerWeek ?? null;
   const years = overview.profile.trainingYears ?? null;
@@ -73,7 +73,14 @@ async function recordedMetrics(profileId: string): Promise<string[]> {
   return available;
 }
 
+/**
+ * El contexto del coach se construye SIEMPRE a partir del `profileId` que
+ * recibe. Antes lo resolvía por su cuenta con un `findFirst` sin filtro, así
+ * que con varias cuentas habría mandado a OpenAI el historial del usuario más
+ * antiguo, preguntara quien preguntara.
+ */
 export async function askCoach(
+  profileId: string,
   input: CoachInput,
   provider: CoachProvider | null = createProvider(),
   now: Date = new Date(),
@@ -90,7 +97,7 @@ export async function askCoach(
     };
   }
 
-  const loaded = await loadProfile();
+  const loaded = await loadProfile(profileId);
   if (!loaded) {
     return {
       ok: false,

@@ -1,15 +1,13 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PhaseNote } from "@/components/layout/phase-note";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  getLatestMeasurement,
-  getProfileOverview,
-} from "@/server/repositories/profile.repo";
+import { getLatestMeasurement } from "@/server/repositories/profile.repo";
+import { getCurrentProfileOverview } from "@/server/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProgressPage() {
-  const overview = await getProfileOverview();
+  const overview = await getCurrentProfileOverview();
   const lastMeasurement = overview
     ? await getLatestMeasurement(overview.profile.id)
     : null;

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { ArchivedPrograms } from "@/components/training/archived-programs";
 import { Button } from "@/components/ui/button";
-import { getProfile } from "@/server/repositories/profile.repo";
+import { getCurrentProfile } from "@/server/auth/current-user";
 import { listArchivedPrograms } from "@/server/repositories/program.repo";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +28,7 @@ function dateLabel(d: Date): string {
 }
 
 export default async function ProgramHistoryPage() {
-  const profile = await getProfile();
+  const profile = await getCurrentProfile();
   if (!profile) redirect("/onboarding");
 
   const archived = await listArchivedPrograms(profile.id);

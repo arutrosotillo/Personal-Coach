@@ -7,7 +7,7 @@ import {
   getExecutionSession,
   toClientSession,
 } from "@/server/repositories/workout.repo";
-import { requireProfileId } from "@/server/repositories/profile.repo";
+import { requireProfileId } from "@/server/auth/current-user";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
 import { getRecoveryVeto } from "@/server/services/fatigue.service";
 import { buildSuggestions } from "@/server/services/progression.service";

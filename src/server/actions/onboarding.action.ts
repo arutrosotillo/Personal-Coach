@@ -6,7 +6,7 @@ import {
   onboardingSchema,
   type OnboardingInput,
 } from "@/core/schemas/onboarding";
-import { requireSession } from "@/server/auth/require-session";
+import { requireUser } from "@/server/auth/current-user";
 import { completeOnboarding } from "@/server/services/onboarding.service";
 
 export interface OnboardingActionResult {
@@ -19,7 +19,7 @@ export interface OnboardingActionResult {
 export async function submitOnboarding(
   input: OnboardingInput,
 ): Promise<OnboardingActionResult> {
-  await requireSession();
+  const { userId } = await requireUser();
   // Frontera de confianza: SIEMPRE se re-valida en el servidor.
   const parsed = onboardingSchema.safeParse(input);
   if (!parsed.success) {
@@ -31,7 +31,7 @@ export async function submitOnboarding(
   }
 
   try {
-    await completeOnboarding(parsed.data);
+    await completeOnboarding(userId, parsed.data);
   } catch (error) {
     console.error("Onboarding falló:", error);
     return {

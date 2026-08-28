@@ -5,12 +5,12 @@ import { PhaseNote } from "@/components/layout/phase-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { strategyLabel } from "@/lib/labels";
-import { getProfileOverview } from "@/server/repositories/profile.repo";
+import { getCurrentProfileOverview } from "@/server/auth/current-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const overview = await getProfileOverview();
+  const overview = await getCurrentProfileOverview();
 
   if (!overview) {
     return (

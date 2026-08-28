@@ -6,14 +6,14 @@ import { StartSessionButton } from "@/components/training/start-session-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getProfile } from "@/server/repositories/profile.repo";
+import { getCurrentProfile } from "@/server/auth/current-user";
 import { getTodayOverview } from "@/server/repositories/workout.repo";
 import { getTrainingAnalysis } from "@/server/services/fatigue.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function TrainPage() {
-  const profile = await getProfile();
+  const profile = await getCurrentProfile();
   const overview = profile ? await getTodayOverview(profile.id) : null;
 
   if (!profile || !overview) {

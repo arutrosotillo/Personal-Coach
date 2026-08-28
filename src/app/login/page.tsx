@@ -11,9 +11,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * Única pantalla pública. Personal Coach es de un solo usuario: no hay
- * registro, ni recuperación de contraseña, ni campo de correo. Si pierdes la
- * contraseña se cambia la variable `APP_PASSWORD` en el servidor.
+ * Única pantalla pública. Las cuentas se crean a mano con `pnpm user:create`:
+ * no hay registro público, ni email, ni recuperación de contraseña. Si alguien
+ * pierde la suya, se le fija otra con `pnpm user:password <usuario>`.
  */
 export default async function LoginPage({
   searchParams,
@@ -34,7 +34,7 @@ export default async function LoginPage({
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-muted-foreground text-sm">
-            Esta app es privada. Introduce tu contraseña para continuar.
+            Esta app es privada. Introduce tus credenciales para continuar.
           </p>
           <LoginForm next={safeNext} />
         </CardContent>

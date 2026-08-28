@@ -27,6 +27,23 @@ export function LoginForm({ next }: { next?: string }) {
     <form action={formAction} className="space-y-4">
       {next ? <input type="hidden" name="next" value={next} /> : null}
       <div className="space-y-2">
+        <Label htmlFor="username">Usuario</Label>
+        <Input
+          id="username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          // El teclado de iOS no debe autocorregir ni capitalizar el usuario.
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+          autoFocus
+          className="min-h-11"
+        />
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="password">Contraseña</Label>
         <Input
           id="password"
@@ -38,7 +55,6 @@ export function LoginForm({ next }: { next?: string }) {
           autoCorrect="off"
           spellCheck={false}
           required
-          autoFocus
           className="min-h-11"
           aria-describedby={state.error ? "login-error" : undefined}
         />
