@@ -3,7 +3,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 
-import { describeTarget, findPgTool, isLocal } from "./pg-tools";
+import {
+  connectionEnv,
+  describeTarget,
+  findPgTool,
+  isLocal,
+  redact,
+} from "./pg-tools";
 
 /**
  * Restaura una copia sobre una base de datos. DESTRUCTIVO: sobrescribe lo que
@@ -71,6 +77,7 @@ async function main(): Promise<void> {
   }
 
   const pgRestore = findPgTool("pg_restore");
+  // Igual que en el backup: la conexión por el entorno, no por argumentos.
   execFileSync(
     pgRestore,
     [
@@ -81,10 +88,10 @@ async function main(): Promise<void> {
       // Sin --exit-on-error: --clean se queja de objetos que aún no existen al
       // restaurar sobre una base vacía, y eso no es un fallo real.
       "--dbname",
-      target,
+      connectionEnv(target).PGDATABASE ?? "",
       file,
     ],
-    { stdio: "inherit" },
+    { stdio: "inherit", env: { ...process.env, ...connectionEnv(target) } },
   );
 
   console.log("");
@@ -93,6 +100,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(redact(error instanceof Error ? error.message : String(error)));
   process.exit(1);
 });

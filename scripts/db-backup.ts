@@ -3,7 +3,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { describeTarget, findPgTool, requireDatabaseUrl } from "./pg-tools";
+import {
+  connectionEnv,
+  describeTarget,
+  findPgTool,
+  redact,
+  requireDatabaseUrl,
+} from "./pg-tools";
 
 /**
  * Copia de seguridad completa en formato personalizado de PostgreSQL, la que
@@ -33,10 +39,13 @@ function main(): void {
   console.log(`Origen:  ${describeTarget(url)}`);
   console.log(`Destino: ${file}`);
 
+  // La conexión va por el entorno, NUNCA como argumento: pg_dump vuelca su
+  // línea de comando entera al fallar, contraseña incluida, y mientras corre
+  // es visible en `ps aux`.
   execFileSync(
     pgDump,
-    ["--format=custom", "--no-owner", "--no-privileges", `--file=${file}`, url],
-    { stdio: "inherit" },
+    ["--format=custom", "--no-owner", "--no-privileges", `--file=${file}`],
+    { stdio: "inherit", env: { ...process.env, ...connectionEnv(url) } },
   );
 
   const bytes = statSync(file).size;
@@ -50,6 +59,15 @@ function main(): void {
 try {
   main();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error);
+  const mensaje = error instanceof Error ? error.message : String(error);
+  console.error(redact(mensaje));
+  if (/server version mismatch|server version:/i.test(mensaje)) {
+    console.error(
+      "\nLas herramientas de PostgreSQL tienen que ser de una versión IGUAL o\n" +
+        "MAYOR que la del servidor. Neon puede ir por delante de tu Postgres\n" +
+        "local: mira la versión que dice el error e instala esa.\n" +
+        "  brew install postgresql@18",
+    );
+  }
   process.exit(1);
 }
