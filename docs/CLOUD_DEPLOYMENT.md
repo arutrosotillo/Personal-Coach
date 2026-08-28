@@ -76,14 +76,19 @@ tu historial de Internet. Guárdalas en tu gestor de contraseñas.
 aparecer nunca en el cliente: ninguna lleva el prefijo `NEXT_PUBLIC_`, y por
 eso Next no las expone.
 
-| Variable              | Valor                            | Entornos            |
-| --------------------- | -------------------------------- | ------------------- |
-| `DATABASE_URL`        | cadena de Neon **con** `-pooler` | Production          |
-| `DIRECT_DATABASE_URL` | cadena de Neon **sin** `-pooler` | Production          |
-| `APP_PASSWORD`        | tu contraseña larga              | Production, Preview |
-| `AUTH_SECRET`         | el `openssl rand -base64 32`     | Production, Preview |
-| `OPENAI_API_KEY`      | tu clave de OpenAI               | Production          |
-| `AI_COACH_MODEL`      | `gpt-5.6-luna`                   | Production          |
+| Variable              | Valor                             | Entornos            |
+| --------------------- | --------------------------------- | ------------------- |
+| `DATABASE_URL`        | cadena de Neon **con** `-pooler`  | Production          |
+| `DIRECT_DATABASE_URL` | cadena de Neon **sin** `-pooler`  | Production          |
+| `APP_PASSWORD`        | tu contraseña (larga y tecleable) | Production, Preview |
+| `AUTH_SECRET`         | el `openssl rand -base64 32`      | Production, Preview |
+| `OPENAI_API_KEY`      | tu clave de OpenAI                | Production          |
+| `AI_COACH_MODEL`      | `gpt-5.6-luna`                    | Production          |
+
+> Con la integración de Neon instalada, `DIRECT_DATABASE_URL` es opcional: la
+> integración inyecta `DATABASE_URL_UNPOOLED`, que `prisma.config.ts` también
+> reconoce. Y no definas `DATABASE_URL` a mano si la integración ya la
+> gestiona: tendrías dos fuentes para la misma variable.
 
 Sin `OPENAI_API_KEY` la app funciona entera: la sección Coach dice
 "AI Coach no configurado" y el resto del tracker no se entera.
