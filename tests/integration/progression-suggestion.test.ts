@@ -247,7 +247,22 @@ describe("integridad del RIR registrado (Fase 3.2c)", () => {
     await wsService.discardSession(profileId, third.sessionId);
   });
 
-  it("un RIR de fallo REGISTRADO manda sobre las series sin registrar", async () => {
+  /**
+   * Regla 2/1/0 (commit 9ff2363): el objetivo de RIR es 2 en compuestos
+   * pesados, 1 en el resto de compuestos y 0 en aislamientos. Con objetivo 1
+   * ó 0, llegar al fallo ES lo prescrito, así que un RIR 0 registrado no
+   * frena por sí solo una subida: si el resto de condiciones se cumplen
+   * —rango cerrado, esfuerzo dentro de la banda aceptada— la carga sube.
+   *
+   * Solo el objetivo 2 (sentadilla, peso muerto rumano y remo con barra)
+   * convierte el fallo en HOLD la primera vez; ese camino lo cubren los tests
+   * unitarios de `progression.ts` con reasonCode CLOSED_RANGE_AT_FAILURE.
+   *
+   * Lo que NO cambia, y sigue siendo el objeto de este test: el RIR que sí se
+   * registró manda: no se descarta por que las demás series vayan sin RIR.
+   * Lo que cambia es la consecuencia, antes HOLD y ahora INCREASE_LOAD.
+   */
+  it("con objetivo 1, un RIR 0 registrado no bloquea la subida por sí solo", async () => {
     const te = await firstTemplateExercise();
     const variantId = te.exerciseVariantId;
     await prisma.setLog.deleteMany({ where: { exerciseVariantId: variantId } });
@@ -274,9 +289,18 @@ describe("integridad del RIR registrado (Fase 3.2c)", () => {
     const target = exec!.exercises.find((e) => e.variantId === variantId)!;
     const s = buildSuggestions(exec!)[target.id];
 
-    expect(s.action).toBe("HOLD");
-    expect(s.reasonCode).toBe("CLOSED_RANGE_AT_FAILURE");
-    expect(s.suggestedWeightKg).toBe(60);
+    // El ejercicio tiene objetivo 1, no 2: si esto cambiara, el test debe
+    // fallar aquí y no más abajo con un veredicto confuso.
+    expect(target.targetRir).toBe(1);
+
+    // RIR 0 con objetivo 1 entra en la banda aceptada (RIR >= objetivo - 1),
+    // así que no frena nada: el rango está cerrado y la carga sube un escalón.
+    expect(s.action).toBe("INCREASE_LOAD");
+    expect(s.reasonCode).toBe("RANGE_CLOSED");
+    expect(s.suggestedWeightKg).toBe(60 + target.loadStepKg);
+
+    // Pero la confianza es baja: solo una de las series llevaba RIR.
+    expect(s.confidence).toBe("LOW");
 
     await wsService.discardSession(profileId, started.sessionId);
   });
