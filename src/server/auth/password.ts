@@ -130,13 +130,21 @@ export function validateUsername(raw: string): string | null {
 }
 
 /**
- * Mínimo deliberadamente modesto: estas cuentas las creas tú a mano para
- * familiares, no se exponen a registro público, y una regla demasiado estricta
- * solo consigue que se apunten la contraseña en un papel.
+ * Sin longitud mínima, a propósito. Es una app personal para el dueño y sus
+ * amigos: las cuentas se crean a mano, no hay registro público, y quien la usa
+ * decide qué contraseña quiere. "123" vale.
+ *
+ * Lo único que se rechaza es la cadena vacía —una cuenta con contraseña vacía
+ * no sería utilizable, no más cómoda— y una desmesurada, porque scrypt tiene
+ * que procesarla entera en cada intento de login.
+ *
+ * Consecuencia asumida: el limitador de intentos es por instancia, así que una
+ * contraseña corta se puede romper por fuerza bruta. Es la elección del dueño
+ * para una app privada, no un descuido.
  */
 export function validatePassword(password: string): string | null {
-  if (password.length < 10) {
-    return "La contraseña necesita al menos 10 caracteres.";
+  if (password.length === 0) {
+    return "La contraseña no puede estar vacía.";
   }
   if (password.length > 200) {
     return "La contraseña no puede pasar de 200 caracteres.";

@@ -87,10 +87,24 @@ describe("nombres de usuario", () => {
 });
 
 describe("contraseñas", () => {
-  it("exige una longitud mínima razonable", () => {
-    expect(validatePassword("corta")).not.toBeNull();
-    expect(validatePassword("123456789")).not.toBeNull();
-    expect(validatePassword("1234567890")).toBeNull();
+  it("no impone longitud mínima: es una app personal y el dueño decide", () => {
+    expect(validatePassword("123")).toBeNull();
+    expect(validatePassword("a")).toBeNull();
+    expect(validatePassword("corta")).toBeNull();
+  });
+
+  it("solo rechaza la vacía y la desmesurada", () => {
+    // Vacía: la cuenta no sería utilizable. Enorme: scrypt la procesa entera
+    // en cada intento de login.
+    expect(validatePassword("")).not.toBeNull();
     expect(validatePassword("x".repeat(201))).not.toBeNull();
+    expect(validatePassword("x".repeat(200))).toBeNull();
+  });
+
+  it("una contraseña corta se hashea y verifica igual", async () => {
+    const hash = await hashPassword("123");
+    expect(await verifyPassword("123", hash)).toBe(true);
+    expect(await verifyPassword("124", hash)).toBe(false);
+    expect(hash).not.toContain("123");
   });
 });
