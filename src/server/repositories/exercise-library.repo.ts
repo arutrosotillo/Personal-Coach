@@ -1,5 +1,17 @@
 import { prisma } from "@/server/db";
 
+/**
+ * Visibilidad del banco: el catálogo global del seed (`profileId: null`) más
+ * los ejercicios propios de ESTE perfil. Nunca los de otra persona.
+ *
+ * Se pasa `profileId` explícito en vez de resolver la sesión aquí: los
+ * repositorios no leen cookies, esa frontera vive en `server/auth`.
+ */
+export function visibleExerciseWhere(profileId: string) {
+  return { OR: [{ profileId: null }, { profileId }] };
+}
+
+
 /** Ejercicio de la biblioteca con músculos y variantes, para la UI de F2A. */
 export interface LibraryExercise {
   id: string;
@@ -7,6 +19,8 @@ export interface LibraryExercise {
   movementPattern: string;
   instructions: string | null;
   isActive: boolean;
+  /** `true` si lo creó el propio usuario (se puede borrar; el del seed no). */
+  isOwn: boolean;
   muscles: Array<{
     code: string;
     nameEs: string;
@@ -24,9 +38,9 @@ export interface LibraryExercise {
 }
 
 /** Lista completa de la biblioteca (el filtrado/búsqueda se hace en cliente). */
-export async function listLibrary(): Promise<LibraryExercise[]> {
+export async function listLibrary(profileId: string): Promise<LibraryExercise[]> {
   const exercises = await prisma.exercise.findMany({
-    where: { deletedAt: null },
+    where: { deletedAt: null, ...visibleExerciseWhere(profileId) },
     orderBy: { name: "asc" },
     include: {
       contributions: { include: { muscleGroup: true } },
@@ -40,6 +54,7 @@ export async function listLibrary(): Promise<LibraryExercise[]> {
     movementPattern: e.movementPattern,
     instructions: e.instructions,
     isActive: e.isActive,
+    isOwn: e.profileId !== null,
     muscles: e.contributions
       .slice()
       .sort((a, b) => b.factor - a.factor)

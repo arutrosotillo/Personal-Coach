@@ -7,6 +7,7 @@ import {
 } from "@/core/enums";
 import type { CatalogExercise } from "@/core/program/types";
 import { prisma } from "@/server/db";
+import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
 
 /** Nombres de los ejercicios activos (para autocompletado en el onboarding). */
 export async function listExerciseNames(): Promise<string[]> {
@@ -18,10 +19,23 @@ export async function listExerciseNames(): Promise<string[]> {
   return exercises.map((e) => e.name);
 }
 
-/** Carga el catálogo activo en la vista que consumen los módulos de core. */
-export async function loadCatalog(): Promise<CatalogExercise[]> {
+/**
+ * Carga el catálogo activo en la vista que consumen los módulos de core.
+ *
+ * `profileId` incluye además los ejercicios propios de esa persona, para que el
+ * generador pueda usar la máquina rara de su gimnasio igual que cualquier otra.
+ * `null` = solo el catálogo global: es el caso del primer onboarding, cuando
+ * todavía no hay perfil y por tanto tampoco ejercicios propios.
+ */
+export async function loadCatalog(
+  profileId: string | null,
+): Promise<CatalogExercise[]> {
   const exercises = await prisma.exercise.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: {
+      isActive: true,
+      deletedAt: null,
+      ...(profileId ? visibleExerciseWhere(profileId) : { profileId: null }),
+    },
     include: {
       contributions: { include: { muscleGroup: true } },
       variants: { where: { deletedAt: null } },

@@ -213,7 +213,7 @@ export async function restoreInitialProgram(
   }
   const data = parsedOnboarding.data;
 
-  const catalog = await loadCatalog();
+  const catalog = await loadCatalog(profileId);
   const regenerated = generateInitialProgram({
     daysPerWeek: data.daysPerWeek,
     minutesPerSession: data.minutesPerSession,

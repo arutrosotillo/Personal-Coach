@@ -16,13 +16,16 @@ export default async function ProgramPage() {
   const overview = await getCurrentProfileOverview();
   const program = overview?.program;
   const mesocycle = program?.mesocycles[0];
-  const [rationale, substitutionOptions, canRestore] = program
-    ? await Promise.all([
-        getProgramRationale(program.id),
-        listSubstitutionOptions(),
-        canRestoreProgram(program.id),
-      ])
-    : [null, [], false];
+  // `overview &&` no es redundante para TypeScript: que `program` exista implica
+  // que `overview` existe, pero el narrowing no viaja a través de `overview?.`.
+  const [rationale, substitutionOptions, canRestore] =
+    overview && program
+      ? await Promise.all([
+          getProgramRationale(program.id),
+          listSubstitutionOptions(overview.profile.id),
+          canRestoreProgram(program.id),
+        ])
+      : [null, [], false];
 
   if (!overview || !program || !mesocycle) {
     return (

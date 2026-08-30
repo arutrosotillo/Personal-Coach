@@ -13,7 +13,7 @@ export default async function NewProgramPage() {
   // El builder necesita un perfil (lo crea el onboarding). Sin él, al onboarding.
   if (!profile) redirect("/onboarding");
 
-  const catalog = await listBuilderCatalog();
+  const catalog = await listBuilderCatalog(profile.id);
 
   // Flujo a pantalla completa (sin la barra de navegación inferior): la barra de
   // "Guardar programa" del builder ocupa esa zona.

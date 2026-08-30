@@ -1,5 +1,6 @@
 import { defaultTargetRir } from "@/core/training/prescription-defaults";
 import { prisma } from "@/server/db";
+import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
 
 /** Variante pickable para el Custom Program Builder, con defaults ya resueltos. */
 export interface BuilderVariant {
@@ -18,9 +19,15 @@ export interface BuilderVariant {
  * del catálogo; el RIR por defecto se deriva del rol (patrón + fatiga sistémica).
  * Read-only; sin migración.
  */
-export async function listBuilderCatalog(): Promise<BuilderVariant[]> {
+export async function listBuilderCatalog(
+  profileId: string,
+): Promise<BuilderVariant[]> {
   const exercises = await prisma.exercise.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: {
+      isActive: true,
+      deletedAt: null,
+      ...visibleExerciseWhere(profileId),
+    },
     orderBy: { name: "asc" },
     include: {
       contributions: { include: { muscleGroup: true } },

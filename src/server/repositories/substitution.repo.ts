@@ -1,15 +1,20 @@
 import type { SubstitutionExercise } from "@/components/training/session-runner";
 import { prisma } from "@/server/db";
+import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
 
 /**
  * Catálogo de sustitución: ejercicios activos con sus variantes, para elegir
  * manualmente un reemplazo durante la ejecución (sin recomendaciones en F2A).
  */
-export async function listSubstitutionOptions(): Promise<
-  SubstitutionExercise[]
-> {
+export async function listSubstitutionOptions(
+  profileId: string,
+): Promise<SubstitutionExercise[]> {
   const exercises = await prisma.exercise.findMany({
-    where: { isActive: true, deletedAt: null },
+    where: {
+      isActive: true,
+      deletedAt: null,
+      ...visibleExerciseWhere(profileId),
+    },
     orderBy: { name: "asc" },
     include: {
       variants: { where: { deletedAt: null }, orderBy: { name: "asc" } },

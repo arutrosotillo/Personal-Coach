@@ -73,6 +73,7 @@ model UserProfile {
   nutritionLogs    NutritionLog[]
   recommendations  Recommendation[]
   preferences      UserPreference[]
+  customExercises  Exercise[]
 }
 
 model Goal {
@@ -221,21 +222,36 @@ model MuscleGroup {
   recoveryCheckIns RecoveryCheckIn[]
 }
 
+/// Ejercicio del banco. Los del seed son GLOBALES (`profileId = null`) y los
+/// ve todo el mundo; los que crea una persona son suyos y solo aparecen en su
+/// biblioteca, su builder y su lista de sustitución.
+///
+/// `name` sigue siendo único GLOBALMENTE, no por perfil. Es deliberado: el
+/// seed hace `upsert({ where: { name } })` y necesita esa unicidad, y con
+/// `@@unique([profileId, name])` los globales quedarían sin restricción
+/// (en Postgres NULL != NULL, así que dos "Press banca" globales colarían).
+/// El precio es que dos personas no pueden llamar igual a sus ejercicios
+/// custom; en una app privada de unas pocas cuentas es un precio aceptable, y
+/// el servicio devuelve un error claro en vez de un fallo de constraint.
 model Exercise {
-  id              String    @id @default(cuid())
-  name            String    @unique
+  id              String       @id @default(cuid())
+  name            String       @unique
   movementPattern String // enum MovementPattern
-  systemicFatigue Int       @default(2) // 1..3 (coste sistémico aproximado)
+  systemicFatigue Int          @default(2) // 1..3 (coste sistémico aproximado)
   instructions    String?
-  isCustom        Boolean   @default(false)
-  isActive        Boolean   @default(true)
+  isCustom        Boolean      @default(false)
+  isActive        Boolean      @default(true)
+  /// Dueño, solo para ejercicios custom. `null` = catálogo global del seed.
+  profileId       String?
+  profile         UserProfile? @relation(fields: [profileId], references: [id], onDelete: Cascade)
   deletedAt       DateTime?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime     @default(now())
 
   variants      ExerciseVariant[]
   contributions ExerciseMuscleContribution[]
 
   @@index([movementPattern])
+  @@index([profileId])
 }
 
 model ExerciseMuscleContribution {

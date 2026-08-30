@@ -58,7 +58,14 @@ export async function completeOnboarding(
     targetWeightKg: data.targetWeightKg,
   });
 
-  const catalog = await loadCatalog();
+  // Re-ejecución del onboarding: si esta cuenta ya tiene perfil, sus
+  // ejercicios propios entran en el catálogo del generador. La primera vez no
+  // hay perfil todavía y solo se usa el catálogo global.
+  const existingProfile = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  const catalog = await loadCatalog(existingProfile?.id ?? null);
   const program = generateInitialProgram({
     daysPerWeek: data.daysPerWeek,
     minutesPerSession: data.minutesPerSession,

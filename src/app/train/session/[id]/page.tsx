@@ -30,7 +30,7 @@ export default async function SessionPage({
   // ofrecerla.
   if (session.status !== "IN_PROGRESS") redirect("/train/history");
 
-  const substitution = await listSubstitutionOptions();
+  const substitution = await listSubstitutionOptions(profileId);
   // El veto se calcula sobre el día de la sesión: la salud y la fatiga mandan
   // sobre la progresión (COACH_PHILOSOPHY §2).
   const veto = await getRecoveryVeto(profileId, session.localDate);

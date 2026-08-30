@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { MUSCLE_GROUPS } from "@/core/catalog/muscle-groups";
 import type { Equipment, MovementPattern } from "@/core/enums";
+import { deleteCustomExerciseAction } from "@/server/actions/exercise.action";
+import { Button } from "@/components/ui/button";
+import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
 import { Input } from "@/components/ui/input";
 import type { LibraryExercise } from "@/server/repositories/exercise-library.repo";
 import { cn } from "@/lib/utils";
@@ -42,6 +47,8 @@ export function ExerciseLibrary({
   const [muscle, setMuscle] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<Equipment | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const router = useRouter();
+  const [deleting, startDelete] = useTransition();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -104,9 +111,12 @@ export function ExerciseLibrary({
         </div>
       </div>
 
-      <p className="text-muted-foreground text-xs">
-        {filtered.length} ejercicio{filtered.length === 1 ? "" : "s"}
-      </p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground text-xs">
+          {filtered.length} ejercicio{filtered.length === 1 ? "" : "s"}
+        </p>
+        <CustomExerciseForm />
+      </div>
 
       <ul className="space-y-2">
         {filtered.map((e) => {
@@ -122,6 +132,11 @@ export function ExerciseLibrary({
               >
                 <span>
                   <span className="font-medium">{e.name}</span>
+                  {e.isOwn ? (
+                    <span className="border-primary/50 text-muted-foreground ml-2 rounded-full border px-1.5 py-0.5 text-[10px] align-middle">
+                      Tuyo
+                    </span>
+                  ) : null}
                   {!e.isActive ? (
                     <span className="text-muted-foreground ml-2 text-xs">
                       (inactivo)
@@ -183,6 +198,28 @@ export function ExerciseLibrary({
                       ))}
                     </ul>
                   </div>
+                  {e.isOwn ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="min-h-9"
+                      disabled={deleting}
+                      onClick={() =>
+                        startDelete(async () => {
+                          const r = await deleteCustomExerciseAction(e.id);
+                          if (!r.ok) {
+                            toast.error(r.error ?? "No se pudo borrar.");
+                            return;
+                          }
+                          toast.success(`"${e.name}" borrado.`);
+                          router.refresh();
+                        })
+                      }
+                    >
+                      Borrar de mi banco
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </li>
