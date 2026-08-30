@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Scratch local de QA/depuración (gitignored, y fuera del tsconfig).
+    "tmp-*.ts",
   ]),
 ]);
 
