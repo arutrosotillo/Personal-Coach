@@ -3,11 +3,14 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { ProgramEditor } from "@/components/training/program-editor";
 import { ProgramRationaleCard } from "@/components/training/program-rationale-card";
+import { WeeklyVolumeCard } from "@/components/training/weekly-volume-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { getProgramRationale } from "@/server/repositories/program.repo";
 import { getCurrentProfileOverview } from "@/server/auth/current-user";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
+import { getWeeklyVolume } from "@/server/repositories/weekly-volume.repo";
+import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
 import { canRestoreProgram } from "@/server/services/program-source.service";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +21,19 @@ export default async function ProgramPage() {
   const mesocycle = program?.mesocycles[0];
   // `overview &&` no es redundante para TypeScript: que `program` exista implica
   // que `overview` existe, pero el narrowing no viaja a través de `overview?.`.
-  const [rationale, substitutionOptions, canRestore] =
+  const [rationale, substitutionOptions, canRestore, weeklyVolume] =
     overview && program
       ? await Promise.all([
           getProgramRationale(program.id),
           listSubstitutionOptions(overview.profile.id),
           canRestoreProgram(program.id),
+          // El "hoy" sale de la zona del perfil, no del reloj del servidor.
+          getWeeklyVolume(
+            overview.profile.id,
+            toLocalDate(new Date(), overview.profile.timezone ?? DEFAULT_TIMEZONE),
+          ),
         ])
-      : [null, [], false];
+      : [null, [], false, null];
 
   if (!overview || !program || !mesocycle) {
     return (
@@ -82,6 +90,12 @@ export default async function ProgramPage() {
         cargas y repeticiones se ajustan sesión a sesión; los ejercicios, los
         días y las series solo cambian si los cambias tú.
       </p>
+
+      {weeklyVolume ? (
+        <div className="mb-4">
+          <WeeklyVolumeCard data={weeklyVolume} />
+        </div>
+      ) : null}
 
       {rationale ? (
         <div className="mb-4">
