@@ -743,6 +743,67 @@ export const EXERCISES: ExerciseSeed[] = [
     ],
   },
   {
+    name: "Curl estricto",
+    movementPattern: "ISOLATION",
+    systemicFatigue: 1,
+    instructions:
+      "Espalda y glúteos pegados a la pared, codos quietos pegados al torso. Cero balanceo: si necesitas la cadera para subirla, pesa demasiado.",
+    contributions: [
+      c("BICEPS", "PRIMARY", 1.0),
+      c("ANTEBRAZO", "SECONDARY", 0.25),
+    ],
+    variants: [
+      {
+        name: "Barra recta",
+        equipment: "BARBELL",
+        loadStepKg: 2.5,
+        repRangeMin: 6,
+        repRangeMax: 10,
+        defaultRestSeconds: 90,
+        contraindications: ["WRIST", "ELBOW"],
+        isDefault: true,
+      },
+      {
+        name: "Barra EZ",
+        equipment: "EZ_BAR",
+        loadStepKg: 2.5,
+        repRangeMin: 6,
+        repRangeMax: 10,
+        defaultRestSeconds: 90,
+        contraindications: ["WRIST"],
+      },
+    ],
+  },
+  {
+    name: "Curl spider",
+    movementPattern: "ISOLATION",
+    systemicFatigue: 1,
+    instructions:
+      "Boca abajo sobre un banco inclinado, brazos colgando en vertical. Cierra del todo arriba sin mover el hombro; baja controlado.",
+    contributions: [c("BICEPS", "PRIMARY", 1.0)],
+    variants: [
+      {
+        name: "Barra EZ",
+        equipment: "EZ_BAR",
+        loadStepKg: 2.5,
+        repRangeMin: 10,
+        repRangeMax: 15,
+        defaultRestSeconds: 75,
+        contraindications: ["WRIST"],
+        isDefault: true,
+      },
+      {
+        name: "Mancuernas",
+        equipment: "DUMBBELL",
+        loadStepKg: 2,
+        repRangeMin: 10,
+        repRangeMax: 15,
+        defaultRestSeconds: 75,
+        contraindications: [],
+      },
+    ],
+  },
+  {
     name: "Curl bayesian en polea",
     movementPattern: "ISOLATION",
     systemicFatigue: 1,

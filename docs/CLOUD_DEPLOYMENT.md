@@ -118,7 +118,7 @@ preview rota que una preview escribiendo en producción.
    `DIRECT_DATABASE_URL`. Si fallan, el despliegue falla y no se publica: es
    lo correcto, no queremos código nuevo sobre un schema viejo.
 3. Cuando termine, abre la URL. Debe pedirte la contraseña.
-4. Siembra el catálogo (16 grupos, 43 ejercicios) una única vez, desde tu Mac
+4. Siembra el catálogo (16 grupos, 45 ejercicios) una única vez, desde tu Mac
    apuntando a producción:
 
    ```bash
@@ -171,6 +171,21 @@ DATABASE_URL="<cadena directa de Neon>" pnpm db:verify
 
 Compara el recuento del historial con el de la vez anterior. Si baja, algo
 ha ido mal y tienes la copia de hace cinco minutos.
+
+### Si el despliegue añade ejercicios al catálogo
+
+Las migraciones se aplican solas; **el seed NO**. Un ejercicio nuevo en
+`src/core/catalog/exercises.ts` no aparece en producción hasta que se siembra a
+mano:
+
+```bash
+DATABASE_URL="<cadena directa de Neon>" pnpm db:seed
+```
+
+Es idempotente (`upsert` por nombre de ejercicio y por `(exerciseId, name)` de
+variante): no duplica nada ni toca los ejercicios propios de nadie, así que se
+puede repetir sin miedo. Si se olvida, el único síntoma es que el ejercicio
+nuevo no sale en el buscador — nada se rompe.
 
 ---
 
