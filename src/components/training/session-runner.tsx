@@ -25,6 +25,7 @@ import type { ClientExecutionSession } from "@/server/repositories/workout.repo"
 import type { ExerciseHistorySummary } from "@/server/services/progression.service";
 import type { ProgressionSuggestion } from "@/core/training/progression";
 import { CoachPanel } from "@/components/coach/coach-panel";
+import { ExerciseNoteEditor } from "@/components/training/exercise-note-editor";
 import { cn } from "@/lib/utils";
 
 export interface SubstitutionExercise {
@@ -409,6 +410,15 @@ export function SessionRunner({
               Primera vez con este ejercicio: introduce la carga que uses.
             </p>
           )}
+          {/* Tu nota del ejercicio, donde de verdad se lee: justo antes de la
+              serie. Se puede editar aquí mismo sin salir de la sesión. */}
+          <ExerciseNoteEditor
+            key={ex.exerciseId}
+            exerciseId={ex.exerciseId}
+            exerciseName={ex.exerciseName}
+            initialNote={ex.note}
+            className="mt-2"
+          />
         </div>
 
         <ul className="space-y-2">

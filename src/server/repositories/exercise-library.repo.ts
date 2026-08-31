@@ -11,7 +11,6 @@ export function visibleExerciseWhere(profileId: string) {
   return { OR: [{ profileId: null }, { profileId }] };
 }
 
-
 /** Ejercicio de la biblioteca con músculos y variantes, para la UI de F2A. */
 export interface LibraryExercise {
   id: string;
@@ -21,6 +20,8 @@ export interface LibraryExercise {
   isActive: boolean;
   /** `true` si lo creó el propio usuario (se puede borrar; el del seed no). */
   isOwn: boolean;
+  /** Nota personal de ESTE perfil sobre el ejercicio; `null` si no hay. */
+  note: string | null;
   muscles: Array<{
     code: string;
     nameEs: string;
@@ -38,13 +39,17 @@ export interface LibraryExercise {
 }
 
 /** Lista completa de la biblioteca (el filtrado/búsqueda se hace en cliente). */
-export async function listLibrary(profileId: string): Promise<LibraryExercise[]> {
+export async function listLibrary(
+  profileId: string,
+): Promise<LibraryExercise[]> {
   const exercises = await prisma.exercise.findMany({
     where: { deletedAt: null, ...visibleExerciseWhere(profileId) },
     orderBy: { name: "asc" },
     include: {
       contributions: { include: { muscleGroup: true } },
       variants: { where: { deletedAt: null }, orderBy: { name: "asc" } },
+      // Filtrada por perfil: la nota es personal y el catálogo es compartido.
+      notes: { where: { profileId }, select: { text: true } },
     },
   });
 
@@ -55,6 +60,7 @@ export async function listLibrary(profileId: string): Promise<LibraryExercise[]>
     instructions: e.instructions,
     isActive: e.isActive,
     isOwn: e.profileId !== null,
+    note: e.notes[0]?.text ?? null,
     muscles: e.contributions
       .slice()
       .sort((a, b) => b.factor - a.factor)

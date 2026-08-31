@@ -74,6 +74,7 @@ model UserProfile {
   recommendations  Recommendation[]
   preferences      UserPreference[]
   customExercises  Exercise[]
+  exerciseNotes    ExerciseNote[]
 }
 
 model Goal {
@@ -249,9 +250,37 @@ model Exercise {
 
   variants      ExerciseVariant[]
   contributions ExerciseMuscleContribution[]
+  notes         ExerciseNote[]
 
   @@index([movementPattern])
   @@index([profileId])
+}
+
+/// Nota personal sobre un ejercicio: la señal técnica que cada uno se apunta
+/// para sí ("piernas encogidas en el press banca", "no bloquear el codo").
+///
+/// Es de la PERSONA, no del ejercicio. `Exercise.instructions` es del catálogo
+/// compartido y lo ve todo el mundo; esto es lo contrario: solo lo ve quien lo
+/// escribe, y por eso vive en su propia tabla con `profileId` en vez de en una
+/// columna de `Exercise`.
+///
+/// Cuelga del EJERCICIO (el movimiento), no de la variante: la señal es de
+/// cómo ejecutas el movimiento, así que sigue apareciendo si pasas de barra a
+/// mancuernas o si sustituyes en sesión dentro del mismo ejercicio. Una nota
+/// por persona y ejercicio: se edita en sitio, no acumula historial —para lo
+/// que pasó un día concreto ya están las notas de la sesión—.
+model ExerciseNote {
+  id         String      @id @default(cuid())
+  profileId  String
+  profile    UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  exerciseId String
+  exercise   Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  text       String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([profileId, exerciseId])
+  @@index([exerciseId])
 }
 
 model ExerciseMuscleContribution {

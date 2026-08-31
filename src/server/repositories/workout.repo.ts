@@ -145,7 +145,10 @@ async function recentWorkingSetsForVariants(
 export interface ExecutionExercise {
   id: string;
   ordinal: number;
+  exerciseId: string;
   exerciseName: string;
+  /** Nota personal de ESTE perfil sobre el ejercicio; `null` si no hay. */
+  note: string | null;
   variantId: string;
   variantName: string;
   equipment: string;
@@ -214,7 +217,17 @@ export async function getExecutionSession(
       exercises: {
         orderBy: { ordinal: "asc" },
         include: {
-          exerciseVariant: { include: { exercise: true } },
+          exerciseVariant: {
+            include: {
+              // La nota se filtra por perfil: el ejercicio es compartido, la
+              // nota no.
+              exercise: {
+                include: {
+                  notes: { where: { profileId }, select: { text: true } },
+                },
+              },
+            },
+          },
           setLogs: { orderBy: { setNumber: "asc" } },
         },
       },
@@ -231,7 +244,9 @@ export async function getExecutionSession(
   const exercises: ExecutionExercise[] = session.exercises.map((we) => ({
     id: we.id,
     ordinal: we.ordinal,
+    exerciseId: we.exerciseVariant.exerciseId,
     exerciseName: we.exerciseVariant.exercise.name,
+    note: we.exerciseVariant.exercise.notes[0]?.text ?? null,
     variantId: we.exerciseVariantId,
     variantName: we.exerciseVariant.name,
     equipment: we.exerciseVariant.equipment,

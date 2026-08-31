@@ -6,6 +6,10 @@ import {
   customExerciseSchema,
   type CustomExerciseInput,
 } from "@/core/schemas/custom-exercise";
+import {
+  exerciseNoteSchema,
+  type ExerciseNoteInput,
+} from "@/core/schemas/exercise-note";
 import { requireProfileId } from "@/server/auth/current-user";
 import {
   createCustomExercise,
@@ -13,6 +17,10 @@ import {
   DuplicateExerciseNameError,
   ExerciseInUseError,
 } from "@/server/services/custom-exercise.service";
+import {
+  ExerciseNotVisibleError,
+  saveExerciseNote,
+} from "@/server/services/exercise-note.service";
 
 export interface ExerciseActionResult {
   ok: boolean;
@@ -71,5 +79,35 @@ export async function deleteCustomExerciseAction(
     }
     console.error("deleteCustomExerciseAction", error);
     return { ok: false, error: "No se pudo borrar el ejercicio." };
+  }
+}
+
+/**
+ * Guarda la nota personal de un ejercicio. Texto vacío = borrarla.
+ *
+ * Devuelve el texto guardado para que la interfaz pinte exactamente lo que hay
+ * en la base (recortado por Zod), no lo que se tecleó.
+ */
+export async function saveExerciseNoteAction(
+  input: ExerciseNoteInput,
+): Promise<ExerciseActionResult & { text?: string | null }> {
+  const parsed = exerciseNoteSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Nota inválida.",
+    };
+  }
+  try {
+    const profileId = await requireProfileId();
+    const { text } = await saveExerciseNote(profileId, parsed.data);
+    revalidateExercisePages();
+    return { ok: true, text };
+  } catch (error) {
+    if (error instanceof ExerciseNotVisibleError) {
+      return { ok: false, error: error.message };
+    }
+    console.error("saveExerciseNoteAction", error);
+    return { ok: false, error: "No se pudo guardar la nota." };
   }
 }

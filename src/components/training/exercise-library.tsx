@@ -9,6 +9,7 @@ import type { Equipment, MovementPattern } from "@/core/enums";
 import { deleteCustomExerciseAction } from "@/server/actions/exercise.action";
 import { Button } from "@/components/ui/button";
 import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
+import { ExerciseNoteEditor } from "@/components/training/exercise-note-editor";
 import { Input } from "@/components/ui/input";
 import type { LibraryExercise } from "@/server/repositories/exercise-library.repo";
 import { cn } from "@/lib/utils";
@@ -133,13 +134,21 @@ export function ExerciseLibrary({
                 <span>
                   <span className="font-medium">{e.name}</span>
                   {e.isOwn ? (
-                    <span className="border-primary/50 text-muted-foreground ml-2 rounded-full border px-1.5 py-0.5 text-[10px] align-middle">
+                    <span className="border-primary/50 text-muted-foreground ml-2 rounded-full border px-1.5 py-0.5 align-middle text-[10px]">
                       Tuyo
                     </span>
                   ) : null}
                   {!e.isActive ? (
                     <span className="text-muted-foreground ml-2 text-xs">
                       (inactivo)
+                    </span>
+                  ) : null}
+                  {e.note ? (
+                    <span
+                      className="text-muted-foreground ml-2 align-middle text-[10px]"
+                      title="Tienes una nota en este ejercicio"
+                    >
+                      ✎
                     </span>
                   ) : null}
                   <span className="text-muted-foreground block text-xs">
@@ -160,6 +169,12 @@ export function ExerciseLibrary({
                   {e.instructions ? (
                     <p className="text-muted-foreground">{e.instructions}</p>
                   ) : null}
+                  {/* Tuya, no del catálogo: `instructions` lo ve todo el mundo. */}
+                  <ExerciseNoteEditor
+                    exerciseId={e.id}
+                    exerciseName={e.name}
+                    initialNote={e.note}
+                  />
                   <div>
                     <p className="text-muted-foreground mb-1 text-xs font-medium">
                       Músculos
