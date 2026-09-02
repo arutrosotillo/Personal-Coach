@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 import { RestTimer } from "@/components/training/rest-timer";
+import { SyncStatus } from "@/components/training/sync-status";
+import { useSessionSync } from "@/components/training/use-session-sync";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -14,11 +16,20 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import {
+  initRows,
+  reconcile,
+  variantMap,
+  type ReconciledState,
+  type RowState,
+  type RowsMap,
+} from "@/lib/offline/session-snapshot";
+import {
+  browserStorage,
+  createSnapshotStore,
+} from "@/lib/offline/session-storage";
+import {
   discardSessionAction,
-  finishSessionAction,
   getExerciseHistoryAction,
-  logSetAction,
-  setPlannedSetsAction,
   substituteExerciseAction,
 } from "@/server/actions/workout.action";
 import type { ClientExecutionSession } from "@/server/repositories/workout.repo";
@@ -33,54 +44,9 @@ export interface SubstitutionExercise {
   variants: Array<{ id: string; name: string; equipment: string }>;
 }
 
-interface RowState {
-  weight: string;
-  reps: number;
-  /**
-   * RIR REALMENTE registrado por el usuario. `null` = "no lo sé" / sin
-   * registrar. NUNCA se prerrellena con `targetRir`: el objetivo es una
-   * prescripción, no un dato reportado, y confundirlos contamina el historial
-   * y sesga al motor de progresión (docs/TRAINING_ENGINE_FINAL_AUDIT.md §2.6).
-   */
-  rir: number | null;
-  /**
-   * ¿El usuario ha contestado al RIR (un número o "no lo sé")? Distingue
-   * "todavía no lo he tocado" de "he dicho que no lo sé". Ambos persisten
-   * igual (`rir: null`); es solo para no mostrar una respuesta que nadie dio.
-   */
-  rirAnswered: boolean;
-  done: boolean;
-}
-
-type RowsMap = Record<string, RowState[]>;
-
 // Helper a nivel de módulo: el lint del compilador de React marca Date.now()
 // como impuro si aparece dentro del componente, aunque sea en un handler.
 const nowMs = () => Date.now();
-
-function initRows(session: ClientExecutionSession): RowsMap {
-  const map: RowsMap = {};
-  for (const ex of session.exercises) {
-    const rows: RowState[] = [];
-    for (let n = 1; n <= ex.plannedSets; n++) {
-      const logged = ex.setLogs.find((s) => s.setNumber === n);
-      const last =
-        ex.lastTime?.sets.find((s) => s.setNumber === n) ??
-        ex.lastTime?.sets[ex.lastTime.sets.length - 1];
-      rows.push({
-        weight:
-          logged?.weightKg?.toString() ??
-          (last ? last.weightKg.toString() : ""),
-        reps: logged?.reps ?? last?.reps ?? ex.repRangeMin,
-        rir: logged?.rir ?? null,
-        rirAnswered: !!logged,
-        done: !!logged,
-      });
-    }
-    map[ex.id] = rows;
-  }
-  return map;
-}
 
 export function SessionRunner({
   session,
@@ -95,15 +61,67 @@ export function SessionRunner({
   coachEnabled: boolean;
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState<RowsMap>(() => initRows(session));
+  const exercises = session.exercises;
+  // El primer render es el del SERVIDOR, sin tocar el `localStorage`. Es
+  // deliberado: leerlo aquí hacía que el HTML del servidor y el del cliente no
+  // coincidieran, y cada recarga sin cobertura —justo la que importa— tiraba un
+  // error de hidratación. Lo guardado se aplica en un efecto, justo después.
+  const [rows, setRows] = useState<RowsMap>(() => initRows(exercises));
   const [current, setCurrent] = useState(0);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  const [restored, setRestored] = useState<ReconciledState | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const exercises = session.exercises;
+  const variants = useMemo(() => variantMap(exercises), [exercises]);
+
+  // Recupera lo que quedó guardado en ESTE móvil y lo funde con lo que trae el
+  // servidor. La regla está explicada en `reconcile`: si el servidor tiene
+  // confirmada una serie y no hay nada pendiente sobre ella, manda el servidor;
+  // en cualquier otro caso, manda lo local. Así ni un dato pendiente ni un
+  // borrador se pierden al recargar, y unos datos viejos del servidor —el HTML
+  // que sirve el service worker cuando no hay cobertura— no pisan nada.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const store = createSnapshotStore(browserStorage());
+    // Solo hay una sesión activa a la vez: cualquier otra que quedara guardada
+    // es de un entrenamiento ya terminado y no vuelve a leerse nunca.
+    store.keepOnly(session.id);
+    const state = reconcile(exercises, store.read(session.id), session.id);
+    setRestored(state);
+    setRows(state.rows);
+    setCurrent(state.current);
+    setRestEndsAt(state.restEndsAt);
+    if (state.recovered) {
+      // Recargar en mitad de un entrenamiento y ver tus series ahí es lo
+      // esperable; enterarte de que además siguen pendientes de enviar, no.
+      toast.success("He recuperado tu entrenamiento de este móvil.");
+    }
+  }, [exercises, session.id]);
+
+  const sync = useSessionSync({
+    sessionId: session.id,
+    restored,
+    rows,
+    variantByExercise: variants,
+    current,
+    restEndsAt,
+    onFinishSynced: ({ deload }) => {
+      // Si contó como descarga, decirlo: si no, el usuario ve una sesión
+      // corta como cualquier otra y un contador que se reinicia solo.
+      toast.success(
+        deload
+          ? "Sesión guardada como descarga: no cuenta como sesión acortada."
+          : "Sesión guardada",
+      );
+      router.push("/train");
+      router.refresh();
+    },
+  });
   const ex = exercises[current];
   const exRows = rows[ex.id] ?? [];
   const suggestion = suggestions[ex.id];
@@ -128,40 +146,32 @@ export function SessionRunner({
   }
 
   /**
-   * Guarda (upsert idempotente) el estado actual de una serie. Si falla —
-   * incluida una caída de red, que en una app usada por LAN desde el móvil es
-   * lo normal, no lo excepcional — revierte la fila al estado previo para que
-   * la pantalla nunca muestre algo que no está guardado.
+   * Encola el estado actual de una serie para el servidor.
+   *
+   * Antes esto ESCRIBÍA y, si fallaba —cualquier caída de red—, revertía la
+   * fila al estado previo: la serie que acababas de registrar se borraba sola
+   * delante de ti. Ese era el problema. Ahora la fila es la verdad en pantalla
+   * y la cola se encarga de que llegue, hoy o dentro de media hora.
    */
-  function persistSet(idx: number, row: RowState, previous: RowState) {
+  function persistSet(idx: number, row: RowState) {
     const weightKg = row.weight === "" ? 0 : Number(row.weight);
     if (Number.isNaN(weightKg)) {
       toast.error("Peso no válido");
       return false;
     }
-    startTransition(async () => {
-      try {
-        const res = await logSetAction({
-          workoutExerciseId: ex.id,
-          setNumber: idx + 1,
-          weightKg,
-          reps: row.reps,
-          rir: row.rir,
-        });
-        if (res.ok) return;
-        toast.error(res.error ?? "No se pudo guardar");
-      } catch {
-        toast.error("Sin conexión: la serie no se ha guardado");
-      }
-      updateRow(ex.id, idx, previous);
+    sync.queueSet({
+      workoutExerciseId: ex.id,
+      setNumber: idx + 1,
+      weightKg,
+      reps: row.reps,
+      rir: row.rir,
     });
     return true;
   }
 
   function completeSet(idx: number) {
     const row = exRows[idx];
-    // Optimista: marcar hecho y arrancar el descanso al instante.
-    if (!persistSet(idx, { ...row, done: true }, row)) return;
+    if (!persistSet(idx, { ...row, done: true })) return;
     updateRow(ex.id, idx, { done: true });
     setRestEndsAt(nowMs() + ex.restSeconds * 1000);
   }
@@ -177,7 +187,7 @@ export function SessionRunner({
     // Solo se re-guarda una serie YA completada, y nunca con el peso a medio
     // teclear (el campo vacío persistiría un 0 real en la base de datos).
     const next = { ...current, ...patch };
-    if (current?.done && next.weight !== "") persistSet(idx, next, current);
+    if (current?.done && next.weight !== "") persistSet(idx, next);
   }
 
   function addSet() {
@@ -190,16 +200,7 @@ export function SessionRunner({
       { ...last, rir: null, rirAnswered: false, done: false },
     ];
     setRows((prev) => ({ ...prev, [ex.id]: next }));
-    startTransition(async () => {
-      try {
-        const res = await setPlannedSetsAction(ex.id, next.length);
-        if (res.ok) return;
-        toast.error(res.error ?? "No se pudo añadir la serie");
-      } catch {
-        toast.error("Sin conexión: no se pudo añadir la serie");
-      }
-      setRows((prev) => ({ ...prev, [ex.id]: arr }));
-    });
+    sync.queuePlanned({ workoutExerciseId: ex.id, plannedSets: next.length });
   }
 
   function removeSet() {
@@ -207,16 +208,7 @@ export function SessionRunner({
     if (arr.length <= 1) return;
     const next = arr.slice(0, -1);
     setRows((prev) => ({ ...prev, [ex.id]: next }));
-    startTransition(async () => {
-      try {
-        const res = await setPlannedSetsAction(ex.id, next.length);
-        if (res.ok) return;
-        toast.error(res.error ?? "No se pudo quitar la serie");
-      } catch {
-        toast.error("Sin conexión: no se pudo quitar la serie");
-      }
-      setRows((prev) => ({ ...prev, [ex.id]: arr }));
-    });
+    sync.queuePlanned({ workoutExerciseId: ex.id, plannedSets: next.length });
   }
 
   /** Aplica la carga y los objetivos por serie sugeridos a todas las series
@@ -289,6 +281,13 @@ export function SessionRunner({
     });
   }
 
+  /**
+   * Cierra la sesión. Se puede pulsar SIN cobertura: el cierre se encola con un
+   * token de idempotencia y la pantalla pasa a "terminado". Cuando el servidor
+   * lo confirma, `onFinishSynced` navega a /train. No se navega antes porque
+   * /train necesita servidor: llevar a alguien sin cobertura a una pantalla
+   * rota justo después de decirle "guardado" sería la peor forma de terminar.
+   */
   function finish(feedback: {
     perceivedPerformance?: number;
     pump?: number;
@@ -297,26 +296,8 @@ export function SessionRunner({
     motivation?: number;
     notes?: string;
   }) {
-    startTransition(async () => {
-      const res = await finishSessionAction(session.id, feedback);
-      if (res.ok) {
-        // Si contó como descarga, decirlo: si no, el usuario ve una sesión
-        // corta como cualquier otra y un contador que se reinicia solo.
-        toast.success(
-          res.deload
-            ? "Sesión guardada como descarga: no cuenta como sesión acortada."
-            : "Sesión guardada",
-        );
-        router.push("/train");
-        router.refresh();
-      } else {
-        // Si falló porque la sesión ya no estaba en curso, reintentar no sirve
-        // de nada y quedarse aquí deja al usuario en una pantalla muerta: se
-        // refresca para que el servidor decida qué mostrar.
-        toast.error(res.error ?? "No se pudo finalizar", { duration: 8000 });
-        router.refresh();
-      }
-    });
+    setFeedbackOpen(false);
+    sync.queueFinish(feedback);
   }
 
   function discard() {
@@ -334,6 +315,27 @@ export function SessionRunner({
     });
   }
 
+  // Ya pulsó "Guardar y finalizar". Con cobertura esto dura un parpadeo y
+  // `onFinishSynced` navega; sin ella, es la pantalla honesta: el entrenamiento
+  // está terminado y guardado en el móvil, y se enviará solo.
+  if (sync.finishedLocally) {
+    return (
+      <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col items-center justify-center gap-3 px-6 text-center">
+        <h1 className="text-xl font-semibold">Entrenamiento terminado</h1>
+        <p className="tnum text-muted-foreground text-sm">
+          {totalDone} series registradas
+        </p>
+        <p className="text-muted-foreground text-sm">
+          {sync.pending === 0
+            ? "Guardado. Un momento…"
+            : sync.reachable
+              ? "Guardando en el servidor…"
+              : "Guardado en este móvil. Se enviará solo en cuanto vuelva la cobertura: puedes cerrar la app."}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-4 pt-4 pb-28">
       {/* Header con progreso */}
@@ -342,7 +344,11 @@ export function SessionRunner({
           <button
             type="button"
             aria-label="Descartar sesión"
-            className="text-muted-foreground min-h-9 px-1 text-sm"
+            // Descartar borra series sin vuelta atrás y necesita servidor. Sin
+            // conexión no se encola: una destrucción irreversible aplazada
+            // media hora es justo lo que no debe hacer una cola de reintentos.
+            disabled={!sync.reachable}
+            className="text-muted-foreground min-h-9 px-1 text-sm disabled:opacity-40"
             onClick={discard}
           >
             ✕ Descartar
@@ -351,7 +357,7 @@ export function SessionRunner({
             Ejercicio {current + 1}/{exercises.length} · {totalDone}/
             {totalPlanned} series
           </span>
-          <span className="text-muted-foreground w-16" />
+          <SyncStatus phase={sync.phase} pending={sync.pending} />
         </div>
         <div className="mt-2 flex gap-1" aria-hidden>
           {exercises.map((e, i) => (
@@ -433,7 +439,6 @@ export function SessionRunner({
               onChange={(patch) => editRow(idx, patch)}
               onComplete={() => completeSet(idx)}
               onRepeat={() => repeatRow(idx)}
-              disabled={pending}
             />
           ))}
         </ul>
@@ -444,7 +449,6 @@ export function SessionRunner({
             variant="secondary"
             size="sm"
             className="min-h-11"
-            disabled={pending}
             onClick={addSet}
           >
             + Añadir serie
@@ -455,7 +459,6 @@ export function SessionRunner({
               variant="secondary"
               size="sm"
               className="min-h-11"
-              disabled={pending}
               onClick={removeSet}
             >
               − Quitar serie
@@ -466,9 +469,14 @@ export function SessionRunner({
             variant="secondary"
             size="sm"
             className="min-h-11"
+            // Borra las series ya registradas del ejercicio y necesita el
+            // catálogo del servidor: no tiene una versión offline honesta.
+            disabled={!sync.reachable || pending}
             onClick={() => setSubOpen(true)}
           >
-            Sustituir ejercicio
+            {sync.reachable
+              ? "Sustituir ejercicio"
+              : "Sustituir (sin conexión)"}
           </Button>
         </div>
       </div>
@@ -518,7 +526,6 @@ export function SessionRunner({
         open={feedbackOpen}
         onOpenChange={setFeedbackOpen}
         onSubmit={finish}
-        pending={pending}
       />
 
       <SubstitutionSheet
@@ -760,7 +767,6 @@ function SetRow({
   onChange,
   onComplete,
   onRepeat,
-  disabled,
 }: {
   index: number;
   row: RowState;
@@ -770,7 +776,6 @@ function SetRow({
   onChange: (patch: Partial<RowState>) => void;
   onComplete: () => void;
   onRepeat: () => void;
-  disabled: boolean;
 }) {
   const weightNum = row.weight === "" ? 0 : Number(row.weight);
   const ghost = lastSet
@@ -798,7 +803,6 @@ function SetRow({
           <button
             type="button"
             onClick={onRepeat}
-            disabled={disabled}
             aria-label={
               ghost
                 ? `Repetir la última vez de esta serie: ${ghost}`
@@ -879,7 +883,6 @@ function SetRow({
           className="ml-auto min-h-11"
           variant={row.done ? "secondary" : "default"}
           onClick={onComplete}
-          disabled={disabled}
         >
           {row.done ? "✓ Hecha" : "Completar"}
         </Button>
@@ -939,7 +942,6 @@ function FeedbackSheet({
   open,
   onOpenChange,
   onSubmit,
-  pending,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -951,7 +953,6 @@ function FeedbackSheet({
     motivation?: number;
     notes?: string;
   }) => void;
-  pending: boolean;
 }) {
   const [performance, setPerformance] = useState<number | undefined>();
   const [pump, setPump] = useState<number | undefined>();
@@ -998,7 +999,6 @@ function FeedbackSheet({
           <Button
             type="button"
             className="min-h-12 w-full"
-            disabled={pending}
             onClick={() =>
               onSubmit({
                 perceivedPerformance: performance,
@@ -1010,7 +1010,7 @@ function FeedbackSheet({
               })
             }
           >
-            {pending ? "Guardando…" : "Guardar y finalizar"}
+            Guardar y finalizar
           </Button>
         </div>
       </DrawerContent>

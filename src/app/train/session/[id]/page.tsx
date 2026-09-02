@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { isCoachConfigured } from "@/ai/config";
 
+import { RegisterServiceWorker } from "@/components/offline/register-sw";
 import { SessionRunner } from "@/components/training/session-runner";
 import {
   getExecutionSession,
@@ -36,12 +37,17 @@ export default async function SessionPage({
   const veto = await getRecoveryVeto(profileId, session.localDate);
   const suggestions = buildSuggestions(session, veto);
   return (
-    <SessionRunner
-      key={session.exercises.map((exercise) => exercise.variantId).join("|")}
-      session={toClientSession(session)}
-      substitution={substitution}
-      suggestions={suggestions}
-      coachEnabled={isCoachConfigured()}
-    />
+    <>
+      {/* Instala la cache del shell: es lo que hace que recargar dentro del
+          gimnasio no acabe en la pantalla de error del navegador. */}
+      <RegisterServiceWorker />
+      <SessionRunner
+        key={session.exercises.map((exercise) => exercise.variantId).join("|")}
+        session={toClientSession(session)}
+        substitution={substitution}
+        suggestions={suggestions}
+        coachEnabled={isCoachConfigured()}
+      />
+    </>
   );
 }

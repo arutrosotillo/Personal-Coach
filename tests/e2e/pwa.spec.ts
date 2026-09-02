@@ -44,6 +44,25 @@ test("todos los iconos declarados existen y son imágenes", async ({
   }
 });
 
+test("el service worker se sirve sin sesión y no lo intercepta el proxy", async ({
+  request,
+}) => {
+  // El navegador pide /sw.js fuera del ciclo de navegación y vuelve a pedirlo
+  // periódicamente para comprobar si cambió. Si el proxy lo redirigiera al
+  // login, el registro fallaría en silencio —o peor, se registraría el HTML del
+  // login como service worker— y el modo offline dejaría de existir sin que
+  // nadie se enterara.
+  const res = await request.get("/sw.js");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toMatch(/javascript/);
+
+  const body = await res.text();
+  // Es el nuestro, no una página de error disfrazada.
+  expect(body).toContain("pc-offline-v1");
+  // Y no cachea nada privado por accidente: solo el shell del entrenamiento.
+  expect(body).toContain("/_next/static");
+});
+
 test("el <head> lleva lo que iOS necesita para la pantalla de inicio", async ({
   page,
 }) => {

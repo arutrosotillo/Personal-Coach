@@ -1,0 +1,52 @@
+-- Sesión de entrenamiento tolerante a red mala/offline.
+--
+-- Idempotente y re-aplicable (misma convención que el resto de migraciones
+-- posteriores al init).
+--
+-- 1 · `finishToken` — finalizar el entrenamiento sin conexión.
+--
+-- Cerrar la sesión es la ÚNICA mutación del entrenamiento que no era
+-- re-ejecutable. `logSet` es un upsert por (workoutExerciseId, setNumber) y
+-- `setPlannedSets` escribe un valor absoluto, así que reintentarlas es gratis;
+-- pero `finishSession` está guardada por `status = 'IN_PROGRESS'`, y un
+-- reintento tras perder la respuesta encontraba la sesión ya cerrada y
+-- devolvía "esta valoración no se ha guardado" habiéndose guardado.
+--
+-- Con una conexión intermitente ese caso deja de ser raro: la petición llega,
+-- la respuesta se pierde, la cola reintenta. El cliente genera el token UNA vez
+-- al pulsar "Guardar y finalizar" y todos los reintentos llevan el mismo, así
+-- que el servidor puede distinguir "soy yo otra vez" de "otra pestaña la cerró
+-- antes que yo" — que sigue siendo un error honesto y sigue avisando.
+--
+-- NULL = cerrada antes de esta migración, o cerrada por una vía sin token. Sin
+-- DEFAULT y sin backfill: inventar un token para el pasado no significaría nada.
+ALTER TABLE "WorkoutSession" ADD COLUMN IF NOT EXISTS "finishToken" TEXT;
+
+-- 2 · Invariante: como mucho UNA sesión en curso por mesociclo.
+--
+-- `startOrResumeSession` lee y luego crea dentro de una transacción, pero en
+-- READ COMMITTED eso no basta: dos toques seguidos —o un reintento después de
+-- un timeout, que es justo lo que provoca una conexión mala— ven las dos que no
+-- hay sesión activa y las dos insertan. El resultado son DOS sesiones
+-- IN_PROGRESS con sus WorkoutExercise duplicados; todo lo demás usa
+-- `findFirst(orderBy startedAt desc)`, así que la huérfana queda invisible y
+-- luego impide cambiar de programa (manual-program.service.ts se niega
+-- mientras haya una sesión en curso).
+--
+-- Vive en SQL a mano, no en schema.prisma, porque Prisma no soporta índices
+-- parciales (`WHERE`) para PostgreSQL en el schema. Consecuencia importante:
+-- `prisma migrate dev` no conoce este índice y podría intentar eliminarlo al
+-- generar migraciones futuras.
+--
+-- REVISA CUALQUIER MIGRACIÓN GENERADA que mencione WorkoutSession antes de
+-- aplicarla. Si el índice desapareciera, el test de integración
+-- "no permite dos sesiones en curso" (tests/integration/offline-sync.test.ts)
+-- falla: esa es la red de seguridad.
+--
+-- Por mesociclo y no por perfil porque WorkoutSession no tiene `profileId`: el
+-- dueño se alcanza por mesocycle → program → profileId. Como un perfil solo
+-- entrena su programa activo, "un mesociclo" y "un perfil" coinciden en la
+-- práctica, y esta versión no necesita desnormalizar una columna nueva.
+CREATE UNIQUE INDEX IF NOT EXISTS "WorkoutSession_one_in_progress_per_mesocycle"
+ON "WorkoutSession"("mesocycleId")
+WHERE "status" = 'IN_PROGRESS';

@@ -5,10 +5,15 @@ import {
   toLocalDate,
   weekIndexSince,
 } from "@/core/dates";
-import type { LogSetData, SessionFeedbackData } from "@/core/schemas/workout";
+import type {
+  LogSetData,
+  SessionFeedbackData,
+  SyncOpData,
+} from "@/core/schemas/workout";
 import { estimateOneRepMax } from "@/core/training/e1rm";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
+import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
 import { wasDeloadRecommended } from "@/server/services/fatigue.service";
 
 /**
@@ -59,6 +64,38 @@ export async function startOrResumeSession(
   profileId: string,
   templateId: string,
   now: Date = new Date(),
+): Promise<{ sessionId: string; resumed: boolean }> {
+  try {
+    return await createSession(profileId, templateId, now);
+  } catch (error) {
+    // El índice parcial `WorkoutSession_one_in_progress_per_mesocycle` acaba de
+    // impedir la segunda sesión. Leer-y-crear dentro de una transacción NO basta
+    // en READ COMMITTED: dos toques seguidos —o el reintento de una petición que
+    // se quedó colgada sin cobertura— ven los dos que no hay sesión activa y los
+    // dos insertan. La base de datos es el único sitio donde ese invariante se
+    // puede sostener de verdad; aquí solo hay que traducirlo a lo que el usuario
+    // pidió, que era entrar a entrenar.
+    if (!isUniqueViolation(error)) throw error;
+    const active = await getActiveSession(profileId);
+    if (!active) throw error;
+    return { sessionId: active.id, resumed: true };
+  }
+}
+
+/** ¿Es una violación de índice único de Postgres (P2002)? */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
+async function createSession(
+  profileId: string,
+  templateId: string,
+  now: Date,
 ): Promise<{ sessionId: string; resumed: boolean }> {
   const localDate = toLocalDate(now, DEFAULT_TIMEZONE);
 
@@ -137,55 +174,66 @@ export async function startOrResumeSession(
  * un doble toque actualiza la misma fila, nunca crea dos "series 2".
  */
 export async function logSet(profileId: string, data: LogSetData) {
-  const we = await prisma.workoutExercise.findFirstOrThrow({
-    where: {
-      id: data.workoutExerciseId,
-      session: { status: "IN_PROGRESS", mesocycle: { program: { profileId } } },
-    },
-    include: { session: true },
-  });
-
   const estimated1Rm = estimateOneRepMax(
     data.weightKg,
     data.reps,
     data.rir ?? null,
   );
 
-  await prisma.setLog.upsert({
-    where: {
-      workoutExerciseId_setNumber: {
-        workoutExerciseId: data.workoutExerciseId,
-        setNumber: data.setNumber,
+  // Guarda y escritura en la MISMA transacción, igual que en `deleteSet`.
+  // Separadas eran dos viajes: si la sesión se cerraba entre ambos (otra
+  // pestaña, o el reintento tardío de una petición que se quedó colgada sin
+  // cobertura), la serie se escribía dentro de una sesión ya COMPLETED —después
+  // de que `isExecutedDeload` hubiera contado las series— y contaminaba a la
+  // vez el veredicto de descarga y el historial que lee la progresión. Con la
+  // cola de reintentos esa ventana se abre mucho más a menudo.
+  await prisma.$transaction(async (tx) => {
+    const we = await tx.workoutExercise.findFirstOrThrow({
+      where: {
+        id: data.workoutExerciseId,
+        session: {
+          status: "IN_PROGRESS",
+          mesocycle: { program: { profileId } },
+        },
       },
-    },
-    create: {
-      workoutExerciseId: data.workoutExerciseId,
-      exerciseVariantId: we.exerciseVariantId,
-      localDate: we.session.localDate,
-      setNumber: data.setNumber,
-      setType: data.setType,
-      weightKg: data.weightKg,
-      reps: data.reps,
-      rir: data.rir ?? null,
-      technique: data.technique ?? null,
-      notes: data.notes ?? null,
-      estimated1Rm,
-      completed: true,
-    },
-    update: {
-      setType: data.setType,
-      weightKg: data.weightKg,
-      reps: data.reps,
-      rir: data.rir ?? null,
-      technique: data.technique ?? null,
-      notes: data.notes ?? null,
-      estimated1Rm,
-      completed: true,
-    },
+      include: { session: true },
+    });
+
+    await tx.setLog.upsert({
+      where: {
+        workoutExerciseId_setNumber: {
+          workoutExerciseId: data.workoutExerciseId,
+          setNumber: data.setNumber,
+        },
+      },
+      create: {
+        workoutExerciseId: data.workoutExerciseId,
+        exerciseVariantId: we.exerciseVariantId,
+        localDate: we.session.localDate,
+        setNumber: data.setNumber,
+        setType: data.setType,
+        weightKg: data.weightKg,
+        reps: data.reps,
+        rir: data.rir ?? null,
+        technique: data.technique ?? null,
+        notes: data.notes ?? null,
+        estimated1Rm,
+        completed: true,
+      },
+      update: {
+        setType: data.setType,
+        weightKg: data.weightKg,
+        reps: data.reps,
+        rir: data.rir ?? null,
+        technique: data.technique ?? null,
+        notes: data.notes ?? null,
+        estimated1Rm,
+        completed: true,
+      },
+    });
   });
 }
 
-/** Borra una serie registrada (corrección del usuario). */
 /**
  * Borra una serie registrada. Si la sesión ya no está en curso NO se borra
  * nada, así que se avisa en vez de devolver "ok": el usuario creería haber
@@ -269,8 +317,16 @@ export async function substituteExercise(
       },
     });
     if (we.exerciseVariantId === newVariantId) return;
+    // La variante destino se filtra por VISIBILIDAD, no solo por existencia.
+    // Sin esto, `listSubstitutionOptions` filtraba bien pero el servicio no, y
+    // una llamada fabricada podía meter el ejercicio personalizado de otro
+    // usuario —con su nombre— dentro de tu sesión y de tu historial.
     const variant = await tx.exerciseVariant.findFirstOrThrow({
-      where: { id: newVariantId, deletedAt: null },
+      where: {
+        id: newVariantId,
+        deletedAt: null,
+        exercise: { deletedAt: null, ...visibleExerciseWhere(profileId) },
+      },
     });
     await tx.setLog.deleteMany({ where: { workoutExerciseId: we.id } });
     await tx.workoutExercise.update({
@@ -449,7 +505,8 @@ export async function finishSession(
   sessionId: string,
   feedback: SessionFeedbackData,
   now: Date = new Date(),
-) {
+  token: string | null = null,
+): Promise<{ deload: boolean; replayed: boolean }> {
   const session = await prisma.workoutSession.findFirst({
     where: {
       id: sessionId,
@@ -463,7 +520,11 @@ export async function finishSession(
       mesocycleId: true,
     },
   });
-  if (!session) throw new SessionNotInProgressError();
+  if (!session) {
+    const replay = await ownReplay(profileId, sessionId, token);
+    if (replay) return replay;
+    throw new SessionNotInProgressError();
+  }
 
   // El veredicto del motor se consulta FUERA de la transacción: son varias
   // lecturas y solo mira sesiones COMPLETED, así que esta —que sigue en
@@ -498,6 +559,7 @@ export async function finishSession(
         status: "COMPLETED",
         weekKind: deload ? "DELOAD" : "ACCUMULATION",
         finishedAt: now,
+        finishToken: token,
         perceivedPerformance: feedback.perceivedPerformance ?? null,
         pump: feedback.pump ?? null,
         jointPain: feedback.jointPain ?? null,
@@ -508,9 +570,49 @@ export async function finishSession(
     });
     return { count, deload };
   });
-  // Carrera real: otra pestaña la cerró entre la lectura y la escritura.
-  if (count === 0) throw new SessionNotInProgressError();
-  return { deload };
+  if (count === 0) {
+    const replay = await ownReplay(profileId, sessionId, token);
+    if (replay) return replay;
+    // Carrera real: otra pestaña la cerró entre la lectura y la escritura.
+    throw new SessionNotInProgressError();
+  }
+  return { deload, replayed: false };
+}
+
+/**
+ * ¿Esta sesión ya la cerré YO, con este mismo token?
+ *
+ * Es la diferencia entre las dos maneras de encontrarse la sesión cerrada:
+ *
+ *  - Mi petición llegó, escribió y la respuesta se perdió por el camino. La
+ *    cola reintenta con el MISMO token, el token coincide y esto es un éxito:
+ *    el feedback está guardado, no hay nada que avisar. Sin esto, una conexión
+ *    intermitente —o sea, la normal en un gimnasio— acababa diciendo "esta
+ *    valoración no se ha guardado" habiéndose guardado.
+ *  - La cerró otra pestaña. El token no coincide (o no hay token), y ahí el
+ *    aviso es correcto y necesario: ESE feedback de verdad se ha perdido, y el
+ *    feedback es la única entrada del motor de fatiga.
+ *
+ * `weekKind` sale de la fila ya escrita, así que `isExecutedDeload` se calcula
+ * EXACTAMENTE UNA VEZ por sesión: el reintento no vuelve a decidir nada.
+ */
+async function ownReplay(
+  profileId: string,
+  sessionId: string,
+  token: string | null,
+): Promise<{ deload: boolean; replayed: boolean } | null> {
+  if (!token) return null;
+  const previous = await prisma.workoutSession.findFirst({
+    where: {
+      id: sessionId,
+      status: "COMPLETED",
+      finishToken: token,
+      mesocycle: { program: { profileId } },
+    },
+    select: { weekKind: true },
+  });
+  if (!previous) return null;
+  return { deload: previous.weekKind === "DELOAD", replayed: true };
 }
 
 /** Descarta una sesión (ABORTED). Queda fuera del historial y las estadísticas. */
@@ -546,4 +648,145 @@ export async function discardSession(profileId: string, sessionId: string) {
   if (actual?.status === "COMPLETED") throw new SessionAlreadyCompletedError();
   if (actual?.status === "ABORTED") return; // ya estaba descartada: idempotente
   throw new SessionNotInProgressError();
+}
+
+/** Resultado de UNA operación del lote. `key`/`seq` vuelven tal cual al cliente. */
+export interface SyncOpOutcome {
+  key: string;
+  seq: number;
+  ok: boolean;
+  error?: string;
+  /**
+   * `true` = reintentar no va a arreglarlo nunca. Solo entonces el cliente
+   * descarta la operación, y avisando. Un fallo de red no llega hasta aquí.
+   */
+  permanent?: boolean;
+}
+
+export interface SyncOutcome {
+  /** SOLO las operaciones intentadas. Las que no, siguen pendientes. */
+  results: SyncOpOutcome[];
+  /** Presente si el lote incluía el cierre de la sesión. */
+  finished?: { deload: boolean; replayed: boolean };
+}
+
+/**
+ * Qué contarle al usuario cuando algo se descarta para siempre.
+ *
+ * El cierre merece su propio mensaje: el feedback (fatiga, dolor, motivación)
+ * es la ÚNICA entrada del motor de fatiga, así que perderlo hay que decirlo con
+ * todas las letras, y hay que dejar claro que las series NO se han perdido.
+ */
+function mensajePermanente(kind: SyncOpData["kind"]): string {
+  if (kind === "FINISH_SESSION") {
+    return (
+      "Esta sesión ya se había cerrado en otro sitio, así que esta valoración " +
+      "no se ha guardado. La sesión y sus series están en tu historial; la " +
+      "valoración de aquella vez es la que quedó."
+    );
+  }
+  return "Esa sesión ya no está en curso: ese cambio no se ha podido guardar.";
+}
+
+/** Errores que no se arreglan reintentando: el dato o el permiso están mal. */
+function isPermanent(error: unknown): boolean {
+  if (error instanceof SessionNotInProgressError) return true;
+  if (error instanceof SessionAlreadyCompletedError) return true;
+  // P2025: `findFirstOrThrow` no encontró nada. En este servicio eso siempre
+  // significa "no es tuyo" o "la sesión ya no está en curso", nunca un fallo
+  // pasajero de la base de datos.
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2025"
+  );
+}
+
+/**
+ * Aplica, EN ORDEN, las escrituras que un cliente sin cobertura dejó pendientes.
+ *
+ * Tres decisiones que sostienen todo lo demás:
+ *
+ *  1. **Un solo viaje.** Con la cobertura de un gimnasio, veinte peticiones
+ *     secuenciales son veinte ocasiones de cortarse a medias.
+ *  2. **Se para en el primer fallo.** No es pereza: el orden importa
+ *     (`setPlannedSets` borra las series por encima del nuevo tope) y el cierre
+ *     va siempre el último, así que seguir adelante después de un fallo podría
+ *     intentar escribir una serie en una sesión ya cerrada. Lo no intentado no
+ *     aparece en `results` y el cliente lo conserva.
+ *  3. **No relaja NADA de seguridad.** Cada operación pasa por el mismo servicio
+ *     y las mismas cláusulas `where` que la ruta online: identidad, propiedad de
+ *     la sesión y del ejercicio, estado y payload se vuelven a validar aquí. Lo
+ *     que el cliente guardó en el móvil es una petición, no una autorización.
+ */
+export async function applySyncOps(
+  profileId: string,
+  sessionId: string,
+  ops: SyncOpData[],
+  now: Date = new Date(),
+): Promise<SyncOutcome> {
+  const results: SyncOpOutcome[] = [];
+  let finished: SyncOutcome["finished"];
+
+  // Qué ejercicios son de ESTA sesión (y que la sesión es de este perfil). Se
+  // consulta sin filtrar por estado a propósito: si la sesión ya está cerrada
+  // porque el cierre de este mismo cliente llegó y su respuesta se perdió, el
+  // reintento tiene que poder llegar hasta `finishSession` y reconocerse.
+  const session = await prisma.workoutSession.findFirst({
+    where: { id: sessionId, mesocycle: { program: { profileId } } },
+    select: { exercises: { select: { id: true } } },
+  });
+  if (!session) {
+    return {
+      results: ops.map((op) => ({
+        key: op.key,
+        seq: op.seq,
+        ok: false,
+        permanent: true,
+        error: "Esa sesión no existe o no es tuya.",
+      })),
+    };
+  }
+  const ownExercises = new Set(session.exercises.map((e) => e.id));
+
+  for (const op of ops) {
+    try {
+      if (op.kind === "FINISH_SESSION") {
+        const { token, ...feedback } = op.payload;
+        finished = await finishSession(
+          profileId,
+          sessionId,
+          feedback,
+          now,
+          token,
+        );
+      } else if (!ownExercises.has(op.payload.workoutExerciseId)) {
+        throw new SessionNotInProgressError();
+      } else if (op.kind === "LOG_SET") {
+        await logSet(profileId, op.payload);
+      } else {
+        await setPlannedSets(
+          profileId,
+          op.payload.workoutExerciseId,
+          op.payload.plannedSets,
+        );
+      }
+      results.push({ key: op.key, seq: op.seq, ok: true });
+    } catch (error) {
+      const permanent = isPermanent(error);
+      if (!permanent) console.error("applySyncOps", op.kind, error);
+      results.push({
+        key: op.key,
+        seq: op.seq,
+        ok: false,
+        permanent,
+        error: permanent ? mensajePermanente(op.kind) : "No se pudo guardar.",
+      });
+      // Ver punto 2: lo que queda detrás depende de esto.
+      break;
+    }
+  }
+
+  return { results, finished };
 }

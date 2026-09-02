@@ -2,7 +2,7 @@
 
 ## Stack
 
-Next.js 16 (App Router) · TypeScript estricto · Tailwind CSS 4 · shadcn/ui · Prisma 7 + PostgreSQL (Neon) · Zod 4 · React Hook Form · Vitest · Playwright · pnpm. Futuro (fases 5–7): Recharts, Serwist (PWA), TanStack Query (solo pantalla de ejecución).
+Next.js 16 (App Router) · TypeScript estricto · Tailwind CSS 4 · shadcn/ui · Prisma 7 + PostgreSQL (Neon) · Zod 4 · React Hook Form · Vitest · Playwright · pnpm. Futuro (fases 5–7): Recharts. Sin librería de estado ni de fetching en cliente: la capa offline de la sesión de entrenamiento es propia y cabe en `src/lib/offline/` (ver ADR #2).
 
 Explícitamente evitado: microservicios, Redux, GraphQL, event sourcing, buses de eventos, login en MVP, analítica de terceros, dependencias sin consumidor real.
 
@@ -44,9 +44,22 @@ Un solo schema Zod por operación, en `src/core/schemas/`. Se usa dos veces: en 
 - Días del usuario: `String` `YYYY-MM-DD` (`localDate`), calculados exclusivamente en `src/core/dates.ts` con la timezone del perfil (`Europe/Madrid` por defecto). Registrar a las 00:30 cuenta para el día correcto según la zona.
 - DB siempre en métrico (kg/cm/kcal). Imperial solo en presentación (F futura), conversión y redondeo a incrementos una única vez.
 
-## Estrategia offline (honesta)
+## Estrategia offline
 
-El servidor corre en la máquina del usuario, así que "sin Internet" funciona por diseño. El caso real es el móvil en el gimnasio: `next start -H 0.0.0.0` + PWA vía IP de LAN (F7). Fuera de la LAN no funciona — limitación documentada del MVP (Tailscale como solución futura sin código). Escrituras del logging (F2): mutación optimista + reintentos + buffer efímero en localStorage; sin outbox compleja.
+La app está desplegada en Vercel, así que el gimnasio con mala cobertura es el caso real, no uno hipotético. **Solo la sesión de entrenamiento activa es local-first**; el resto de la app necesita servidor y así se queda.
+
+Durante una sesión, lo que el usuario ve en pantalla no depende de que ninguna escritura haya llegado:
+
+- **Snapshot local** (`localStorage`, síncrono para sobrevivir a que iOS mate la PWA) con las filas, el ejercicio actual y el descanso. Es lo que permite recargar.
+- **Outbox coalescente por clave** (`SET:<ejercicio>:<nº>`, `PLANNED:<ejercicio>`, `FINISH`). No es un log de eventos porque no hace falta: las tres mutaciones de una sesión son absolutas e idempotentes, así que una operación pendiente queda descrita por su último payload.
+- **Un lote por viaje** (`syncWorkoutOpsAction`), aplicado en orden y parándose en el primer fallo. La conectividad se deduce de que el servidor responda, nunca de `navigator.onLine`.
+- **Conflictos**: si el servidor tiene confirmada una serie y no hay nada pendiente sobre ella, manda el servidor; en cualquier otro caso, manda lo local. Un dato pendiente no lo pisa nadie.
+- **Idempotencia**: `logSet` es un upsert por `(workoutExerciseId, setNumber)`, `setPlannedSets` escribe un valor absoluto y el cierre lleva `WorkoutSession.finishToken`, generado por el cliente y repetido en cada reintento.
+- **Service worker** (`public/sw.js`, escrito a mano) solo para poder recargar o reabrir la app sin cobertura: cache-first de `/_next/static`, network-first del documento de `/train` y `/train/session/<id>`, y nada más. Se borra al cerrar sesión.
+
+Sigue necesitando conexión: empezar una sesión, sustituir un ejercicio y descartarla (las dos últimas borran `SetLog` sin vuelta atrás).
+
+El servidor no se relaja en nada: cada operación del lote vuelve a pasar por los mismos servicios y las mismas cláusulas `where` que la ruta online. Lo que el cliente guardó en el móvil es una petición, no una autorización.
 
 ## Migración futura a Postgres/Vercel — qué se evita hoy
 
@@ -59,16 +72,16 @@ El servidor corre en la máquina del usuario, así que "sin Internet" funciona p
 
 ## Decisiones registradas (ADR abreviado)
 
-| #   | Decisión                                                                                     | Motivo                                                                                                                                                                                     |
-| --- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Server Actions para mutaciones; route handlers solo para binarios (fotos, export)            | Un usuario, sin API pública; tipado end-to-end sin boilerplate                                                                                                                             |
-| 2   | RSC + revalidate en casi toda la app; TanStack Query solo en ejecución de entrenamiento (F2) | Un solo sistema de caché salvo donde el optimismo es imprescindible                                                                                                                        |
-| 3   | Prisma 7: `prisma.config.ts` + client generado en `src/generated/prisma` (excluido de git)   | Convención actual de Prisma 7; el generator `prisma-client` ya no escribe en node_modules                                                                                                  |
-| 4   | **Tablas de IA pospuestas a la migración de F6**                                             | No tocan entidades centrales (solo `AIMessage→AIConversation` entre sí y `profileId` como referencia); crear 6 tablas vacías hoy sería complejidad especulativa. Revisado y decidido en F1 |
-| 5   | `PersonalEvent` sí se crea en F1                                                             | Lo consumen los motores deterministas (anomalías D0, espera R4b) desde F3–F4                                                                                                               |
-| 6   | Playwright con DB separada (`data/e2e.db`) y perfil móvil Pixel 7                            | E2E reproducible sin tocar datos reales; la app es mobile-first                                                                                                                            |
-| 7   | Dark mode único en v1                                                                        | Uso en gimnasio; dos temas duplican QA visual sin beneficio para un usuario                                                                                                                |
-| 8   | Package `personal-coach` (el directorio `Personal-Coach` no es nombre npm válido)            | Restricción de npm sobre mayúsculas                                                                                                                                                        |
+| #   | Decisión                                                                                                                                  | Motivo                                                                                                                                                                                                                                                           |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Server Actions para mutaciones; route handlers solo para binarios (fotos, export)                                                         | Un usuario, sin API pública; tipado end-to-end sin boilerplate                                                                                                                                                                                                   |
+| 2   | RSC + revalidate en casi toda la app; en la ejecución de entrenamiento, capa local-first propia (`src/lib/offline/`) sin librería externa | Un solo sistema de caché salvo donde el optimismo es imprescindible. TanStack Query se descartó al implementarlo: el problema real no era cachear lecturas sino no perder escrituras sin cobertura, y eso pedía un snapshot y una outbox, no un cliente de datos |
+| 3   | Prisma 7: `prisma.config.ts` + client generado en `src/generated/prisma` (excluido de git)                                                | Convención actual de Prisma 7; el generator `prisma-client` ya no escribe en node_modules                                                                                                                                                                        |
+| 4   | **Tablas de IA pospuestas a la migración de F6**                                                                                          | No tocan entidades centrales (solo `AIMessage→AIConversation` entre sí y `profileId` como referencia); crear 6 tablas vacías hoy sería complejidad especulativa. Revisado y decidido en F1                                                                       |
+| 5   | `PersonalEvent` sí se crea en F1                                                                                                          | Lo consumen los motores deterministas (anomalías D0, espera R4b) desde F3–F4                                                                                                                                                                                     |
+| 6   | Playwright con DB separada (`data/e2e.db`) y perfil móvil Pixel 7                                                                         | E2E reproducible sin tocar datos reales; la app es mobile-first                                                                                                                                                                                                  |
+| 7   | Dark mode único en v1                                                                                                                     | Uso en gimnasio; dos temas duplican QA visual sin beneficio para un usuario                                                                                                                                                                                      |
+| 8   | Package `personal-coach` (el directorio `Personal-Coach` no es nombre npm válido)                                                         | Restricción de npm sobre mayúsculas                                                                                                                                                                                                                              |
 
 ## Estructura de carpetas (estado F1; las marcadas ⏳ llegan en fases posteriores)
 

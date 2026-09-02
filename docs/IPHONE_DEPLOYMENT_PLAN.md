@@ -242,13 +242,11 @@ Lo que ya está bien y no se toca: `viewportFit: "cover"`, `themeColor`, y la bo
 
 **Comportamiento al abrir desde el icono**: arranca en `start_url` sin barra de direcciones. La navegación interna es la del App Router, que se queda dentro de la PWA. El 404 propio ya lleva `AppShell` con la barra de navegación, así que no hay callejón sin salida (esto se arregló en la QA de aceptación). Refrescar dentro de una PWA en iOS es tirar hacia abajo.
 
-**Actualización de versión**: sin service worker, cada arranque pide HTML fresco y Vercel sirve el último despliegue. No hay caché que invalidar ni versiones fantasma. Es una ventaja de no montar offline todavía.
+**Actualización de versión**: hay un service worker, pero acotado a la pantalla de entrenamiento (`/train` y `/train/session/<id>`) y con network-first en la navegación, así que con cobertura siempre se sirve el HTML del último despliegue. La cache va versionada por nombre y **no** hace `skipWaiting`: una versión nueva releva a la anterior en el siguiente arranque limpio, nunca a mitad de un entrenamiento.
 
-**Qué pasa si pierdo conexión a mitad de sesión** — investigado, y esto es lo que hay que saber antes de decidir nada:
+**Qué pasa si pierdo conexión a mitad de sesión** — resuelto. El primer entrenamiento real en un gimnasio con mala cobertura demostró que sí molestaba, y bastante más de lo previsto: la UI no solo fallaba, **revertía la fila**, así que la serie recién registrada se borraba sola delante del usuario.
 
-> Cada serie se guarda en el servidor al pulsar "Completar" (`logSet`, idempotente por `(ejercicio, nº de serie)`). Sin conexión, esa acción **falla** y la UI revierte la fila. Lo ya registrado antes del corte está a salvo en la base de datos; lo que estabas tecleando, no.
-
-En un gimnasio con cobertura decente es un incordio raro, y el fallo es visible (no silencioso), que es lo importante. **No se construye offline ahora.** Si al entrenar de verdad resulta molesto, la solución proporcionada sería una cola local de series pendientes en `localStorage` que se reintenta al volver la conexión — apoyada en que `logSet` ya es idempotente, así que reintentar no duplica nada. Eso es una fase futura con su propio plan, no un añadido a este.
+Ahora la sesión activa es local-first: cada cambio se guarda en el móvil al instante y una cola de operaciones lo sincroniza cuando vuelve la cobertura. Se puede registrar, corregir, navegar entre ejercicios, recargar, cerrar la app y hasta **finalizar** el entrenamiento sin conexión. Detalles en `docs/ARCHITECTURE.md` § Estrategia offline.
 
 ---
 
@@ -344,7 +342,7 @@ Antes de meter un solo entrenamiento real.
 
 ## 14. Qué NO debemos construir
 
-- **Service worker y modo offline completo.** Todavía no. Primero comprobar si molesta de verdad.
+- **Modo offline COMPLETO de toda la app.** El service worker que hay cachea solo el shell de `/train` y `/train/session/<id>`, que es donde de verdad no hay cobertura. Progreso, ajustes, historial y coach siguen necesitando servidor, y así se quedan: cada ruta cacheada es HTML privado en el dispositivo y una fuente más de datos viejos que reconciliar.
 - **Notificaciones push.** No aportan nada a un tracker que abres tú.
 - **Sistema de usuarios.** Ni registro, ni roles, ni recuperación de contraseña. Una llave, una puerta.
 - **App nativa o React Native.** La PWA cubre el objetivo entero.

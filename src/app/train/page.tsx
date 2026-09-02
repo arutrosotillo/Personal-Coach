@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { RegisterServiceWorker } from "@/components/offline/register-sw";
 import { RecoveryCard } from "@/components/training/recovery-card";
 import { StartSessionButton } from "@/components/training/start-session-button";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +42,10 @@ export default async function TrainPage() {
 
   return (
     <AppShell>
+      {/* `/train` es el `start_url` de la PWA: si iOS mata la app y la vuelves a
+          abrir, aterrizas aquí. Cacheada, "Reanudar sesión" sigue existiendo
+          aunque no haya cobertura. */}
+      <RegisterServiceWorker />
       <h1 className="mb-1 text-2xl font-semibold">Entrenar</h1>
       {/* Sin "de 6": nada ocurre al llegar a la semana 6 —el mesociclo no
           avanza ni se cierra solo—, así que un contador con final implicaba una

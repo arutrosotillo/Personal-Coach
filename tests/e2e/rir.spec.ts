@@ -87,16 +87,17 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
   await expect(rirChip(2, 2)).toHaveAttribute("aria-pressed", "false");
   await page.getByRole("button", { name: /Quitar serie/i }).click();
 
-  // Corregir el RIR de una serie YA completada también se guarda. Aquí no hay
-  // un "✓ Hecha" nuevo que esperar (la serie ya estaba completada), así que la
-  // señal es la respuesta de la server action. Dormir 500 ms era una carrera
-  // disfrazada.
-  const guardado = page.waitForResponse(
-    (r) => r.request().method() === "POST" && r.status() < 400,
-  );
+  // Corregir el RIR de una serie YA completada también se guarda. La señal de
+  // que llegó AL SERVIDOR es el indicador de la cabecera: desde que la sesión
+  // es local-first, "✓ Hecha" solo significa "guardado en este móvil", y
+  // esperar a una respuesta POST cualquiera era una carrera disfrazada (podía
+  // ser la del cambio anterior).
   await rirChip(0, 3).click();
   await expect(rirChip(0, 3)).toHaveAttribute("aria-pressed", "true");
-  await guardado;
+  await expect(page.locator("header").getByRole("status")).toHaveText(
+    /Guardado/,
+    { timeout: 30_000 },
+  );
   await page.reload();
   await expect(rirChip(0, 3)).toHaveAttribute("aria-pressed", "true");
 

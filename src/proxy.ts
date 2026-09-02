@@ -59,8 +59,14 @@ export const config = {
    * ANTES de estar autenticada: iOS descarga el manifest y los iconos al
    * añadir a la pantalla de inicio, y si respondieran con una redirección al
    * login el icono saldría roto.
+   *
+   * `sw.js` va en la lista por lo mismo: el navegador lo pide fuera del ciclo
+   * de navegación y una redirección al login lo dejaría sin registrar (o peor,
+   * registraría el HTML del login como service worker). No expone nada: es un
+   * fichero público de 100 líneas, y todo lo que cachea son respuestas que el
+   * servidor ya había autorizado para ese dispositivo.
    */
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-|apple-touch-icon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|icon-|apple-touch-icon|.*\\.(?:png|jpg|jpeg|svg|webp|ico|woff2?)$).*)",
   ],
 };

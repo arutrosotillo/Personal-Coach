@@ -3,28 +3,22 @@
 import { revalidatePath } from "next/cache";
 
 import { DEFAULT_TIMEZONE, addDays, toLocalDate } from "@/core/dates";
-import {
-  logSetSchema,
-  sessionFeedbackSchema,
-  type LogSetInput,
-  type SessionFeedbackData,
-} from "@/core/schemas/workout";
+import { syncBatchSchema, type SyncBatchInput } from "@/core/schemas/workout";
 import { requireProfileId } from "@/server/auth/current-user";
 import {
   getExerciseHistorySummary,
   type ExerciseHistorySummary,
 } from "@/server/services/progression.service";
 import {
+  applySyncOps,
   deleteSet,
   discardSession,
-  finishSession,
   EmptyTemplateError,
-  logSet,
   SessionAlreadyCompletedError,
   SessionNotInProgressError,
-  setPlannedSets,
   startOrResumeSession,
   substituteExercise,
+  type SyncOutcome,
 } from "@/server/services/workout-session.service";
 
 export interface ActionResult {
@@ -77,24 +71,6 @@ export async function startSessionAction(
   }
 }
 
-export async function logSetAction(input: LogSetInput): Promise<ActionResult> {
-  const parsed = logSetSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Datos inválidos",
-    };
-  }
-  try {
-    const profileId = await requireProfileId();
-    await logSet(profileId, parsed.data);
-    return { ok: true };
-  } catch (error) {
-    console.error("logSetAction", error);
-    return { ok: false, error: "No se pudo guardar la serie." };
-  }
-}
-
 export async function deleteSetAction(
   workoutExerciseId: string,
   setNumber: number,
@@ -115,20 +91,6 @@ export async function deleteSetAction(
   }
 }
 
-export async function setPlannedSetsAction(
-  workoutExerciseId: string,
-  plannedSets: number,
-): Promise<ActionResult> {
-  try {
-    const profileId = await requireProfileId();
-    await setPlannedSets(profileId, workoutExerciseId, plannedSets);
-    return { ok: true };
-  } catch (error) {
-    console.error("setPlannedSetsAction", error);
-    return { ok: false, error: "No se pudo ajustar las series." };
-  }
-}
-
 export async function substituteExerciseAction(
   workoutExerciseId: string,
   newVariantId: string,
@@ -143,41 +105,53 @@ export async function substituteExerciseAction(
   }
 }
 
-/** Como `ActionResult`, más si la sesión contó como descarga ejecutada. */
-export interface FinishSessionResult extends ActionResult {
-  deload?: boolean;
+/**
+ * ÚNICA vía de escritura de la sesión en curso: aplica en orden el lote de
+ * operaciones que la cola del cliente tenía pendientes.
+ *
+ * Es una sola acción y no una por gesto porque el cliente ya no escribe cuando
+ * el usuario toca: escribe en el móvil y sincroniza cuando puede. Con buena
+ * cobertura el lote sale con una sola operación, en el acto, y se comporta
+ * igual que antes; sin cobertura, sale con quince media hora después.
+ */
+export interface SyncResult extends ActionResult {
+  outcome?: SyncOutcome;
 }
 
-export async function finishSessionAction(
-  sessionId: string,
-  feedback: SessionFeedbackData,
-): Promise<FinishSessionResult> {
-  const parsed = sessionFeedbackSchema.safeParse(feedback);
-  if (!parsed.success) return { ok: false, error: "Feedback inválido" };
-  let finishedAsDeload = false;
+export async function syncWorkoutOpsAction(
+  input: SyncBatchInput,
+): Promise<SyncResult> {
+  const parsed = syncBatchSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos",
+    };
+  }
+  let outcome: SyncOutcome;
   try {
     const profileId = await requireProfileId();
-    const { deload } = await finishSession(profileId, sessionId, parsed.data);
-    finishedAsDeload = deload;
+    outcome = await applySyncOps(
+      profileId,
+      parsed.data.sessionId,
+      parsed.data.ops,
+    );
   } catch (error) {
-    // Si la sesión ya no estaba en curso, el feedback NO se ha guardado. Antes
-    // se devolvía `ok` igualmente y el dato (fatiga, dolor, motivación) se
-    // perdía sin que nadie se enterara. Reintentar no sirve: hay que decirlo.
-    if (error instanceof SessionNotInProgressError) {
-      return {
-        ok: false,
-        error:
-          "Esta sesión ya se había cerrado en otro sitio, así que esta valoración no se ha guardado. La sesión y sus series están en tu historial; la valoración de aquella vez es la que quedó.",
-      };
-    }
-    console.error("finishSessionAction", error);
-    return { ok: false, error: "No se pudo finalizar la sesión." };
+    // Aquí NO se distingue entre "la base de datos está caída" y cualquier otra
+    // cosa: se devuelve un fallo sin más y la cola conserva TODO lo pendiente.
+    // Descartar el trabajo de alguien por un error que no entendemos es
+    // exactamente lo que esta capa existe para no hacer.
+    console.error("syncWorkoutOpsAction", error);
+    return { ok: false, error: "No se pudo sincronizar." };
   }
-  // FUERA del try: la sesión ya está guardada. Si `revalidatePath` fallara
-  // dentro, se reportaría "no se pudo finalizar" habiendo finalizado.
-  revalidatePath("/train");
-  revalidatePath("/train/history");
-  return { ok: true, deload: finishedAsDeload };
+  // FUERA del try: lo que se haya escrito ya está escrito. Si `revalidatePath`
+  // fallara dentro, se reportaría un fallo de sincronización habiendo
+  // sincronizado, y la cola reintentaría para siempre.
+  if (outcome.finished) {
+    revalidatePath("/train");
+    revalidatePath("/train/history");
+  }
+  return { ok: true, outcome };
 }
 
 export async function discardSessionAction(

@@ -15,6 +15,8 @@
 
 # next.js
 /.next/
+# Build de producción que levantan los E2E offline (ver playwright.config.ts).
+/.next-e2e/
 /out/
 
 # production
