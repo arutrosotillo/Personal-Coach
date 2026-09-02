@@ -255,22 +255,22 @@ export function CustomExerciseForm() {
               hint={`Opcional, máximo ${MAX_SECONDARY_MUSCLES}. Cuentan como volumen parcial.`}
             >
               <ChipGrid>
-                {MUSCLE_GROUPS.filter(
-                  (g) => g.code !== form.primaryMuscle,
-                ).map((g) => {
-                  const sel = form.secondaryMuscles.find(
-                    (m) => m.group === g.code,
-                  );
-                  return (
-                    <Chip
-                      key={g.code}
-                      active={Boolean(sel)}
-                      onClick={() => toggleSecondary(g.code)}
-                    >
-                      {g.nameEs}
-                    </Chip>
-                  );
-                })}
+                {MUSCLE_GROUPS.filter((g) => g.code !== form.primaryMuscle).map(
+                  (g) => {
+                    const sel = form.secondaryMuscles.find(
+                      (m) => m.group === g.code,
+                    );
+                    return (
+                      <Chip
+                        key={g.code}
+                        active={Boolean(sel)}
+                        onClick={() => toggleSecondary(g.code)}
+                      >
+                        {g.nameEs}
+                      </Chip>
+                    );
+                  },
+                )}
               </ChipGrid>
               {form.secondaryMuscles.length > 0 ? (
                 <ul className="mt-2 space-y-2">
@@ -301,9 +301,7 @@ export function CustomExerciseForm() {
 
             <Field label="Patrón de movimiento">
               <ChipGrid>
-                {(
-                  Object.keys(PATTERN_LABELS) as MovementPattern[]
-                ).map((p) => (
+                {(Object.keys(PATTERN_LABELS) as MovementPattern[]).map((p) => (
                   <Chip
                     key={p}
                     active={form.movementPattern === p}

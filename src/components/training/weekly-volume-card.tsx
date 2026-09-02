@@ -101,7 +101,10 @@ export function WeeklyVolumeCard({ data }: { data: WeeklyVolumeOverview }) {
                   </div>
                   <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                     <div
-                      className={cn("h-full rounded-full", ESTADO_COLOR[estado])}
+                      className={cn(
+                        "h-full rounded-full",
+                        ESTADO_COLOR[estado],
+                      )}
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -132,8 +135,8 @@ export function WeeklyVolumeCard({ data }: { data: WeeklyVolumeOverview }) {
           &quot;Efectivo&quot; suma las series directas más las indirectas
           ponderadas (un press cuenta parcialmente para el tríceps). Es una
           convención para contar, no fisiología medida, y el objetivo es un
-          punto de partida conservador — no un mínimo que haya que cumplir.
-          Nada de esto cambia tu programa: las series las decides tú.
+          punto de partida conservador — no un mínimo que haya que cumplir. Nada
+          de esto cambia tu programa: las series las decides tú.
         </p>
       </CardContent>
     </Card>
