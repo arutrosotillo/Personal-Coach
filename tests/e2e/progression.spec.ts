@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { onboard } from "./helpers/onboard";
+import { discardOpenSession } from "./helpers/session-cleanup";
 
 /**
  * Flujo real de 2B (móvil): sesión 1 → registrar el primer ejercicio (usando
@@ -88,7 +89,5 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   // Limpieza: cerrar el drawer y descartar la sesión en curso para no dejar
   // una sesión activa a otras specs (la DB e2e es compartida).
   await page.keyboard.press("Escape");
-  page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Descartar sesión" }).click();
-  await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
+  await discardOpenSession(page);
 });

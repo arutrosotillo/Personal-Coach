@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { discardActiveSession } from "./helpers/session-cleanup";
+
 /**
  * Flujo de ejecución de F2A (perfil móvil): onboarding mínimo → empezar sesión
  * → registrar series (guardado inmediato) → reanudar tras recargar (persistencia
@@ -10,6 +12,9 @@ import { expect, test, type Page } from "@playwright/test";
 async function onboard(page: Page) {
   // Directamente al asistente: esta spec comparte la DB e2e y puede haber un
   // perfil de otra spec; re-ejecutar el onboarding archiva el plan anterior.
+  // Antes hay que descartar cualquier sesión en curso: con una abierta, el
+  // onboarding se niega a cambiar de programa.
+  await discardActiveSession(page);
   await page.goto("/onboarding");
   await expect(page.getByRole("heading", { name: "Sobre ti" })).toBeVisible();
 
@@ -81,7 +86,14 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   ).toBeVisible();
   await expect(page.getByText(/·\s*1\/\d+ series/)).toBeVisible();
 
-  // Persistencia real: recargar la pantalla de ejecución mantiene la serie hecha
+  // Persistencia real EN EL SERVIDOR: se espera al indicador de la cabecera
+  // antes de recargar. Desde que la sesión es local-first, "✓ Hecha" solo
+  // promete "guardado en este móvil"; recargar sin esperar comprobaría el
+  // cuaderno local, que no es lo que este test quiere probar.
+  await expect(page.locator("header").getByRole("status")).toHaveText(
+    /Guardado/,
+    { timeout: 30_000 },
+  );
   await page.reload();
   await expect(
     page.getByRole("button", { name: "✓ Hecha" }).first(),

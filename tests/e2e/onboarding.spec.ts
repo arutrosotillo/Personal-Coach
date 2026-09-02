@@ -3,6 +3,16 @@ import { expect, test } from "@playwright/test";
 /**
  * Flujo principal de F1: usuario nuevo → onboarding completo → dashboard
  * con objetivo y programa → recarga → los datos persisten.
+ *
+ * ⚠️ ESTE SPEC TIENE QUE EJECUTARSE EL PRIMERO. Empieza en el estado VACÍO —
+ * la cuenta todavía sin perfil— y pulsa el "Empezar — crear mi plan" del
+ * dashboard, que solo existe cuando no hay perfil. En cuanto otro spec hace su
+ * onboarding, ese botón desaparece y este test se queda esperándolo hasta
+ * agotar el tiempo.
+ *
+ * El orden está GARANTIZADO por `playwright.config.ts`: este fichero corre en
+ * su propio proyecto `onboarding`, del que depende `mobile-chrome`. No confíes
+ * en el orden alfabético — ya se rompió una vez así.
  */
 test("onboarding completo crea el plan y persiste tras recargar", async ({
   page,

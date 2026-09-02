@@ -25,6 +25,16 @@ function num(raw: string | undefined, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * Igual, pero acepta el CERO. Hace falta para `maxRetries`: con `num`, poner
+ * `AI_COACH_MAX_RETRIES=0` se descartaba por "no es > 0" y volvía al valor por
+ * defecto, así que la única forma de pedir "un solo intento" no funcionaba.
+ */
+function nonNegativeNum(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 export const AI_CONFIG = {
   model: process.env.AI_COACH_MODEL ?? DEFAULT_MODEL,
   /**
@@ -40,8 +50,23 @@ export const AI_CONFIG = {
   maxContextChars: num(process.env.AI_COACH_MAX_CONTEXT_CHARS, 24_000),
   /** Timeout por petición. Un coach que tarda 30 s no sirve en el gimnasio. */
   timeoutMs: num(process.env.AI_COACH_TIMEOUT_MS, 25_000),
-  /** Reintentos del SDK. 1 basta: si falla, se muestra el fallback. */
-  maxRetries: num(process.env.AI_COACH_MAX_RETRIES, 1),
+  /**
+   * Reintentos del SDK: NINGUNO.
+   *
+   * Estas peticiones son INTERACTIVAS —una persona esperando delante de la
+   * pantalla— y `timeoutMs` es 25 s. Con un reintento, el peor caso que ve el
+   * usuario son 50 s mirando un spinner antes de recibir el mismo fallback
+   * determinista que habría tenido a los 25. Reintentar no arregla el caso que
+   * de verdad se da (el modelo tarda demasiado): lo duplica.
+   *
+   * Es seguro porque no se pierde nada al no reintentar: cuando el proveedor
+   * falla, `runCoach` devuelve la explicación del motor determinista, que es la
+   * autoridad de todos modos, y volver a preguntar es un botón.
+   *
+   * Este valor solo lo consume `OpenAICoachProvider`, que solo instancia el
+   * Coach: ningún otro trabajo comparte esta política.
+   */
+  maxRetries: nonNegativeNum(process.env.AI_COACH_MAX_RETRIES, 0),
   /** Tope de consultas por hora, para que el endpoint no sea un grifo abierto. */
   maxCallsPerHour: num(process.env.AI_COACH_MAX_CALLS_PER_HOUR, 30),
   /** Longitud máxima de una pregunta libre. */

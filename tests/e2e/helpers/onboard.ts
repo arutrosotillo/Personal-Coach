@@ -1,12 +1,18 @@
 import { expect, type Page } from "@playwright/test";
 
+import { discardActiveSession } from "./session-cleanup";
+
 /**
  * Completa el onboarding con datos fijos (programa equilibrado, 3 días). El
  * generador es determinista: repetir el onboarding con los mismos datos produce
  * el mismo programa (mismas variantes), lo que permite probar el contexto
  * "última vez" entre dos sesiones.
+ *
+ * Empieza descartando cualquier sesión en curso: la base E2E es compartida y
+ * el onboarding se niega a cambiar de programa mientras haya una abierta.
  */
 export async function onboard(page: Page) {
+  await discardActiveSession(page);
   await page.goto("/onboarding");
   await expect(page.getByRole("heading", { name: "Sobre ti" })).toBeVisible();
 

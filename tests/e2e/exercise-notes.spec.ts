@@ -86,4 +86,12 @@ test("nota de ejercicio: se apunta, se lee en la sesión, se edita y se borra", 
   await expect(
     page.getByRole("button", { name: "+ Añadir nota" }),
   ).toBeVisible();
+
+  // Se descarta la sesión que este spec abrió. La base e2e es compartida y una
+  // sesión IN_PROGRESS impide re-hacer el onboarding ("Finaliza o descarta la
+  // sesión en curso antes de cambiar de programa"), así que dejarla viva
+  // reventaba todos los specs posteriores que se onboardan.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Descartar sesión" }).click();
+  await expect(page.getByRole("heading", { name: "Entrenar" })).toBeVisible();
 });
