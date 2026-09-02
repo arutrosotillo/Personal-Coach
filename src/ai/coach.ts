@@ -2,6 +2,7 @@ import { AI_CONFIG } from "@/ai/config";
 import {
   buildCoachContext,
   serializeContext,
+  type CoachBodyContext,
   type CoachContext,
   type CoachProfileInput,
 } from "@/ai/context";
@@ -40,6 +41,8 @@ export interface CoachRequest {
   task: CoachTask;
   analysis: TrainingAnalysis;
   profile: CoachProfileInput;
+  /** Seguimiento corporal ya calculado (B6). `null` si no hay mediciones. */
+  body?: CoachBodyContext | null;
   /** Para EXERCISE y EXPLAIN: acota el contexto a esa variante. */
   variantId?: string;
   /** Para ASK: la pregunta del usuario. */
@@ -116,6 +119,7 @@ export async function runCoach(
   const full = buildCoachContext(
     request.analysis,
     request.profile,
+    request.body ?? null,
     request.variantId,
   );
   const context = focusContext(full, request.variantId);
@@ -131,6 +135,7 @@ export async function runCoach(
   }
 
   const contextJson = serializeContext(context, AI_CONFIG.maxContextChars);
+  const mensaje = userMessage(request, context);
 
   // El proveedor real traduce sus fallos a `ProviderResult`, pero nada impide
   // que uno lance (un bug del SDK, un fetch que revienta antes de entrar en su
@@ -143,7 +148,7 @@ export async function runCoach(
       system: SYSTEM_PROMPT,
       instructions: INSTRUCTIONS[request.task],
       contextJson,
-      userMessage: userMessage(request, context),
+      userMessage: mensaje,
     });
   } catch {
     result = { kind: "ERROR", detail: "el proveedor lanzó una excepción" };
@@ -210,7 +215,10 @@ export async function runCoach(
     };
   }
 
-  const guard = checkResponse(parsed.data, context);
+  // El mensaje del usuario entra en el guardrail para poder distinguir la
+  // cifra que él propuso de la que se inventa el modelo: citar "300 kcal" al
+  // RECHAZARLAS es legítimo; recomendarlas, no.
+  const guard = checkResponse(parsed.data, context, mensaje);
   if (guard.block) {
     return {
       ok: false,

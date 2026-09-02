@@ -30,6 +30,16 @@ export interface CoachExerciseContext {
   exercise: string;
   variant: string;
   prescription: string;
+  /**
+   * Escalón de carga de la prescripción, en kg.
+   *
+   * Va TIPADO y no solo dentro del texto de `prescription` porque el guardrail
+   * necesita una fuente autorizada para él: la regla 1 del system prompt manda
+   * citar el incremento ("el siguiente escalón son 2,5 kg") y sin este campo
+   * esa cifra se bloqueaba como carga inventada — el filtro tiraba justo la
+   * frase que el prompt había pedido.
+   */
+  loadStepKg: number;
   exposures: number;
   daysSinceLast: number;
   /** Últimas exposiciones: `"2026-08-20: 80×8@2, 80×8@2, 80×7@2"`. */
@@ -52,6 +62,88 @@ export interface CoachExerciseContext {
   signals: string[];
   plateaued: boolean;
   regressed: boolean;
+}
+
+/**
+ * Bloque CORPORAL del contexto (B6).
+ *
+ * Todo viene YA CALCULADO por `src/core/body` y `src/core/insights`. Al modelo
+ * no se le pide que derive una tendencia, ni que compare con el objetivo, ni
+ * que decida si un cambio de cintura es significativo: se le dan los veredictos
+ * y sus márgenes de error, y su trabajo es explicarlos.
+ *
+ * QUÉ NO ESTÁ AQUÍ, y es deliberado:
+ *   · La serie cruda de pesajes. Con ella el modelo podría "recalcular" una
+ *     tendencia distinta de la del motor, que es justo lo que la arquitectura
+ *     prohíbe. Solo viaja el veredicto.
+ *   · La pendiente cuando el motor la ha declarado no afirmable. Con
+ *     `INCONCLUSIVE` el número existe pero `slopeKgPerWeek` va a `null`: si no
+ *     se puede afirmar en pantalla, tampoco se le puede dar al modelo.
+ */
+export interface CoachBodyContext {
+  goal: {
+    strategy: string;
+    goalType: string;
+    /** % del peso corporal por semana. Negativo = pérdida. */
+    targetPctPerWeek: number;
+    targetKgPerWeek: number | null;
+    targetWeightKg: number | null;
+    kgToTargetWeight: number | null;
+    /** Día en que empezó la fase actual. La tendencia solo mira desde aquí. */
+    phaseStartLocalDate: string | null;
+  } | null;
+  weight: {
+    /** LOSING | GAINING | MAINTAINING | INCONCLUSIVE | INSUFFICIENT_DATA. */
+    status: string;
+    reasonCode: string;
+    /** SOLO si el motor la respalda. `null` con INCONCLUSIVE. */
+    slopeKgPerWeek: number | null;
+    ciLowPerWeek: number | null;
+    ciHighPerWeek: number | null;
+    windowDays: number | null;
+    /** Pesajes usados: también es la adherencia al registro. */
+    measurementsInWindow: number;
+    latestKg: number | null;
+    /** Valor suavizado. Es el que representa "cuánto pesas" de verdad. */
+    latestEmaKg: number | null;
+    totalChangeKg: number | null;
+  };
+  waist: {
+    status: string;
+    latestCm: number | null;
+    /** Cambio ajustado sobre el periodo. */
+    fittedChangeCm: number | null;
+    /** Por debajo de esto, el cambio no se distingue del error de la cinta. */
+    minDetectableChangeCm: number;
+    /** SINGLE | MEAN_OF_THREE | MIXED. Determina el umbral de arriba. */
+    protocol: string | null;
+    measurementsUsed: number;
+  } | null;
+  bodyFat: {
+    status: string;
+    /** Estimación, NUNCA una medición. Su error va en `limits`. */
+    latestPct: number | null;
+    reliability: string | null;
+    /** El dato que sí sirve: el cambio entre lecturas comparables. */
+    changePp: number | null;
+    minInterpretableChangePp: number;
+    spanDays: number | null;
+  } | null;
+  checkIn: {
+    status: string;
+    daysSinceLast: number | null;
+    intervalDays: number;
+  };
+  /**
+   * Veredicto del motor de insights cruzando cuerpo y rendimiento. Se manda
+   * para que el modelo EXPLIQUE la conclusión determinista en vez de fabricar
+   * la suya: `goalAssessmentCode` es `null` cuando el motor decidió que no hay
+   * nada defendible que decir, y entonces el modelo tampoco puede decirlo.
+   */
+  insight: {
+    observationCode: string;
+    goalAssessmentCode: string | null;
+  } | null;
 }
 
 export interface CoachContext {
@@ -110,6 +202,8 @@ export interface CoachContext {
   };
   /** Datos que la app NO tiene. El modelo no puede inventarlos. */
   notAvailable: string[];
+  /** Seguimiento corporal. `null` si el perfil no tiene ninguna medición. */
+  body: CoachBodyContext | null;
 }
 
 function fmtSets(
@@ -147,6 +241,8 @@ const POTENTIALLY_MISSING = [
 export function buildCoachContext(
   analysis: TrainingAnalysis,
   profile: CoachProfileInput,
+  /** Bloque corporal ya calculado, o `null` si no hay ninguna medición. */
+  body: CoachBodyContext | null = null,
   /**
    * Variante sobre la que se pregunta. Va SIEMPRE la primera, aunque no esté
    * entre las entrenadas más recientemente: en una rutina de 4 días los
@@ -214,6 +310,7 @@ export function buildCoachContext(
         exercise: v.exerciseName,
         variant: v.variantName,
         prescription: `${rx.plannedSets}×${rx.repRangeMin}–${rx.repRangeMax} @${rx.targetRir} RIR (incremento ${rx.loadStepKg} kg)`,
+        loadStepKg: rx.loadStepKg,
         exposures: v.exposures,
         daysSinceLast: v.daysSinceLast,
         recentSets: recent.map((e) => `${e.localDate}: ${fmtSets(e.sets)}`),
@@ -291,12 +388,32 @@ export function buildCoachContext(
         "El RIR autoinformado tiene ~1 repetición de error típico.",
         "Sin RIR registrado (`@` ausente) no se puede valorar el esfuerzo de esa serie.",
         "Las series efectivas son una convención contable, no una medida fisiológica.",
+        // Márgenes del seguimiento corporal. Solo se mandan si hay cuerpo que
+        // interpretar: si no, son ruido que ocupa contexto.
+        ...(body
+          ? [
+              "El peso corporal oscila cerca de 1 kg entre días por agua, glucógeno y contenido digestivo: un pesaje suelto no es una tendencia.",
+              "La tendencia de peso solo se afirma cuando su intervalo de confianza excluye el cero. Si `slopeKgPerWeek` es null, NO hay dirección que citar.",
+              `Una cinta métrica en casa no distingue cambios de cintura menores de ${body.waist?.minDetectableChangeCm ?? 5.4} cm.`,
+              "El % graso es una ESTIMACIÓN con varios puntos de error, no una medición. Solo el cambio entre lecturas del mismo método es interpretable, y solo a partir de 2 puntos.",
+              "El peso y las cargas NO permiten deducir una causa: ni déficit, ni recuperación, ni sueño, ni pérdida de músculo. Son dos hechos a la vez.",
+            ]
+          : []),
       ],
     },
     // Solo se declara ausente lo que de verdad no está registrado: decirle al
     // modelo que no tenemos un dato que el usuario SÍ ha anotado es tan
     // dañino como dejar que lo invente.
-    notAvailable: POTENTIALLY_MISSING.filter((m) => !available.has(m)),
+    // El bloque corporal, cuando existe, PRUEBA que esas métricas están
+    // registradas: declararlas ausentes teniéndolas delante es tan dañino
+    // como inventarlas.
+    notAvailable: POTENTIALLY_MISSING.filter(
+      (m) =>
+        !available.has(m) &&
+        !(m === "peso corporal actual" && body?.weight.latestKg != null) &&
+        !(m === "medidas corporales" && body?.waist != null),
+    ),
+    body,
   };
 }
 

@@ -1,5 +1,20 @@
 import type { CoachContext } from "@/ai/context";
 import type { CoachResponse } from "@/ai/types";
+import {
+  matchesWithPolarity,
+  palabra,
+  polarityAt,
+  type Polarity,
+} from "@/ai/clause";
+import {
+  citations,
+  esDominioCorporal,
+  isSupported,
+  supportedNumbers,
+  userNumbers,
+  ventanaDeClausula,
+  type Citation,
+} from "@/ai/numbers";
 
 /**
  * Guardrails de Coach AI: se ejecutan DESPUÉS del modelo y antes de enseñar
@@ -9,12 +24,17 @@ import type { CoachResponse } from "@/ai/types";
  * `block` = la respuesta no se muestra y se cae al fallback determinista.
  * `warnings` = se muestra, pero queda registrado el aviso.
  *
- * Dos lecciones aprendidas en revisión, que explican la forma del código:
+ * Lecciones aprendidas que explican la forma del código:
  *   · comprobar solo `recommendation` dejaba pasar la misma frase escrita en
  *     el titular, en un highlight o en una hipótesis → se evalúa TODO el texto;
  *   · `contextJson.includes("202")` daba por buena una carga de 202 kg porque
- *     las FECHAS contienen "202" → se compara contra el conjunto de números
- *     realmente presentes en el contexto, no contra el texto del JSON.
+ *     las FECHAS contienen "202" → se compara contra números reales;
+ *   · y la lección de la QA en vivo (B6.1): un conjunto plano de números ya no
+ *     basta. Desde que viaja el cuerpo, "82,4" puede ser la báscula o la
+ *     barra, y hacen falta las dos cosas que aporta `numbers.ts` — saber QUÉ
+ *     significa cada cifra— y `clause.ts` —saber si la frase la AFIRMA, la
+ *     niega, la rechaza o la plantea—. De los 13 bloqueos de la primera
+ *     batería real, los 13 eran falsos positivos por no distinguir eso.
  */
 
 export interface GuardrailResult {
@@ -24,36 +44,48 @@ export interface GuardrailResult {
 }
 
 /** Sustancias que la app nunca recomienda (COACH_PHILOSOPHY §12). */
-const FORBIDDEN =
-  /\b(esteroides?|sarms?|anabolizantes?|clembuterol|oxandrolona|trembolona|estanozolol|nandrolona|winstrol|dianabol|enantato|propionato|aas|testosterona)\b/i;
-
-/** Verbos y giros que proponen mover la carga, incluidos infinitivos. */
-const LOAD_NOUN = "(?:carga|peso|kilos|kg|disco|discos)";
-const INCREASE_HINT = new RegExp(
-  `\\b(?:sub(?:e|es|ir|iría|irías|imos)|aument(?:a|ar|aría)|increment(?:a|ar)|añad(?:e|ir|iría)|met(?:e|er)|pon(?:le|er)?|progresa)\\b[^.]{0,30}\\b${LOAD_NOUN}\\b`,
-  "i",
-);
-const DECREASE_HINT = new RegExp(
-  `\\b(?:baj(?:a|ar|aría)|reduc(?:e|ir)|recort(?:a|ar)|quit(?:a|ar)|alig(?:era|erar)|resta)\\b[^.]{0,30}\\b${LOAD_NOUN}\\b`,
-  "i",
+const FORBIDDEN = palabra(
+  "esteroides?|sarms?|anabolizantes?|clembuterol|oxandrolona|trembolona|estanozolol|nandrolona|winstrol|dianabol|enantato|propionato|aas|testosterona",
 );
 
-/** Formas de proponer una descarga, más allá de la palabra "deload". */
 /**
- * PROPONER una descarga. Ojo: nombrarla no es proponerla.
- *
- * Desde que el contexto marca las sesiones de descarga (`descarga: true`), el
- * coach habla de ellas con normalidad —"esta semana hiciste una descarga
- * recomendada y no debes recuperar el volumen"—, que es exactamente lo que
- * queremos que sepa distinguir. Bloquear cualquier mención tiraba justo esas
- * respuestas. Así que se exige un giro PRESCRIPTIVO junto al sustantivo, o una
- * frase que ya es imperativa por sí sola.
+ * Mover la CARGA. `peso` sigue contando como sustantivo de carga cuando va
+ * DETRÁS del verbo ("baja el peso"), pero `kg` y `kilos` ya no bastan por sí
+ * solos: era el fallo F1. "El peso baja a −0,42 kg/semana" —la frase central
+ * del bloque corporal— se leía como una orden de bajar la carga, y se
+ * descartaba una respuesta correcta entera.
+ */
+const VERBO_SUBIR =
+  "sub(?:e|es|ir|ir[íi]a|ir[íi]as|imos)|aument(?:a|ar|ar[íi]a)|increment(?:a|ar)|a[ñn]ad(?:e|ir|ir[íi]a)|met(?:e|er)|pon(?:le|er)?|progresa";
+const VERBO_BAJAR =
+  "baj(?:a|ar|ar[íi]a)|reduc(?:e|ir)|recort(?:a|ar)|quit(?:a|ar)|alig(?:era|erar)|resta";
+const CARGA_INEQUIVOCA =
+  "carga|cargas|disco|discos|barra|mancuerna|mancuernas|peso";
+/** Ambiguos: solo cuentan si la cláusula NO habla del cuerpo. */
+const CARGA_AMBIGUA = "kilos|kg";
+
+const hint = (verbos: string, nombre: string) =>
+  new RegExp(
+    // El hueco NO cruza puntuación ni coma: un verbo y su objeto están en la
+    // misma cláusula. Sin esto, "el rendimiento sube; es compatible con
+    // perder grasa" se leía como una prescripción de comida.
+    `(?<![A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_])(?:${verbos})(?![A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_])[^.,;:!?\n]{0,30}(?<![A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_])(?:${nombre})(?![A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9_])`,
+    "i",
+  );
+
+const SUBIR_CARGA = hint(VERBO_SUBIR, CARGA_INEQUIVOCA);
+const SUBIR_KILOS = hint(VERBO_SUBIR, CARGA_AMBIGUA);
+const BAJAR_CARGA = hint(VERBO_BAJAR, CARGA_INEQUIVOCA);
+const BAJAR_KILOS = hint(VERBO_BAJAR, CARGA_AMBIGUA);
+
+/**
+ * PROPONER una descarga. Ojo: nombrarla no es proponerla — desde que el
+ * contexto marca las sesiones de descarga, el coach habla de ellas con
+ * normalidad y bloquear cualquier mención tiraba justo esas respuestas.
  */
 const DELOAD_PRESCRIPTION = new RegExp(
   [
-    // "haz / tómate / necesitas / deberías … una descarga"
     "\\b(?:haz(?:te)?|har[íi]a|t[óo]mate|toma|tomar[íi]a|necesitas|necesitar[íi]as|deber[íi]as|te\\s+recomiendo|recomiendo|conviene|planifica|programa|m[ée]tete|toca|hay\\s+que|vale\\s+la\\s+pena|considera|valora)\\b[^.!?]{0,40}\\b(?:descarga|deload|semana\\s+(?:de\\s+)?(?:descarga|suave|floja|ligera|mantenimiento|adaptaci[óo]n))\\b",
-    // Frases que ya son una orden por sí mismas.
     "\\bdescansa(?:r)?\\s+(?:una\\s+semana|\\d+\\s+d[íi]as)\\b",
     "\\bbaja(?:r)?\\s+el\\s+volumen\\b",
     "\\bs[áa]ltate\\s+(?:la|las|el|los)\\s+\\w+\\s+sesi[óo]n\\w*",
@@ -62,73 +94,75 @@ const DELOAD_PRESCRIPTION = new RegExp(
   "i",
 );
 
-/** Desaconsejar una descarga que el motor SÍ recomienda, sin nombrarla. */
+/**
+ * DESACONSEJAR la descarga que el motor sí recomienda.
+ *
+ * Exige un marco de consejo. Antes bastaba con que "no" y "descarga"
+ * cayeran a menos de 30 caracteres, así que "no hay sesiones de descarga
+ * registradas" —un dato de adherencia, no un consejo— tumbaba la respuesta.
+ */
+const DELOAD_DISCOURAGED = new RegExp(
+  [
+    "\\bno\\s+(?:necesitas|necesitar[íi]as|hace\\s+falta|debes|deber[íi]as|tienes\\s+que|hay\\s+que|conviene|toca|te\\s+recomiendo|recomiendo)\\b[^.,;:!?\\n]{0,30}\\b(?:descarga|deload|descansar|parar|frenar)\\b",
+    "\\bno\\s+(?:la\\s+)?(?:hagas|apliques|tomes|te\\s+tomes)\\b[^.,;:!?\\n]{0,25}\\b(?:descarga|deload)\\b",
+    "\\bs[áa]ltate\\s+la\\s+descarga\\b",
+  ].join("|"),
+  "i",
+);
+
+/** Desaconsejarla sin nombrarla. */
 const DELOAD_DENIAL =
   /\b(?:no\s+necesitas\s+(?:parar|descansar|bajar)|sigue\s+empujando|no\s+hace\s+falta\s+(?:parar|frenar)|jam[áa]s\s+hace\s+falta|olv[íi]date\s+de\s+la\s+descarga|entrena\s+normal)\b/i;
 
-/**
- * ¿La coincidencia va precedida de una negación que la afecta de verdad?
- *
- * Se mira SOLO la cláusula inmediata (se corta por `,;:.` y también por el
- * inicio de la frase) y se exige que la negación esté pegada al verbo. Antes se
- * miraban 40 caracteres a pelo, así que "No hay duda: sube la carga" y "Sin
- * miedo, sube la carga" contaban como negadas.
- */
-const NEGATION_BEFORE =
-  /\b(?:no|nunca|jam[áa]s|sin|nada\s+de|tampoco|ni)\b[\s\wáéíóúñ]{0,12}$/i;
-
-/**
- * Adverbios que convierten cualquier giro en una orden para HOY. Si aparecen,
- * la exención condicional no aplica: "cuando entrenes, baja la carga hoy" es
- * una prescripción disfrazada de condicional.
- */
-const PRESCRIPTIVE_NOW =
-  /\b(?:hoy|ya|ahora|esta\s+semana|esta\s+sesi[óo]n|la\s+pr[óo]xima\s+(?:vez|sesi[óo]n)|siguiente\s+sesi[óo]n|mismo)\b/i;
-
-/**
- * ¿La coincidencia es CONDICIONAL o EXPLICATIVA en vez de prescriptiva?
- *
- * "Para subir carga, cierra 10 repeticiones" describe la regla del motor;
- * "sube a 25 kg" prescribe una acción para hoy. La diferencia importa: la
- * tarea EXPLAIN ("¿Por qué hago esto?") tiene como cometido explícito contar
- * "qué tendría que ocurrir para que suba la carga", así que sin esto el
- * guardrail bloqueaba SIEMPRE la respuesta que él mismo había pedido, y la
- * función quedaba muerta para cualquiera que no tuviera justo un ejercicio
- * listo para subir. Verificado en QA: una explicación correcta —que además
- * decía que la fatiga y el dolor suspenden las subidas— se descartaba entera.
- */
-const CONDITIONAL_BEFORE =
-  /\b(?:para|cuando|cu[áa]ndo|si|hasta|en\s+cuanto|una\s+vez|antes\s+de|requisito|condici[óo]n|permitir[áa]|har[áa]\s+que)\b[^.!?]*$/i;
-
-/**
- * Cosas que la app no hace NUNCA, por presencia y sin excepción condicional.
- * Ninguna estaba filtrada: la única lista de contenido eran las sustancias.
- */
-
 /** Diagnóstico clínico. La app no diagnostica (COACH_PHILOSOPHY §12). */
-const DIAGNOSIS =
-  /\b(?:tendinitis|tendinopat[íi]a|hernia\s+discal|rotura\s+(?:de\s+)?(?:fibrilar|fibras|tend[óo]n)|artrosis|bursitis|s[íi]ndrome\s+(?:subacromial|del\s+manguito)|pinzamiento|condromalacia)\b/i;
+const DIAGNOSIS = palabra(
+  "tendinitis|tendinopat[íi]a|hernia\\s+discal|rotura\\s+(?:de\\s+)?(?:fibrilar|fibras|tend[óo]n)|artrosis|bursitis|s[íi]ndrome\\s+(?:subacromial|del\\s+manguito)|pinzamiento|condromalacia",
+);
 
 /** Entrenar al fallo por sistema, o entrenar a través del dolor. */
 const HARMFUL_ADVICE =
   /\b(?:al\s+fallo\s+(?:muscular\s+)?absoluto|todas\s+las\s+series\s+al\s+fallo|hasta\s+el\s+fallo\s+en\s+(?:todas|cada))\b|\b(?:ignora|aguanta|entrena\s+(?:a\s+trav[ée]s\s+d|con))\w*\s+(?:el\s+)?dolor\b|\bel\s+dolor\s+\w+\s+es\s+normal\b/i;
 
-/**
- * Cambiar el PROGRAMA. Ni siquiera el motor determinista hace esto: añadir o
- * quitar series es F3.4 y está aplazada. Que lo hiciera la IA sería la
- * violación más directa de "el motor es la única autoridad".
- */
+/** Cambiar el PROGRAMA: ni el motor determinista hace esto (F3.4, aplazada). */
 const PROGRAM_MUTATION =
   /\b(?:a[ñn]ad(?:e|ir)|met(?:e|er)|quit(?:a|ar)|elimin(?:a|ar)|sustituy(?:e|ir)|cambia(?:r)?|p[áa]sate)\b[^.!?]{0,40}\b(?:serie|series|ejercicio|ejercicios|d[íi]a|d[íi]as|rutina|programa|split)\b|\b(?:baja|sube|cambia|pon)\w*\s+(?:el\s+)?RIR\b/i;
 
-const KG_NUMBER = /(\d+(?:[.,]\d+)?)\s*(?:kgs?|kilo(?:gramo)?s?)\b/gi;
-/** Carga sin unidad: "sube a 102,5", "ponte a 90". */
-const BARE_LOAD =
-  /\b(?:sub(?:e|es|ir)|p[oó]n(?:te|le)?|s[úu]belo|baja(?:lo)?)\s+(?:a|hasta)\s+(\d+(?:[.,]\d+)?)/gi;
-/** Cifras SIN unidad de peso que también hay que respaldar (G-7). */
-const OTHER_NUMBER =
-  /(\d+(?:[.,]\d+)?)\s*(?:repeticiones|reps|series|kcal|calor[íi]as|gramos\s+de\s+prote[íi]na|g\s+de\s+prote[íi]na)\b/gi;
-const PERCENT_NUMBER = /(\d+(?:[.,]\d+)?)\s*%/g;
+/**
+ * VALORACIÓN CLÍNICA DEL CUERPO. Por presencia y sin excepción, igual que las
+ * sustancias: el coste de un falso positivo aquí es cero. La app mide peso y
+ * cintura para seguir un progreso, no para valorar salud.
+ */
+const BODY_CLINICAL = palabra(
+  "obesidad|obeso|sobrepeso|infrapeso|delgadez|IMC|[íi]ndice\\s+de\\s+masa\\s+corporal|riesgo\\s+(?:cardiovascular|metab[óo]lico|para\\s+la\\s+salud)|rango\\s+(?:saludable|normal|[óo]ptimo)|nivel\\s+saludable|porcentaje\\s+(?:saludable|ideal)|peso\\s+ideal",
+);
+
+/**
+ * AFIRMAR un cambio de tejido a partir del peso.
+ *
+ * Ya NO va por presencia (fallo F6): "No se puede saber si estás ganando
+ * músculo o grasa" es la respuesta correcta a la pregunta más previsible de
+ * una fase de volumen, y se descartaba. Se bloquea la AFIRMACIÓN del hecho
+ * —en positivo o en negativo, porque la app tampoco puede negarlo— y se deja
+ * pasar el rechazo epistémico y la hipótesis.
+ */
+const BODY_COMPOSITION_CLAIM =
+  /\b(?:est[áa]s|vas|has|llevas|est[áa]bas|te\s+est[áa]s)\b[^.!?]{0,30}\b(?:perdiendo|perdido|ganando|ganado|conservando|preservando)\b[^.!?]{0,30}\b(?:m[úu]sculo|masa\s+muscular|masa\s+magra|grasa|masa\s+grasa|tejido)\b/i;
+
+/**
+ * PRESCRIPCIÓN NUTRICIONAL. La app no registra ingesta, así que cualquier
+ * instrucción sobre comida sería una recomendación personal sin datos.
+ *
+ * `grasas` va en PLURAL a propósito: en singular, "grasa" es casi siempre la
+ * corporal, y "añade lecturas de grasa con el mismo método" —una sugerencia de
+ * REGISTRO, no de dieta— se bloqueaba como si fuera una prescripción.
+ */
+const NUTRITION_PRESCRIPTION = new RegExp(
+  [
+    "\\b(?:sub(?:e|es|ir)|baj(?:a|as|ar)|aument(?:a|as|ar)|reduc(?:e|es|ir)|recort(?:a|as|ar)|a[ñn]ad(?:e|ir)|quit(?:a|ar))\\b[^.,;:!?\\n]{0,40}\\b(?:calor[íi]as?|kcal|prote[íi]nas?|carbohidratos?|hidratos|grasas|d[ée]ficit|super[áa]vit|ingesta)\\b",
+    "\\bcom(?:e|er)\\s+(?:m[áa]s|menos)\\b",
+  ].join("|"),
+  "i",
+);
 
 /** Sinónimos por métrica ausente, para que el aviso no dependa de una palabra. */
 const MISSING_TERMS: Record<string, string[]> = {
@@ -140,124 +174,79 @@ const MISSING_TERMS: Record<string, string[]> = {
   "medidas corporales": ["cintura", "perímetro", "perimetro"],
 };
 
-/** Todos los números que aparecen realmente en el contexto, ya normalizados. */
-function contextNumbers(context: CoachContext): Set<number> {
-  const out = new Set<number>();
-  const walk = (value: unknown): void => {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      out.add(value);
-      return;
-    }
-    if (typeof value === "string") {
-      // Fuera las fechas ANTES de extraer números: `"2026-08-21"` metía 2026,
-      // 8 y 21 en el conjunto, así que "ponte 21 kg" (o 2026 kg) pasaba como
-      // cifra respaldada por los datos.
-      const sinFechas = value.replace(/\d{4}-\d{2}-\d{2}/g, " ");
-      for (const match of sinFechas.matchAll(/\d+(?:[.,]\d+)?/g)) {
-        const n = Number(match[0].replace(",", "."));
-        if (Number.isFinite(n)) out.add(n);
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(walk);
-      return;
-    }
-    if (value && typeof value === "object") {
-      Object.values(value as Record<string, unknown>).forEach(walk);
-    }
-  };
-  walk(context);
-  return out;
-}
+/** Qué polaridad bloquea cada regla. Es el corazón del arreglo B6.1. */
+const BLOQUEA: Record<string, readonly Polarity[]> = {
+  // Una prescripción negada es una cautela legítima ("no recortes más las
+  // calorías"); una insinuada sigue siendo una prescripción.
+  nutricion: ["AFFIRMATIVE", "UNCERTAIN"],
+  // El tejido no se puede afirmar NI negar: la báscula no lo mide.
+  tejido: ["AFFIRMATIVE", "NEGATED"],
+  // Contradecir al motor tampoco vale insinuado.
+  carga: ["AFFIRMATIVE", "UNCERTAIN"],
+  programa: ["AFFIRMATIVE"],
+  descarga: ["AFFIRMATIVE"],
+};
 
-/**
- * Los pesos que aparecen en el contexto, y solo esos.
- *
- * Para validar kilos no vale el conjunto general de números: el contexto lleva
- * umbrales, días y contadores, así que "ponte 21 kg" quedaba respaldado por
- * `windowDays: 21`. Una carga solo puede estar respaldada por una carga.
- */
-function contextLoads(context: CoachContext): Set<number> {
-  const out = new Set<number>();
-  const add = (v: unknown) => {
-    if (typeof v === "number" && Number.isFinite(v)) out.add(v);
-  };
-  for (const e of context.exercises) {
-    add(e.progression.suggestedWeightKg);
-    for (const v of e.equivalentLoadTrend ?? []) add(v);
-    for (const linea of e.recentSets ?? []) {
-      for (const m of String(linea).matchAll(/(\d+(?:[.,]\d+)?)\s*[×x]/g)) {
-        add(Number(m[1].replace(",", ".")));
-      }
-    }
-  }
-  return out;
-}
-
-function isGrounded(raw: string, numbers: Set<number>): boolean {
-  const n = Number(raw.replace(",", "."));
-  if (!Number.isFinite(n)) return false;
-  // Tolerancia mínima por redondeos de presentación (82.5 ↔ 82.50).
-  for (const value of numbers) {
-    if (Math.abs(value - n) < 0.01) return true;
+/** ¿La respuesta propone mover la carga, contando la ambigüedad de `peso`? */
+function proponeMoverCarga(
+  texto: string,
+  inequivoca: RegExp,
+  ambigua: RegExp,
+): boolean {
+  if (matchesWithPolarity(inequivoca, texto, BLOQUEA.carga).hit) return true;
+  // Con `kg`/`kilos` hay que mirar de qué se está hablando: el bloque corporal
+  // hace que casi todas las frases con kilos sean sobre la báscula.
+  const global = new RegExp(ambigua.source, `${ambigua.flags}g`);
+  for (const m of texto.matchAll(global)) {
+    const i = m.index ?? 0;
+    const v = ventanaDeClausula(texto, i, i + m[0].length);
+    if (esDominioCorporal(v.antes + v.despues)) continue;
+    if (BLOQUEA.carga.includes(polarityAt(texto, i))) return true;
   }
   return false;
 }
 
-/** La cláusula en la que cae `index`: se corta por puntuación fuerte y comas. */
-function clauseBefore(text: string, index: number): string {
-  const upTo = text.slice(0, index);
-  const cut = Math.max(
-    upTo.lastIndexOf("."),
-    upTo.lastIndexOf(";"),
-    upTo.lastIndexOf(":"),
-    upTo.lastIndexOf("!"),
-    upTo.lastIndexOf("?"),
-    upTo.lastIndexOf("\n"),
-  );
-  return upTo.slice(cut + 1);
-}
+/** De más grave a menos: gobierna qué motivo se le enseña al usuario. */
+const GRAVEDAD: readonly Citation["kind"][] = [
+  "TRAINING_LOAD_KG",
+  "LOAD_STEP_KG",
+  "ESTIMATED_1RM_KG",
+  "AMBIGUOUS_KG",
+  "INTAKE",
+  "BODY_WEIGHT_KG",
+  "BODY_CHANGE_KG",
+  "BODY_RATE_KG_PER_WEEK",
+  "WAIST_CM",
+  "COUNT",
+  "BODY_FAT_PCT",
+  "PERCENT",
+];
 
-/**
- * Coincidencias de `regex` en `text` que son PRESCRIPTIVAS: ni negadas
- * ("no toca descarga") ni condicionales ("para subir carga, cierra 10 reps").
- *
- * Ojo: esto NO se aplica a las sustancias vetadas. Una excepción condicional
- * ahí significaba que "Para volumen, usa esteroides" pasaba el filtro.
- */
-function matchesAffirmative(regex: RegExp, text: string): boolean {
-  const global = new RegExp(regex.source, `${regex.flags.replace("g", "")}g`);
-  for (const match of text.matchAll(global)) {
-    const index = match.index ?? 0;
-    const clause = clauseBefore(text, index);
-    // Una orden para hoy no es una condición, por mucho "cuando" que lleve.
-    // Hay que mirar la frase ENTERA: en "si quieres progresar, sube la carga
-    // hoy mismo" el adverbio va después del verbo.
-    const rest = text.slice(index).split(/[.!?\n]/)[0] ?? "";
-    const sentence = clause + rest;
-    if (PRESCRIPTIVE_NOW.test(sentence)) return true;
-    const negationWindow = clause.split(",").pop() ?? clause;
-    if (
-      NEGATION_BEFORE.test(negationWindow) ||
-      CONDITIONAL_BEFORE.test(clause)
-    ) {
-      continue;
-    }
-    return true;
+/** Mensaje de bloqueo por cifra, según lo que la cifra decía ser. */
+function motivoCifra(cita: Citation): string {
+  switch (cita.kind) {
+    case "TRAINING_LOAD_KG":
+    case "LOAD_STEP_KG":
+    case "ESTIMATED_1RM_KG":
+      return `La respuesta citaba cargas que no están en tus datos (${cita.raw} ${cita.unit}).`;
+    case "BODY_WEIGHT_KG":
+    case "BODY_CHANGE_KG":
+    case "BODY_RATE_KG_PER_WEEK":
+      return `La respuesta citaba un peso corporal que no está en tus mediciones (${cita.raw} ${cita.unit}).`;
+    case "WAIST_CM":
+      return `La respuesta citaba una medida de cintura que no está en tus datos (${cita.raw} cm).`;
+    case "INTAKE":
+      return `La respuesta daba una cifra de comida (${cita.raw} ${cita.unit}), y la app no registra lo que comes.`;
+    default:
+      return `La respuesta citaba cifras que no están en tus datos (${cita.raw}).`;
   }
-  return false;
-}
-
-function collect(regex: RegExp, text: string): string[] {
-  const out: string[] = [];
-  for (const match of text.matchAll(regex)) out.push(match[1]);
-  return out;
 }
 
 export function checkResponse(
   response: CoachResponse,
   context: CoachContext,
+  /** Mensaje del usuario, para distinguir la cifra que él propuso. */
+  userMessage?: string,
 ): GuardrailResult {
   const text = [
     response.headline,
@@ -268,14 +257,9 @@ export function checkResponse(
   ].join("\n");
 
   const warnings: string[] = [];
-  const numbers = contextNumbers(context);
 
   // ── 1. Sustancias vetadas ───────────────────────────────────────────────
-  // Por PRESENCIA, sin excepción condicional. Pasaba por `matchesAffirmative`
-  // y bastaba abrir la frase con "Para" o "Si" para que la app recomendara
-  // anabolizantes. El coste de un falso positivo aquí es cero: que se
-  // descarte una respuesta por nombrar una sustancia es exactamente lo que
-  // queremos, aunque fuera para desaconsejarla.
+  // Por PRESENCIA, sin excepción: el coste de un falso positivo es cero.
   if (FORBIDDEN.test(text)) {
     return {
       block: true,
@@ -285,54 +269,79 @@ export function checkResponse(
     };
   }
 
-  // ── 2. Cifras inventadas en kilos ──────────────────────────────────────
-  const loads = contextLoads(context);
-  const ungroundedKg = [
-    ...collect(KG_NUMBER, text),
-    ...collect(BARE_LOAD, text),
-  ].filter((v) => !isGrounded(v, loads));
-  if (ungroundedKg.length > 0) {
-    return {
-      block: true,
-      reason: `La respuesta citaba cargas que no están en tus datos (${ungroundedKg.join(", ")} kg).`,
-      warnings,
-    };
+  // ── 2. Cifras: cada una contra la fuente de SU tipo ────────────────────
+  const fuentes = supportedNumbers(context);
+  const delUsuario = userNumbers(userMessage);
+  // Las cifras se revisan por GRAVEDAD, no por orden de aparición: si una
+  // respuesta inventa a la vez una carga y un recuento, el motivo que se le
+  // enseña al usuario debe ser la carga.
+  for (const cita of [...citations(text, context)].sort(
+    (a, b) => GRAVEDAD.indexOf(a.kind) - GRAVEDAD.indexOf(b.kind),
+  )) {
+    if (isSupported(cita, fuentes)) continue;
+
+    // Una cifra que propuso el USUARIO puede citarse para rechazarla —"no
+    // puedo recomendarte bajar 300 kcal"— pero nunca para recomendarla. Sin
+    // esto, el coach no podía ni nombrar aquello que se estaba negando a
+    // hacer, y las tres tiradas de esa pregunta acababan en el fallback.
+    // Un porcentaje es una DESCRIPCIÓN, no una recomendación: citar "tu
+    // báscula dice 15 %" no convierte esa cifra en un consejo. Se resuelve
+    // antes que la regla de polaridad para que repetir el dato del usuario en
+    // una frase descriptiva no tumbe la respuesta entera.
+    if (cita.kind === "PERCENT" || cita.kind === "BODY_FAT_PCT") {
+      if (!delUsuario.has(cita.value)) {
+        warnings.push(
+          `Porcentaje no verificable en tus datos: ${cita.raw} ${cita.unit}.`,
+        );
+      }
+      continue;
+    }
+
+    if (delUsuario.has(cita.value)) {
+      const p = polarityAt(text, cita.index);
+      if (p === "REJECTION" || p === "NEGATED" || p === "UNCERTAIN") continue;
+      return {
+        block: true,
+        reason: `La respuesta recomendaba una cifra que propusiste tú (${cita.raw} ${cita.unit}), y la app no tiene datos para respaldarla.`,
+        warnings,
+      };
+    }
+
+    return { block: true, reason: motivoCifra(cita), warnings };
   }
 
-  // Repeticiones, series, RIR y kilocalorías. Antes solo se comprobaban los
-  // kilos, así que bastaba omitir la unidad ("sube a 102,5 y cierra 6") o
-  // hablar de series para que la cifra inventada pasara sin más.
-  const ungroundedOther = collect(OTHER_NUMBER, text).filter(
-    (v) => !isGrounded(v, numbers),
-  );
-  if (ungroundedOther.length > 0) {
-    return {
-      block: true,
-      reason: `La respuesta citaba cifras que no están en tus datos (${ungroundedOther.join(", ")}).`,
-      warnings,
-    };
-  }
-
-  // Un porcentaje puede estar respaldado por su FRACCIÓN, y al revés: el
-  // contexto lleva tanto fracciones (0.5 de recorte) como porcentajes enteros
-  // (`avgCompletionPct: 91`), y el modelo escribe indistintamente una u otro.
-  const ungroundedPct = collect(PERCENT_NUMBER, text).filter(
-    (v) =>
-      !isGrounded(v, numbers) &&
-      !isGrounded(String(Number(v.replace(",", ".")) / 100), numbers),
-  );
-  if (ungroundedPct.length > 0) {
-    warnings.push(
-      `Porcentajes no verificables en tus datos: ${ungroundedPct.join(", ")} %.`,
-    );
-  }
-
-  // ── 2b. Contenido que la app no produce nunca ───────────────────────────
+  // ── 3. Contenido que la app no produce nunca ───────────────────────────
   if (DIAGNOSIS.test(text)) {
     return {
       block: true,
       reason:
         "La respuesta ponía un diagnóstico clínico, y esta app no diagnostica.",
+      warnings,
+    };
+  }
+  if (BODY_CLINICAL.test(text)) {
+    return {
+      block: true,
+      reason:
+        "La respuesta valoraba tu cuerpo en términos clínicos, y esta app sigue tu progreso: no valora tu salud.",
+      warnings,
+    };
+  }
+  if (matchesWithPolarity(BODY_COMPOSITION_CLAIM, text, BLOQUEA.tejido).hit) {
+    return {
+      block: true,
+      reason:
+        "La respuesta afirmaba un cambio de músculo o de grasa, y eso no se deduce del peso ni de las cargas.",
+      warnings,
+    };
+  }
+  if (
+    matchesWithPolarity(NUTRITION_PRESCRIPTION, text, BLOQUEA.nutricion).hit
+  ) {
+    return {
+      block: true,
+      reason:
+        "La respuesta prescribía comida, y la app no registra lo que comes: cualquier cifra sería inventada.",
       warnings,
     };
   }
@@ -344,10 +353,7 @@ export function checkResponse(
       warnings,
     };
   }
-  // Vía `matchesAffirmative`: "NO añadas series para compensar" es justo lo
-  // que queremos que diga tras una descarga, y con un `.test()` a secas se
-  // bloqueaba por contener "añad… series".
-  if (matchesAffirmative(PROGRAM_MUTATION, text)) {
+  if (matchesWithPolarity(PROGRAM_MUTATION, text, BLOQUEA.programa).hit) {
     return {
       block: true,
       reason:
@@ -356,18 +362,11 @@ export function checkResponse(
     };
   }
 
-  // ── 3. Contradicción con el motor de progresión ────────────────────────
-  //
-  // EXPLAIN ya NO está exenta. Lo estuvo, y era un boquete: dejaba pasar
-  // "sube la carga hoy mismo" en la pantalla que más parece una instrucción.
-  // El problema real era la ventana de 30 caracteres de la detección
-  // condicional, no la comprobación en sí; ampliada a la cláusula completa,
-  // las explicaciones legítimas ("para subir carga, cierra el rango") pasan
-  // con la regla activa.
+  // ── 4. Contradicción con el motor de progresión ────────────────────────
   const actions = new Set(context.exercises.map((e) => e.progression.action));
   if (
     !actions.has("INCREASE_LOAD") &&
-    matchesAffirmative(INCREASE_HINT, text)
+    proponeMoverCarga(text, SUBIR_CARGA, SUBIR_KILOS)
   ) {
     return {
       block: true,
@@ -378,7 +377,7 @@ export function checkResponse(
   }
   if (
     !actions.has("DECREASE_LOAD") &&
-    matchesAffirmative(DECREASE_HINT, text)
+    proponeMoverCarga(text, BAJAR_CARGA, BAJAR_KILOS)
   ) {
     return {
       block: true,
@@ -388,8 +387,12 @@ export function checkResponse(
     };
   }
 
-  // ── 4. Descarga inventada (o desaconsejada cuando sí toca) ──────────────
-  const proposesDeload = matchesAffirmative(DELOAD_PRESCRIPTION, text);
+  // ── 5. Descarga inventada (o desaconsejada cuando sí toca) ──────────────
+  const proposesDeload = matchesWithPolarity(
+    DELOAD_PRESCRIPTION,
+    text,
+    BLOQUEA.descarga,
+  ).hit;
   if (context.fatigue.decision !== "DELOAD_RECOMMENDED" && proposesDeload) {
     return {
       block: true,
@@ -400,10 +403,7 @@ export function checkResponse(
   }
   if (
     context.fatigue.decision === "DELOAD_RECOMMENDED" &&
-    (/\b(?:no|sin|nada\s+de|jam[áa]s)\b[^.]{0,30}\b(?:descarga|deload|descansar|parar)\b/i.test(
-      text,
-    ) ||
-      DELOAD_DENIAL.test(text))
+    (DELOAD_DISCOURAGED.test(text) || DELOAD_DENIAL.test(text))
   ) {
     return {
       block: true,
@@ -413,10 +413,8 @@ export function checkResponse(
     };
   }
 
-  // ── 5. Métricas que no registramos ─────────────────────────────────────
+  // ── 6. Métricas que no registramos ─────────────────────────────────────
   for (const missing of context.notAvailable) {
-    // Se busca la frase completa y sus sinónimos, no la primera palabra: con
-    // "peso" saltaba en cualquier frase que mencionara el peso de la barra.
     const terms = MISSING_TERMS[missing] ?? [missing];
     const hit = terms.some((term) =>
       new RegExp(
