@@ -1,6 +1,6 @@
 import { ageInYears, DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
 import { NUTRITION_CONFIG } from "@/core/config/nutrition-config";
-import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
+import { STRATEGY_TO_GOAL_TYPE, type BodyFatReliability } from "@/core/enums";
 import {
   estimateInitialTargets,
   NUTRITION_ESTIMATE_VERSION,
@@ -139,16 +139,39 @@ export async function completeOnboarding(
       },
     });
 
-    // Medición inicial (peso + cintura opcional) — upsert por día.
+    // Medición inicial: la primera fila de la serie corporal. `BodyMeasurement`
+    // es la fuente única del peso (ver el comentario del modelo en el schema),
+    // así que el onboarding tiene que dejarla bien puesta o la serie empieza
+    // torcida.
+    //
+    // El % graso se guarda AQUÍ, no solo en el snapshot de la decisión: antes
+    // se preguntaba en el wizard y acababa enterrado en un JSON de auditoría,
+    // que no se puede consultar como serie. Va acompañado de su procedencia,
+    // porque un % graso sin saber de dónde sale no es comparable con nada.
+    //
+    // Los mismos campos para `create` y `update`: el onboarding es una
+    // declaración COMPLETA del estado corporal de hoy, así que re-ejecutarlo
+    // sin cintura tiene que borrar la que hubiera, no dejar un valor huérfano
+    // de una ejecución anterior.
+    const measurementFields = {
+      weightKg: data.weightKg,
+      waistCm: data.waistCm ?? null,
+      bodyFatPct: data.bodyFatPct ?? null,
+      bodyFatReliability:
+        data.bodyFatPct === undefined
+          ? null
+          : ((data.bodyFatMeasured
+              ? "MEASURED"
+              : "ESTIMATED") satisfies BodyFatReliability | null),
+    };
+
+    // Upsert por (perfil, día): registrar dos veces el mismo día actualiza la
+    // fila, nunca la duplica. La clave única lo garantiza en la base de datos,
+    // no solo en el código.
     await tx.bodyMeasurement.upsert({
       where: { profileId_localDate: { profileId: profile.id, localDate } },
-      create: {
-        profileId: profile.id,
-        localDate,
-        weightKg: data.weightKg,
-        waistCm: data.waistCm ?? null,
-      },
-      update: { weightKg: data.weightKg, waistCm: data.waistCm ?? null },
+      create: { profileId: profile.id, localDate, ...measurementFields },
+      update: measurementFields,
     });
 
     // Target nutricional inicial — upsert por (profileId, effectiveFrom).

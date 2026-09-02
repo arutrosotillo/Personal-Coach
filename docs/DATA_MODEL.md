@@ -23,11 +23,11 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 
 **Cuerpo y check-ins**
 
-- `BodyMeasurement` — `@@unique(profileId, localDate)`; peso, cintura y perímetros opcionales, BF% estimado opcional.
+- `BodyMeasurement` — `@@unique(profileId, localDate)`; peso, cintura y perímetros opcionales, BF% estimado opcional con su `bodyFatReliability`. **Fuente única de verdad del peso corporal** (ver la decisión de abajo).
 - `ProgressPhoto` — pose, path relativo, soft-delete (F4 para la UI; tabla desde F1 por estabilidad).
-- `DailyCheckIn` — `@@unique(profileId, localDate)`; todo opcional (peso, kcal, proteína, pasos, hambre, energía, sueño, entrenó, notas).
+- `DailyCheckIn` — `@@unique(profileId, localDate)`; todo opcional (kcal, proteína, pasos, hambre, energía, sueño, entrenó, notas). Su columna `weightKg` está **obsoleta**.
 - `WeeklyCheckIn` — `@@unique(profileId, isoYear, isoWeek)`; snapshots calculados al cerrar + sensaciones preguntadas.
-- `PersonalEvent` — tipo (12 valores), rango de fechas opcional, nota. Lo consumen los motores (D0, R4b) y las gráficas.
+- `PersonalEvent` — tipo (12 valores), rango de fechas opcional, nota. **Sin implementar: la tabla existe desde F1 y está vacía; ningún motor ni pantalla la escribe o la lee todavía.** Su consumo por los motores (D0, R4b) y por las gráficas está especificado para F4–F5.
 
 **Catálogo de entrenamiento**
 
@@ -60,6 +60,52 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 
 - `AlgorithmDecision` — engine, versión, ruleId, inputSnapshot JSON, output JSON, explicación, fecha de evaluación.
 - `Recommendation` — 1:1 con su decisión (`decisionId @unique`), tipo, scope, prioridad, estado, título, cuerpo, payload. El generador de programa inicial (F1) ya registra su decisión aquí: la trazabilidad nace con el primer dato.
+
+## Decisión: `BodyMeasurement` es la fuente única del peso corporal (B0)
+
+`BodyMeasurement.weightKg` y `DailyCheckIn.weightKg` nacieron los dos en F1, con la misma clave `(profileId, localDate)` y los dos vacíos. Con dos sitios donde cabe el peso del mismo día, el motor de tendencia y el de nutrición acabarían leyendo números distintos para la misma fecha, y el fallo no se vería hasta que las cuentas no cuadraran.
+
+- **`BodyMeasurement` es la única fuente longitudinal** de peso, perímetros y % graso. Todo motor, repositorio o pantalla que necesite "el peso" lo lee de aquí.
+- **`DailyCheckIn.weightKg` queda obsoleta.** No se lee ni se escribe. La columna **no se borra todavía**: está vacía, quitarla es una migración destructiva que no arregla nada, y la retirada real va cuando F4 toque esa tabla de verdad. Mientras tanto el comentario del schema es la guarda.
+- **Una fila por persona y día.** Toda escritura es un `upsert` contra `(profileId, localDate)`: registrar dos veces el mismo día actualiza, nunca duplica, y la última medición del día gana. Un pesaje no es un evento histórico que conservar; es el valor de ese día, y quien se pesa dos veces suele estar corrigiendo el primero.
+- **Sin superficie IDOR en la escritura.** El cliente identifica la fila por FECHA, no por id, y el `profileId` sale siempre de la sesión (`requireProfileId()`). Solo el borrado necesita id, y ahí la guarda de propiedad es obligatoria.
+
+### `bodyFatPct` y `bodyFatReliability`
+
+El onboarding preguntaba el % graso y lo perdía: solo quedaba dentro del JSON de `AlgorithmDecision.inputSnapshot`, que es auditoría y no se consulta como serie. Ahora se guarda en `BodyMeasurement`, siempre acompañado de `bodyFatReliability` (`MEASURED` | `ESTIMATED`, enum en `src/core/enums.ts`).
+
+La procedencia no es un adorno: una báscula de bioimpedancia doméstica tiene un error estándar de 3,1–7,5 puntos porcentuales frente a un modelo de 4 compartimentos, mientras que el **cambio** entre dos lecturas del mismo aparato baja a 1,7–2,6 pp porque el sesgo constante se cancela (Siedler & Tinsley 2023, `doi:10.1017/S0007114522003749`). Sin saber de dónde sale cada lectura no se puede distinguir un caso del otro. El % graso es siempre opcional y siempre una estimación; nunca se presenta como cifra absoluta.
+
+## Decisión: check-in corporal y fases sin tablas nuevas (B4)
+
+Tres necesidades, y solo una migración.
+
+**Historial de fases → `Goal`, tal cual.** El modelo ya era historial: filas con `status`, nunca un registro mutable. Cambiar de estrategia cierra la fila activa (`SUPERSEDED`) y crea otra con `startDate` de hoy; corregir el ritmo o el peso objetivo edita la fila en sitio y NO toca `startDate`. La diferencia importa porque `startDate` es lo que se pasa como `analysisStartLocalDate` al motor corporal: abrir una fase reinicia lo que el motor considera "ahora".
+
+- Regla exacta: **cambia `strategy` → fase nueva; cambia cualquier otra cosa → edición en sitio.** En esta app la dirección del peso la determina la estrategia y solo ella (`NUTRITION_CONFIG.weeklyRatePct` acota FAT_LOSS a negativos, LEAN_GAIN a positivos, RECOMP y MAINTENANCE a cero), así que pasar de −0,5 a −0,75 %/semana es la misma fase yendo más rápido. Vive en `core/body/goal-change.ts`, es pura y está probada por mutación.
+- `SUPERSEDED` se añadió al enum `GoalStatus` sin migración (columna `String`). `ABANDONED` decía que te habías rendido y `COMPLETED` que habías llegado; ninguna es cierta al pasar de definición a mantenimiento.
+- Cambiar de fase **no** recalcula el objetivo calórico ni toca el programa. Es una declaración de intención, no una orden para que los motores se reconfiguren.
+
+**Check-in periódico → derivado, sin estado.** Un check-in _es_ una medición de cintura: el peso ya tiene su vía rápida y lo que el check-in aporta es la cintura, que es la métrica de cadencia lenta. La cadencia sale de `max(localDate)` con `waistCm != null` (`core/body/check-in.ts`, cada 14 días). Sin tabla, sin marca y auto-corrigiéndose: si borras la medición, el check-in "no ocurrió". Para un perfil que nunca ha medido cintura el estado es `NEVER_DONE` y el próximo vence HOY — nunca una deuda retroactiva desde el alta.
+
+**`WeeklyCheckIn` NO se usa para esto.** Es un snapshot semanal ISO de nutrición y adherencia (`avgWeightKg`, `weightTrendKgPerWeek`, adherencias, fatiga/hambre/motivación): una caché de salidas de los motores de F4. Sigue vacía y sin consumidores. Reutilizarla por el parecido del nombre habría mezclado dos cosas distintas.
+
+### Limitación conocida: `startDate` no distingue un cambio de ritmo importante
+
+`Goal.startDate` marca el comienzo de una FASE, y una fase la define la estrategia. Un cambio grande de `weeklyRatePct` dentro de la misma estrategia —de −0,25 a −0,75 %/semana, por ejemplo— es una edición en sitio: no mueve `startDate` y por tanto no reinicia la ventana de tendencia.
+
+Eso es correcto para la tendencia en sí (la dirección del peso no cambia, y los pesajes anteriores siguen describiendo lo mismo), pero **no es del todo correcto para comparar observado contra objetivo**: durante las primeras semanas tras el cambio, `goal.ratio` compara una pendiente medida sobre datos de dos ritmos distintos contra el ritmo nuevo. El número no es falso, pero es una media de dos regímenes.
+
+**Decisión: NO se resuelve todavía.** Arreglarlo bien exigiría o una segunda fecha en `Goal` (`rateChangedAt`) o un historial de ediciones, y ninguna de las dos se justifica antes de ver qué consumidores necesitan de verdad esa precisión. Hoy el único que lee `ratio` es la tarjeta de objetivo de `/progress`, que lo enseña junto al ritmo real y al margen de error, así que el sesgo es visible. Revisar en B5/B6, cuando haya consumidores reales que decidan algo con ese número.
+
+### `BodyMeasurement.waistProtocol` — la única migración
+
+El error de medida de la cintura depende de cuántas tomas se promediaron: ~5,4 cm de cambio mínimo detectable con una, ~3,1 cm con la media de tres (Barrios 2016, `doi:10.1186/s12874-016-0150-2`). Sin esta columna solo cabían dos opciones y las dos eran malas: seguir aplicando 5,4 a mediciones que merecen 3,1, o bajar la constante global y aplicar a las mediciones de una sola toma —onboarding incluido— una precisión que no tienen.
+
+- `null` = desconocido, y el motor lo trata como `SINGLE`. La columna no tiene `DEFAULT` a propósito: rellenar el pasado con un valor inventado era justo el problema.
+- Solo el check-in, que pide las tres tomas, puede declarar `MEAN_OF_THREE`. Editar la cintura a mano desde el historial la deja en `null`.
+- Cuando en la ventana conviven los dos protocolos, **manda el peor**: una serie no puede ser más precisa que su medida más burda.
+- Las tres tomas crudas **no se persisten**. Lo que cambia el comportamiento del motor es el protocolo, no los valores sueltos; la media es el valor representativo y la dispersión ya se valida en la frontera (se rechaza si superan 5 cm de diferencia). Guardarlas permitiría estimar el error de medida propio de cada persona, pero nada lo consume. Añadir esa columna después es aditivo.
 
 ## Decisión: tablas de Coach AI pospuestas a Fase 6
 

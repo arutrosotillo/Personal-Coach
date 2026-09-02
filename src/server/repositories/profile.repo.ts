@@ -27,6 +27,27 @@ export async function getLatestMeasurement(profileId: string) {
   });
 }
 
+/**
+ * Objetivo ACTIVO del perfil. Lectura ligera: el seguimiento corporal solo
+ * necesita el objetivo, y `getProfileOverview` se trae además el programa
+ * entero con sus plantillas y ejercicios.
+ */
+export async function getActiveGoal(profileId: string) {
+  return prisma.goal.findFirst({
+    where: { profileId, status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      type: true,
+      strategy: true,
+      weeklyRatePct: true,
+      startWeightKg: true,
+      targetWeightKg: true,
+      startDate: true,
+    },
+  });
+}
+
 export async function getProfileOverview(profileId: string) {
   const profile = await getProfileById(profileId);
   if (!profile) return null;

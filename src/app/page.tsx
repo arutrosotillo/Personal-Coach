@@ -1,11 +1,18 @@
 import Link from "next/link";
 
+import { QuickWeightCard } from "@/components/body/quick-weight-card";
 import { AppShell } from "@/components/layout/app-shell";
 import { PhaseNote } from "@/components/layout/phase-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { diffDays } from "@/core/dates";
 import { strategyLabel } from "@/lib/labels";
 import { getCurrentProfileOverview } from "@/server/auth/current-user";
+import {
+  getMeasurementForDate,
+  todayForProfile,
+} from "@/server/services/body.service";
+import { getLatestMeasurement } from "@/server/repositories/profile.repo";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +49,28 @@ export default async function DashboardPage() {
   const { goal, nutritionTarget, program } = overview;
   const mesocycle = program?.mesocycles[0];
 
+  // Peso de hoy y hueco desde el último: lo justo para que la tarjeta rápida
+  // sepa si está creando o corrigiendo, y para ajustar su texto de ayuda.
+  const todayLocalDate = todayForProfile();
+  const [todayMeasurement, latestMeasurement] = await Promise.all([
+    getMeasurementForDate(overview.profile.id, todayLocalDate),
+    getLatestMeasurement(overview.profile.id),
+  ]);
+  const daysSinceLastWeight =
+    latestMeasurement && latestMeasurement.weightKg !== null
+      ? diffDays(latestMeasurement.localDate, todayLocalDate)
+      : null;
+
   return (
     <AppShell>
       <h1 className="mb-4 text-2xl font-semibold">Hoy</h1>
       <div className="space-y-4">
+        <QuickWeightCard
+          todayLocalDate={todayLocalDate}
+          initialWeightKg={todayMeasurement?.weightKg ?? null}
+          daysSinceLastWeight={daysSinceLastWeight}
+        />
+
         {goal ? (
           <Card>
             <CardHeader>
@@ -112,11 +137,11 @@ export default async function DashboardPage() {
           </Card>
         ) : null}
 
-        <PhaseNote phase="Fases 4–5">
-          Lo que todavía no puedes hacer aquí: registrar tu peso del día y lo
-          que comes. Las kilocalorías y la proteína de arriba son tu objetivo
-          calculado, no un seguimiento. El entrenamiento sí está completo —
-          registro de series, progresión, recuperación y coach.
+        <PhaseNote phase="Fase 4">
+          Lo que todavía no puedes hacer aquí: registrar lo que comes. Las
+          kilocalorías y la proteína de arriba son tu objetivo calculado, no un
+          seguimiento. El entrenamiento y el seguimiento corporal sí están
+          operativos.
         </PhaseNote>
       </div>
     </AppShell>

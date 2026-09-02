@@ -4,7 +4,7 @@ import { isCoachConfigured } from "@/ai/config";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { logoutAction } from "@/server/actions/auth.action";
+import { LogoutButton } from "@/components/layout/logout-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { workActivityLabel } from "@/lib/labels";
 import { getCurrentProfileOverview } from "@/server/auth/current-user";
@@ -158,11 +158,7 @@ export default async function SettingsPage() {
             Estás dentro en este dispositivo. La sesión se renueva sola mientras
             uses la app y caduca a los 90 días sin usarla.
           </p>
-          <form action={logoutAction}>
-            <Button type="submit" variant="outline" className="min-h-11">
-              Cerrar sesión
-            </Button>
-          </form>
+          <LogoutButton />
         </CardContent>
       </Card>
     </AppShell>

@@ -54,8 +54,55 @@ export const STRATEGY_TO_GOAL_TYPE: Record<GoalStrategy, GoalType> = {
   MAINTENANCE: "MAINTENANCE",
 };
 
-export const GoalStatus = z.enum(["ACTIVE", "COMPLETED", "ABANDONED"]);
+/**
+ * Estado de un objetivo. Las filas de `Goal` SON el historial de fases: nunca
+ * se borra una, se cierra y se crea la siguiente.
+ *
+ * `SUPERSEDED` se añadió en B4 para el caso normal de cambiar de fase —
+ * terminar una definición y pasar a mantenimiento, por ejemplo—. `ABANDONED`
+ * decía que te habías rendido y `COMPLETED` que habías llegado al objetivo, y
+ * ninguna de las dos es cierta cuando simplemente se pasa a otra cosa.
+ */
+export const GoalStatus = z.enum([
+  "ACTIVE",
+  "COMPLETED",
+  "ABANDONED",
+  "SUPERSEDED",
+]);
 export type GoalStatus = z.infer<typeof GoalStatus>;
+
+/**
+ * Cómo se obtuvo un `bodyFatPct`. La cifra por sí sola no dice nada: una
+ * báscula de bioimpedancia doméstica tiene un error estándar de 3,1–7,5 puntos
+ * porcentuales frente a un modelo de 4 compartimentos, así que guardar el
+ * número sin su procedencia haría imposible saber si dos lecturas son
+ * comparables.
+ *
+ * De momento solo dos valores, que es exactamente lo que el onboarding
+ * pregunta (`bodyFatMeasured`): MEASURED = DEXA o plicómetro; ESTIMATED =
+ * báscula o estimación visual. La columna es `String`, así que afinar esto a
+ * métodos concretos (BIA_SCALE, SKINFOLD, DXA…) cuando el check-in los
+ * pregunte no exigirá migración.
+ */
+export const BodyFatReliability = z.enum(["MEASURED", "ESTIMATED"]);
+export type BodyFatReliability = z.infer<typeof BodyFatReliability>;
+
+/**
+ * Con cuántas tomas se obtuvo una medida de cintura.
+ *
+ * NO es un adorno: cambia el umbral de lo que el motor puede afirmar. En
+ * automedición doméstica el error técnico de una sola toma llega a 1,93 cm, que
+ * propagado da un cambio mínimo detectable de ~5,4 cm; con la media de tres
+ * baja a ~1,11 cm y ~3,1 cm (Barrios 2016, `doi:10.1186/s12874-016-0150-2`).
+ *
+ * `null` = desconocido, y se trata como `SINGLE`. Es el caso de todo lo
+ * registrado antes de B4 (onboarding incluido) y de la cintura anotada a mano
+ * desde el historial: no se puede saber cómo se tomó, así que se aplica el
+ * umbral conservador. Subir el listón de precisión a mediciones antiguas sería
+ * inventarse una calidad que esos datos no tienen.
+ */
+export const WaistProtocol = z.enum(["SINGLE", "MEAN_OF_THREE"]);
+export type WaistProtocol = z.infer<typeof WaistProtocol>;
 
 export const PhotoPose = z.enum(["FRONT", "SIDE", "BACK"]);
 export type PhotoPose = z.infer<typeof PhotoPose>;

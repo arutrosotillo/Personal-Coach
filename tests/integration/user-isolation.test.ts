@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import type { CoachProvider } from "@/ai/provider";
+import { bodyMeasurementSchema } from "@/core/schemas/body-measurement";
+import { addDays } from "@/core/dates";
 import { onboardingSchema } from "@/core/schemas/onboarding";
 
 import { createTestDatabase } from "./helpers/test-db";
@@ -47,6 +50,7 @@ const { getExerciseHistorySummary } =
 const { askCoach } = await import("@/server/services/coach.service");
 const { getProfileOverview } =
   await import("@/server/repositories/profile.repo");
+const body = await import("@/server/services/body.service");
 
 const BASE = {
   sex: "MALE",
@@ -538,26 +542,353 @@ describe("los motores de cada uno son independientes", () => {
   });
 });
 
+describe("las mediciones corporales son de cada uno", () => {
+  /** Día en el que A y B registran a la vez. */
+  const DIA_COMPARTIDO = "2026-06-15";
+  const AHORA = new Date(`${DIA_COMPARTIDO}T12:00:00Z`);
+
+  /** Medición válida, ya validada por el schema de la frontera. */
+  function medicion(localDate: string, weightKg: number, waistCm?: number) {
+    return bodyMeasurementSchema.parse({ localDate, weightKg, waistCm });
+  }
+
+  it("A y B pueden registrar el MISMO día sin colisionar", async () => {
+    // La clave única es (perfil, día), no (día). Que A registre no puede
+    // impedir ni pisar el registro de B.
+    const deA = await body.saveMeasurement(
+      A.profileId,
+      medicion(DIA_COMPARTIDO, 84.2, 88),
+      AHORA,
+    );
+    const deB = await body.saveMeasurement(
+      B.profileId,
+      medicion(DIA_COMPARTIDO, 61.7, 71),
+      AHORA,
+    );
+
+    expect(deA.id).not.toBe(deB.id);
+    expect(deA.localDate).toBe(deB.localDate);
+    expect(deA.weightKg).toBe(84.2);
+    expect(deB.weightKg).toBe(61.7);
+
+    // Y cada uno lee el suyo, no el del otro.
+    expect(
+      (await body.getMeasurementForDate(A.profileId, DIA_COMPARTIDO))?.weightKg,
+    ).toBe(84.2);
+    expect(
+      (await body.getMeasurementForDate(B.profileId, DIA_COMPARTIDO))?.weightKg,
+    ).toBe(61.7);
+  });
+
+  it("guardar con la sesión de A NO modifica la medición de B del mismo día", async () => {
+    const antesDeB = await prisma.bodyMeasurement.findUniqueOrThrow({
+      where: {
+        profileId_localDate: {
+          profileId: B.profileId,
+          localDate: DIA_COMPARTIDO,
+        },
+      },
+    });
+
+    await body.saveMeasurement(
+      A.profileId,
+      medicion(DIA_COMPARTIDO, 83.9),
+      AHORA,
+    );
+
+    const despuesDeB = await prisma.bodyMeasurement.findUniqueOrThrow({
+      where: {
+        profileId_localDate: {
+          profileId: B.profileId,
+          localDate: DIA_COMPARTIDO,
+        },
+      },
+    });
+    expect(despuesDeB).toEqual(antesDeB);
+  });
+
+  it("A no puede borrar una medición de B pasando su id a mano", async () => {
+    const deB = await prisma.bodyMeasurement.findFirstOrThrow({
+      where: { profileId: B.profileId },
+    });
+
+    await expect(body.deleteMeasurement(A.profileId, deB.id)).rejects.toThrow();
+
+    // La fila sigue ahí, intacta y de B.
+    const sigue = await prisma.bodyMeasurement.findUnique({
+      where: { id: deB.id },
+    });
+    expect(sigue).not.toBeNull();
+    expect(sigue!.profileId).toBe(B.profileId);
+    expect(sigue!.weightKg).toBe(deB.weightKg);
+  });
+
+  it("el mensaje de error no distingue 'no existe' de 'no es tuya'", async () => {
+    // Distinguirlos confirmaría la existencia de un dato ajeno.
+    const deB = await prisma.bodyMeasurement.findFirstOrThrow({
+      where: { profileId: B.profileId },
+    });
+    const ajena = await body
+      .deleteMeasurement(A.profileId, deB.id)
+      .catch((e: Error) => e.message);
+    const inexistente = await body
+      .deleteMeasurement(A.profileId, "no-existe-en-ningun-sitio")
+      .catch((e: Error) => e.message);
+    expect(ajena).toBe(inexistente);
+  });
+
+  it("el historial de A no contiene ni una medición de B", async () => {
+    const { history } = await body.getBodyProgress(A.profileId, AHORA);
+    const idsDeB = (
+      await prisma.bodyMeasurement.findMany({
+        where: { profileId: B.profileId },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+
+    expect(history.length).toBeGreaterThan(0);
+    for (const fila of history) expect(idsDeB).not.toContain(fila.id);
+    // Y ningún peso de B se cuela por valor.
+    expect(history.map((m) => m.weightKg)).not.toContain(61.7);
+  });
+
+  it("el análisis de A no cambia porque B añada o modifique sus datos", async () => {
+    // Se le da a A historial suficiente para tener una tendencia de verdad:
+    // sin ella, "no cambia" se cumpliría por estar todo vacío.
+    for (let i = 27; i >= 0; i--) {
+      await body.saveMeasurement(
+        A.profileId,
+        medicion(addDays(DIA_COMPARTIDO, -i), 84 - 0.06 * (27 - i)),
+        AHORA,
+      );
+    }
+    const antes = await body.getBodyProgress(A.profileId, AHORA);
+    expect(antes.analysis.weight.status).toBe("LOSING");
+
+    // B se pone a registrar como un poseso, con valores extremos y opuestos.
+    for (let i = 27; i >= 0; i--) {
+      await body.saveMeasurement(
+        B.profileId,
+        medicion(addDays(DIA_COMPARTIDO, -i), 60 + 0.3 * (27 - i)),
+        AHORA,
+      );
+    }
+    const despues = await body.getBodyProgress(A.profileId, AHORA);
+
+    expect(despues).toEqual(antes);
+    expect(despues.analysis.weight.trend!.slopePerWeek).toBeCloseTo(
+      antes.analysis.weight.trend!.slopePerWeek,
+      10,
+    );
+
+    // Y el de B refleja lo suyo: subiendo, no bajando.
+    const deB = await body.getBodyProgress(B.profileId, AHORA);
+    expect(deB.analysis.weight.status).toBe("GAINING");
+  });
+
+  it("borrar todo lo de B deja el análisis de A exactamente igual", async () => {
+    const antes = await body.getBodyProgress(A.profileId, AHORA);
+    await prisma.bodyMeasurement.deleteMany({
+      where: { profileId: B.profileId },
+    });
+    const despues = await body.getBodyProgress(A.profileId, AHORA);
+    expect(despues).toEqual(antes);
+  });
+});
+
+describe("check-in y objetivo son de cada uno (B4)", () => {
+  const AHORA = new Date("2026-06-20T12:00:00Z");
+
+  it("el check-in de A no toca ninguna medición de B", async () => {
+    const { bodyCheckInSchema } =
+      await import("@/core/schemas/body-measurement");
+    const antesDeB = await prisma.bodyMeasurement.findMany({
+      where: { profileId: B.profileId },
+      orderBy: { localDate: "asc" },
+    });
+
+    await body.submitCheckIn(
+      A.profileId,
+      bodyCheckInSchema.parse({
+        localDate: "2026-06-20",
+        waist1: 90,
+        waist2: 90.5,
+        waist3: 90.2,
+      }),
+      AHORA,
+    );
+
+    expect(
+      await prisma.bodyMeasurement.findMany({
+        where: { profileId: B.profileId },
+        orderBy: { localDate: "asc" },
+      }),
+    ).toEqual(antesDeB);
+  });
+
+  it("la cadencia de A se calcula solo con las cinturas de A", async () => {
+    // B mide hoy; a A eso no puede reiniciarle el contador.
+    const { bodyCheckInSchema } =
+      await import("@/core/schemas/body-measurement");
+    const antes = await body.getBodyProgress(A.profileId, AHORA);
+    await body.submitCheckIn(
+      B.profileId,
+      bodyCheckInSchema.parse({
+        localDate: "2026-06-20",
+        waist1: 71,
+        waist2: 71.5,
+        waist3: 71.2,
+      }),
+      AHORA,
+    );
+    const despues = await body.getBodyProgress(A.profileId, AHORA);
+    expect(despues.checkIn).toEqual(antes.checkIn);
+  });
+
+  it("cambiar de fase A no toca el objetivo de B", async () => {
+    const { goalUpdateSchema } = await import("@/core/schemas/goal-update");
+    const objetivosDeBAntes = await prisma.goal.findMany({
+      where: { profileId: B.profileId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const r = await body.updateGoal(
+      A.profileId,
+      goalUpdateSchema.parse({
+        strategy: "LEAN_GAIN",
+        weeklyRatePct: 0.15,
+        targetWeightKg: null,
+      }),
+      AHORA,
+    );
+    expect(r.kind).toBe("NEW_PHASE");
+
+    // B sigue con sus mismas filas, byte a byte.
+    expect(
+      await prisma.goal.findMany({
+        where: { profileId: B.profileId },
+        orderBy: { createdAt: "asc" },
+      }),
+    ).toEqual(objetivosDeBAntes);
+    // Y su objetivo activo sigue siendo el suyo.
+    const activoB = await prisma.goal.findFirstOrThrow({
+      where: { profileId: B.profileId, status: "ACTIVE" },
+    });
+    expect(activoB.strategy).toBe("FAT_LOSS_MUSCLE_PRESERVATION");
+  });
+
+  it("la fase nueva de A no recorta el análisis de B", async () => {
+    // A acaba de abrir una fase (test anterior). El recorte por
+    // `analysisStartLocalDate` tiene que aplicarse SOLO a A.
+    const deA = await body.getBodyProgress(A.profileId, AHORA);
+    const deB = await body.getBodyProgress(B.profileId, AHORA);
+    expect(deA.phaseStartLocalDate).toBe("2026-06-20");
+    expect(deB.phaseStartLocalDate).toBe("2026-06-02");
+  });
+
+  it("A no puede revisar el objetivo de B ni por accidente", async () => {
+    // `updateGoal` solo acepta el perfil de la sesión: no hay parámetro por
+    // el que colar un objetivo ajeno. Lo que se comprueba es que operar como
+    // A jamás alcanza una fila de B.
+    const idsDeB = (
+      await prisma.goal.findMany({
+        where: { profileId: B.profileId },
+        select: { id: true },
+      })
+    ).map((g) => g.id);
+
+    const { goalUpdateSchema } = await import("@/core/schemas/goal-update");
+    const r = await body.updateGoal(
+      A.profileId,
+      goalUpdateSchema.parse({
+        strategy: "MAINTENANCE",
+        weeklyRatePct: 0,
+        targetWeightKg: null,
+      }),
+      AHORA,
+    );
+    expect(idsDeB).not.toContain(r.goalId);
+
+    const tocado = await prisma.goal.findUniqueOrThrow({
+      where: { id: r.goalId },
+    });
+    expect(tocado.profileId).toBe(A.profileId);
+  });
+});
+
 describe("el contexto del AI Coach no mezcla usuarios", () => {
   it("el contexto que se envía es el del perfil que pregunta", async () => {
     // Proveedor falso: captura el contexto exacto que habría viajado a OpenAI.
-    let capturado = "";
-    const proveedor = {
-      complete: async (peticion: { contextJson: string }) => {
+    //
+    // El método TIENE que llamarse `generate`, que es el único de
+    // `CoachProvider`. Con cualquier otro nombre la llamada lanza, `runCoach`
+    // la captura y devuelve ERROR, y el contexto se queda vacío: las
+    // aserciones de abajo se cumplirían sobre una cadena vacía y este test
+    // —que es el que vigila que no se filtren datos de otra persona a
+    // OpenAI— pasaría sin haber mirado nada. De ahí el tipado explícito y la
+    // comprobación de que se llamó de verdad.
+    let capturado: string | null = null;
+    const proveedor: CoachProvider = {
+      generate: async (peticion) => {
         capturado = peticion.contextJson;
-        return { text: '{"mensaje":"ok"}', usage: null };
+        return {
+          kind: "OK",
+          text: JSON.stringify({
+            headline: "ok",
+            highlights: [],
+            fatigue: null,
+            recommendation: "ok",
+            hypotheses: [],
+          }),
+          model: "fake",
+          inputTokens: 0,
+          outputTokens: 0,
+          estimatedCostUsd: null,
+        };
       },
     };
     await askCoach(
       B.profileId,
       { task: "WEEKLY" },
-      proveedor as unknown as Parameters<typeof askCoach>[2],
+      proveedor,
       new Date("2026-06-10T10:00:00Z"),
     );
+    expect(capturado).not.toBeNull();
+    const contexto: string = capturado!;
+    expect(contexto.length).toBeGreaterThan(0);
+
+    // ── B6: ningún NÚMERO CORPORAL de A puede aparecer en el contexto de B ──
+    //
+    // Es la comprobación que el bloque `body` hace necesaria: antes el
+    // contexto solo llevaba entrenamiento, así que bastaba vigilar ids. Ahora
+    // viajan peso, cintura y objetivo, que son datos personales.
+    const enviado = JSON.parse(capturado!) as {
+      body: {
+        weight: { latestKg: number | null };
+        goal: { targetWeightKg: number | null } | null;
+      } | null;
+    };
+    const cuerpoDeA = await prisma.bodyMeasurement.findMany({
+      where: { profileId: A.profileId },
+      select: { weightKg: true, waistCm: true },
+    });
+    if (enviado.body) {
+      // El peso que viaja es el de B (62 kg), nunca el de A (84).
+      expect(enviado.body.weight.latestKg).not.toBe(84);
+      for (const m of cuerpoDeA) {
+        if (m.weightKg !== null) {
+          expect(enviado.body.weight.latestKg).not.toBe(m.weightKg);
+        }
+      }
+    }
+
     // Ningún identificador de A puede aparecer en el contexto de B.
-    expect(capturado).not.toContain(A.profileId);
-    expect(capturado).not.toContain(A.sessionId);
-    expect(capturado).not.toContain(A.programId);
+    expect(contexto).not.toContain(A.profileId);
+    expect(contexto).not.toContain(A.sessionId);
+    expect(contexto).not.toContain(A.programId);
+    expect(contexto).not.toContain(A.liveSessionId);
+    expect(contexto).not.toContain(A.templateExerciseId);
+    for (const id of A.templateIds) expect(contexto).not.toContain(id);
   });
 
   it("el resumen de perfil que alimenta al coach es el del perfil pedido", async () => {

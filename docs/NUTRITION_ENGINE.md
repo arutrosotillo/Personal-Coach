@@ -40,6 +40,28 @@ Conversión: 7.700 kcal/kg (imprecisión reconocida; el bucle corrige). `kcalObj
 
 **Suelos duros (no configurables hacia abajo)**: `kcal ≥ max(BMR × 0.90, 1500 H / 1200 M)`; déficit ≤ min(25 % TDEE, 1 %/sem). Si un ajuste tocaría el suelo: se recorta hasta el suelo y se activa alerta (§9).
 
+> ### ⚠︎ Revisión pendiente (abierta 2026-08-31, sin implementar)
+>
+> **El techo del déficit no tiene componente absoluto, y debería tenerlo.**
+>
+> Hoy `NUTRITION_CONFIG.maxDeficitPctOfTdee = 0.25` acota el déficit solo en términos relativos. Para un TDEE de 2.800 kcal eso permite 700 kcal/día. La meta-regresión de **Murphy & Koehler 2022** (`doi:10.1111/sms.14075`, `PMID 34623696`) sobre ECAs de entrenamiento de fuerza en déficit sitúa en **~500 kcal/día** el punto donde se anulan las ganancias de masa magra (ES = −0,57, p = 0,02 para masa magra; la fuerza no se deteriora significativamente, ES = −0,31, p = 0,28). Su recomendación explícita es evitar déficits > 500 kcal/día si se quiere preservar masa magra entrenando fuerza.
+>
+> El límite porcentual y el absoluto se cruzan según el peso, y hoy solo se aplica uno:
+>
+> | Peso   | 0,7 %/sem   | Déficit implicado | ¿Coherente con ≤500 kcal/d? |
+> | ------ | ----------- | ----------------- | --------------------------- |
+> | 60 kg  | 0,42 kg/sem | ~460 kcal/d       | Sí                          |
+> | 80 kg  | 0,56 kg/sem | ~615 kcal/d       | No                          |
+> | 100 kg | 0,70 kg/sem | ~770 kcal/d       | No                          |
+>
+> **Cambio propuesto** (revisión independiente, pequeña, con sus propios tests): añadir `maxDeficitKcalAbsolute: 500` a `nutrition-config.ts` y aplicar el **mínimo** de las dos restricciones, no solo el porcentaje. La traza ya tiene `boundedByMaxDeficit`; haría falta distinguir cuál de los dos topes mordió, para que la explicación al usuario diga la verdad.
+>
+> **Casos límite a cubrir con test**: persona ligera donde manda el % (sin cambio de comportamiento respecto a hoy); persona pesada donde manda el tope absoluto; interacción con el suelo de kcal de §9 cuando ambos se activan; y que `effectiveWeeklyRatePct` siga reflejando el ritmo REAL tras aplicar el nuevo tope.
+>
+> **Asunto aparte, misma revisión**: el rango de déficit llega a −1,0 %/sem y el wizard ofrece el preset "Decidido" (−0,75 %) sin condicionarlo al % graso. La evidencia (**Garthe 2011**, `doi:10.1123/ijsnem.21.2.97` — 0,7 %/sem preservó masa magra, +2,1 %, frente a 1,4 %/sem, −0,2 %) respalda 0,5–0,7 % para personas magras y entrenadas; el extremo superior solo es defendible con grasa basal alta (ISSN position stand 2017, `doi:10.1186/s12970-017-0174-y`). O se condiciona el preset, o se etiqueta honestamente lo que cuesta.
+>
+> Detectado durante la auditoría de seguimiento corporal. **Deliberadamente NO se corrigió ahí**: es un cambio al motor nutricional en producción y merece su propia revisión con su propia evidencia, no colarse en una feature que apareció por casualidad a su lado.
+
 ## 3. Macronutrientes
 
 | Objetivo                  | Proteína (g/kg)   | Grasa (g/kg)      |

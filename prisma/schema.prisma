@@ -83,7 +83,12 @@ model Goal {
   profile        UserProfile @relation(fields: [profileId], references: [id])
   strategy       String // enum GoalStrategy (intención elegida por el usuario)
   type           String // enum GoalType: comportamiento calórico interno derivado de strategy
-  status         String      @default("ACTIVE") // enum GoalStatus: ACTIVE | COMPLETED | ABANDONED
+  status         String      @default("ACTIVE") // enum GoalStatus: ACTIVE | COMPLETED | ABANDONED | SUPERSEDED
+  /// Las filas de este modelo SON el historial de fases. Cambiar de estrategia
+  /// (definición → volumen) cierra la fila activa y crea otra con `startDate`
+  /// de hoy; corregir el peso objetivo o el ritmo edita la fila en sitio. La
+  /// diferencia importa: `startDate` es lo que acota la tendencia corporal a
+  /// la fase actual (`analysisStartLocalDate`).
   startDate      String // localDate
   startWeightKg  Float // peso al fijar el objetivo (para la traza)
   weeklyRatePct  Float // % del peso corporal / semana (negativo = pérdida)
@@ -119,24 +124,53 @@ model AppSetting {
 
 // ============ CUERPO Y CHECK-INS ============
 
+/// FUENTE ÚNICA DE VERDAD del seguimiento corporal longitudinal: peso,
+/// perímetros y % graso. Cualquier motor o pantalla que necesite "el peso" lo
+/// lee de aquí y de ningún otro sitio (ver la nota de `DailyCheckIn.weightKg`).
+///
+/// UNA FILA POR PERSONA Y DÍA (`@@unique(profileId, localDate)`). La clave
+/// natural es deliberada y tiene dos consecuencias:
+///
+///   · Registrar dos veces el mismo día NO crea un duplicado: la escritura es
+///     siempre un `upsert` contra esa clave y la última medición del día gana.
+///     Un pesaje no es un evento que haya que conservar: es el valor del día,
+///     y quien se pesa dos veces normalmente está corrigiendo el primero.
+///   · Como el cliente identifica la fila por FECHA y no por id, y el
+///     `profileId` sale siempre de la sesión, la escritura no tiene superficie
+///     IDOR. Solo el borrado necesita id, y ahí la guarda de propiedad es
+///     obligatoria.
+///
+/// Todos los campos de medida son opcionales a propósito: el día que solo te
+/// pesas es una fila con `weightKg` y nada más.
 model BodyMeasurement {
-  id           String      @id @default(cuid())
-  profileId    String
-  profile      UserProfile @relation(fields: [profileId], references: [id])
-  localDate    String
-  weightKg     Float?
-  waistCm      Float?
-  neckCm       Float?
-  chestCm      Float?
-  hipsCm       Float?
-  bicepLeftCm  Float?
-  bicepRightCm Float?
-  thighLeftCm  Float?
-  thighRightCm Float?
-  calfCm       Float?
-  bodyFatPct   Float?
-  notes        String?
-  createdAt    DateTime    @default(now())
+  id                 String      @id @default(cuid())
+  profileId          String
+  profile            UserProfile @relation(fields: [profileId], references: [id])
+  localDate          String
+  weightKg           Float?
+  waistCm            Float?
+  /// Con cuántas tomas se midió `waistCm`: enum WaistProtocol
+  /// (SINGLE | MEAN_OF_THREE). `null` = desconocido, y el motor lo trata como
+  /// SINGLE. Cambia el umbral de lo que se puede afirmar (~5,4 cm con una
+  /// toma, ~3,1 cm con la media de tres), así que no es metadato decorativo.
+  waistProtocol      String?
+  neckCm             Float?
+  chestCm            Float?
+  hipsCm             Float?
+  bicepLeftCm        Float?
+  bicepRightCm       Float?
+  thighLeftCm        Float?
+  thighRightCm       Float?
+  calfCm             Float?
+  /// % graso. SIEMPRE opcional y SIEMPRE una estimación: ni siquiera un DEXA
+  /// es una medida directa. No se usa como cifra absoluta en ningún sitio.
+  bodyFatPct         Float?
+  /// De dónde sale ese %: enum BodyFatReliability (MEASURED | ESTIMATED).
+  /// Sin él, dos lecturas no son comparables y el número no vale para nada.
+  /// Obligatorio en la práctica cuando hay `bodyFatPct`; nulo si no lo hay.
+  bodyFatReliability String?
+  notes              String?
+  createdAt          DateTime    @default(now())
 
   @@unique([profileId, localDate])
 }
@@ -155,11 +189,25 @@ model ProgressPhoto {
   @@index([profileId, pose, localDate])
 }
 
+/// Check-in diario de NUTRICIÓN Y SENSACIONES (F4): kcal, proteína, pasos,
+/// hambre, energía, sueño. Nada de esto vive en `BodyMeasurement`.
 model DailyCheckIn {
   id         String      @id @default(cuid())
   profileId  String
   profile    UserProfile @relation(fields: [profileId], references: [id])
   localDate  String
+  /// OBSOLETA — no la leas ni la escribas. El peso corporal vive en
+  /// `BodyMeasurement.weightKg` y en ningún otro sitio.
+  ///
+  /// Las dos columnas nacieron en F1 con la misma clave `(profileId,
+  /// localDate)` y ambas vacías. Con dos sitios donde cabe el peso del día,
+  /// el motor de tendencia y el de nutrición acabarían leyendo números
+  /// distintos para la misma fecha sin que nadie lo notara hasta que las
+  /// cuentas no cuadraran.
+  ///
+  /// No se borra todavía porque la columna está vacía y quitarla es una
+  /// migración destructiva que no arregla nada: la retirada real va cuando F4
+  /// toque esta tabla de verdad.
   weightKg   Float?
   kcal       Int?
   proteinG   Int?
@@ -415,6 +463,11 @@ model WorkoutSession {
   fatigue              Int?
   motivation           Int?
   notes                String?
+  // Token de idempotencia del cierre: lo genera el cliente al pulsar "Guardar y
+  // finalizar" y lo repite en cada reintento, para que una respuesta perdida no
+  // se convierta en "tu valoración no se ha guardado" habiéndose guardado.
+  // NULL = sesión cerrada antes de que existiera el token, o aún en curso.
+  finishToken          String?
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
