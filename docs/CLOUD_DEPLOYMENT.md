@@ -74,9 +74,8 @@ base de datos y se fija con `pnpm user:create`. Ver §9.
 
 ### 1.4 Variables de entorno en Vercel
 
-**Settings → Environment Variables**. Las marcadas como secretas no deben
-aparecer nunca en el cliente: ninguna lleva el prefijo `NEXT_PUBLIC_`, y por
-eso Next no las expone.
+**Settings → Environment Variables**. Ninguna lleva el prefijo `NEXT_PUBLIC_`,
+y por eso Next no expone ninguna al cliente.
 
 | Variable              | Valor                            | Entornos            |
 | --------------------- | -------------------------------- | ------------------- |
@@ -85,6 +84,12 @@ eso Next no las expone.
 | `AUTH_SECRET`         | el `openssl rand -base64 32`     | Production, Preview |
 | `OPENAI_API_KEY`      | tu clave de OpenAI               | Production          |
 | `AI_COACH_MODEL`      | `gpt-5.6-luna`                   | Production          |
+
+El modo offline **no lleva variable**. El service worker que permite recargar o
+reabrir la pantalla de entrenamiento sin cobertura forma parte del
+comportamiento normal de producción y se registra solo en cualquier build de
+producción. No hay nada que configurar aquí para que funcione, ni nada que se
+pueda olvidar y dejarlo apagado.
 
 > Con la integración de Neon instalada, `DIRECT_DATABASE_URL` es opcional: la
 > integración inyecta `DATABASE_URL_UNPOOLED`, que `prisma.config.ts` también
