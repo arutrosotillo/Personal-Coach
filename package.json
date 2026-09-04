@@ -24,7 +24,7 @@
     "db:backup": "tsx scripts/db-backup.ts",
     "db:restore": "tsx scripts/db-restore.ts",
     "db:verify": "tsx scripts/db-verify.ts",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "vercel-build": "prisma generate && prisma migrate deploy && tsx prisma/seed/seed.ts && next build",
     "user:create": "tsx scripts/users.ts create",
     "user:list": "tsx scripts/users.ts list",
     "user:password": "tsx scripts/users.ts password",

@@ -14,6 +14,10 @@ import { estimateOneRepMax } from "@/core/training/e1rm";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
 import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
+import {
+  ExerciseNotVisibleError,
+  saveExerciseNote,
+} from "@/server/services/exercise-note.service";
 import { wasDeloadRecommended } from "@/server/services/fatigue.service";
 
 /**
@@ -685,6 +689,9 @@ function mensajePermanente(kind: SyncOpData["kind"]): string {
       "valoración de aquella vez es la que quedó."
     );
   }
+  if (kind === "SAVE_EXERCISE_NOTE") {
+    return "Ese ejercicio ya no está en tu banco: la nota no se ha podido guardar.";
+  }
   return "Esa sesión ya no está en curso: ese cambio no se ha podido guardar.";
 }
 
@@ -692,6 +699,7 @@ function mensajePermanente(kind: SyncOpData["kind"]): string {
 function isPermanent(error: unknown): boolean {
   if (error instanceof SessionNotInProgressError) return true;
   if (error instanceof SessionAlreadyCompletedError) return true;
+  if (error instanceof ExerciseNotVisibleError) return true;
   // P2025: `findFirstOrThrow` no encontró nada. En este servicio eso siempre
   // significa "no es tuyo" o "la sesión ya no está en curso", nunca un fallo
   // pasajero de la base de datos.
@@ -761,6 +769,11 @@ export async function applySyncOps(
           now,
           token,
         );
+      } else if (op.kind === "SAVE_EXERCISE_NOTE") {
+        // La nota es del BANCO, no de la sesión: no exige que la sesión siga en
+        // curso —se puede haber cerrado con la nota aún sin cobertura— y su
+        // guarda de propiedad es la del ejercicio, que el servicio revalida.
+        await saveExerciseNote(profileId, op.payload);
       } else if (!ownExercises.has(op.payload.workoutExerciseId)) {
         throw new SessionNotInProgressError();
       } else if (op.kind === "LOG_SET") {

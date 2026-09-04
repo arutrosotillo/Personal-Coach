@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { SetType } from "@/core/enums";
+import { exerciseNoteSchema } from "@/core/schemas/exercise-note";
 
 /** Registro de una serie durante la ejecución. Validado en cliente y servidor. */
 export const logSetSchema = z.object({
@@ -61,6 +62,13 @@ export const finishSessionSchema = sessionFeedbackSchema.extend({
   token: finishTokenSchema,
 });
 
+/**
+ * Guardar la nota personal de una variante desde la sesión. Es el MISMO esquema
+ * que usa la ruta online (`exerciseNoteSchema`), reexportado aquí para que el
+ * lote lo valide igual: texto completo, vacío = borrar.
+ */
+export const saveExerciseNoteOpSchema = exerciseNoteSchema;
+
 export const syncOpSchema = z.discriminatedUnion("kind", [
   z.object({
     ...opEnvelope,
@@ -71,6 +79,11 @@ export const syncOpSchema = z.discriminatedUnion("kind", [
     ...opEnvelope,
     kind: z.literal("SET_PLANNED_SETS"),
     payload: setPlannedSetsSchema,
+  }),
+  z.object({
+    ...opEnvelope,
+    kind: z.literal("SAVE_EXERCISE_NOTE"),
+    payload: saveExerciseNoteOpSchema,
   }),
   z.object({
     ...opEnvelope,

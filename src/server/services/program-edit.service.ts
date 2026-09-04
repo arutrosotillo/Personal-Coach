@@ -4,6 +4,7 @@ import {
   generateInitialProgram,
 } from "@/core/program/generate-initial-program";
 import { onboardingSchema } from "@/core/schemas/onboarding";
+import { defaultTargetRir } from "@/core/training/prescription-defaults";
 import type { TemplateExerciseEdit } from "@/core/schemas/template-edit";
 import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
 import { prisma } from "@/server/db";
@@ -14,6 +15,40 @@ import { loadCatalog } from "@/server/repositories/catalog.repo";
  * activo. La edición NO reescribe el historial: las sesiones ya guardadas
  * conservan su snapshot en WorkoutExercise.
  */
+
+/**
+ * Variante + el ejercicio del que cuelga. El ejercicio hace falta para el RIR:
+ * el rol y el coste sistémico son suyos, la estabilidad es de la variante.
+ */
+async function variantWithExercise(variantId: string) {
+  return prisma.exerciseVariant.findFirstOrThrow({
+    where: { id: variantId, deletedAt: null },
+    include: { exercise: true },
+  });
+}
+
+/**
+ * RIR objetivo por defecto de una variante recién añadida.
+ *
+ * Antes esto era un `targetRir: 2` a pelo en las tres altas (añadir ejercicio,
+ * añadir día, cambiar variante), y ese literal es lo que puso a 2 el RIR de una
+ * zancada búlgara con mancuernas y el de un remo unilateral en polea: dos
+ * ejercicios que el motor de defaults habría dejado en 1 y en 0. El builder sí
+ * llamaba a `defaultTargetRir`, así que el mismo ejercicio recibía un objetivo
+ * distinto según por qué pantalla entrara.
+ */
+function targetRirFor(variant: {
+  equipment: string;
+  stability: string | null;
+  exercise: { movementPattern: string; systemicFatigue: number };
+}): number {
+  return defaultTargetRir(
+    variant.exercise.movementPattern,
+    variant.exercise.systemicFatigue,
+    variant.stability,
+    variant.equipment,
+  );
+}
 
 async function assertTemplateExerciseOwned(profileId: string, id: string) {
   return prisma.templateExercise.findFirstOrThrow({
@@ -57,15 +92,17 @@ export async function changeTemplateVariant(
   newVariantId: string,
 ) {
   await assertTemplateExerciseOwned(profileId, templateExerciseId);
-  const variant = await prisma.exerciseVariant.findFirstOrThrow({
-    where: { id: newVariantId, deletedAt: null },
-  });
+  const variant = await variantWithExercise(newVariantId);
   await prisma.templateExercise.update({
     where: { id: templateExerciseId },
     data: {
       exerciseVariantId: variant.id,
       repRangeMin: variant.repRangeMin,
       repRangeMax: variant.repRangeMax,
+      // El RIR viaja con la variante igual que el rango y el descanso. Sin
+      // esto, cambiar "Sentadilla trasera — Barra" (2) por "Prensa de piernas"
+      // conservaba el 2 del movimiento anterior.
+      targetRir: targetRirFor(variant),
       restSeconds: variant.defaultRestSeconds,
     },
   });
@@ -152,9 +189,7 @@ export async function addTemplateExercise(
       mesocycle: { program: { profileId, isActive: true } },
     },
   });
-  const variant = await prisma.exerciseVariant.findFirstOrThrow({
-    where: { id: variantId, deletedAt: null },
-  });
+  const variant = await variantWithExercise(variantId);
   const max = await prisma.templateExercise.aggregate({
     where: { templateId },
     _max: { ordinal: true },
@@ -167,7 +202,7 @@ export async function addTemplateExercise(
       baseSets: 3,
       repRangeMin: variant.repRangeMin,
       repRangeMax: variant.repRangeMax,
-      targetRir: 2,
+      targetRir: targetRirFor(variant),
       restSeconds: variant.defaultRestSeconds,
     },
   });
@@ -355,9 +390,7 @@ export async function addDay(
   firstVariantId: string,
 ) {
   const mesocycle = await activeMesocycle(profileId);
-  const variant = await prisma.exerciseVariant.findFirstOrThrow({
-    where: { id: firstVariantId, deletedAt: null },
-  });
+  const variant = await variantWithExercise(firstVariantId);
   const max = await prisma.workoutTemplate.aggregate({
     where: { mesocycleId: mesocycle.id, deletedAt: null },
     _max: { ordinal: true },
@@ -375,7 +408,7 @@ export async function addDay(
             baseSets: 3,
             repRangeMin: variant.repRangeMin,
             repRangeMax: variant.repRangeMax,
-            targetRir: 2,
+            targetRir: targetRirFor(variant),
             restSeconds: variant.defaultRestSeconds,
           },
         },

@@ -13,6 +13,8 @@ export interface CatalogVariant {
   id: string;
   name: string;
   equipment: Equipment;
+  /** `ExerciseStability` declarada; `null` = la que predice el material. */
+  stability: string | null;
   loadStepKg: number;
   repRangeMin: number;
   repRangeMax: number;

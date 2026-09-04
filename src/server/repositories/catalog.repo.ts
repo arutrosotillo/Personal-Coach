@@ -57,6 +57,7 @@ export async function loadCatalog(
       id: v.id,
       name: v.name,
       equipment: Equipment.parse(v.equipment),
+      stability: v.stability,
       loadStepKg: v.loadStepKg,
       repRangeMin: v.repRangeMin,
       repRangeMax: v.repRangeMax,

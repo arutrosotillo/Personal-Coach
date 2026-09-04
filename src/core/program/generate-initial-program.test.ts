@@ -30,6 +30,7 @@ function testCatalog(): CatalogExercise[] {
       id: `${e.name}::${v.name}`,
       name: v.name,
       equipment: v.equipment,
+      stability: v.stability ?? null,
       loadStepKg: v.loadStepKg,
       repRangeMin: v.repRangeMin,
       repRangeMax: v.repRangeMax,

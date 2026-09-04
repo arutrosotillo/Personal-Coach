@@ -20,8 +20,6 @@ export interface LibraryExercise {
   isActive: boolean;
   /** `true` si lo creó el propio usuario (se puede borrar; el del seed no). */
   isOwn: boolean;
-  /** Nota personal de ESTE perfil sobre el ejercicio; `null` si no hay. */
-  note: string | null;
   muscles: Array<{
     code: string;
     nameEs: string;
@@ -35,6 +33,8 @@ export interface LibraryExercise {
     repRangeMin: number;
     repRangeMax: number;
     defaultRestSeconds: number;
+    /** Nota personal de ESTE perfil sobre ESTA variante; `null` si no hay. */
+    note: string | null;
   }>;
 }
 
@@ -47,9 +47,12 @@ export async function listLibrary(
     orderBy: { name: "asc" },
     include: {
       contributions: { include: { muscleGroup: true } },
-      variants: { where: { deletedAt: null }, orderBy: { name: "asc" } },
-      // Filtrada por perfil: la nota es personal y el catálogo es compartido.
-      notes: { where: { profileId }, select: { text: true } },
+      variants: {
+        where: { deletedAt: null },
+        orderBy: { name: "asc" },
+        // Filtrada por perfil: la nota es personal y el catálogo es compartido.
+        include: { notes: { where: { profileId }, select: { text: true } } },
+      },
     },
   });
 
@@ -60,7 +63,6 @@ export async function listLibrary(
     instructions: e.instructions,
     isActive: e.isActive,
     isOwn: e.profileId !== null,
-    note: e.notes[0]?.text ?? null,
     muscles: e.contributions
       .slice()
       .sort((a, b) => b.factor - a.factor)
@@ -77,6 +79,7 @@ export async function listLibrary(
       repRangeMin: v.repRangeMin,
       repRangeMax: v.repRangeMax,
       defaultRestSeconds: v.defaultRestSeconds,
+      note: v.notes[0]?.text ?? null,
     })),
   }));
 }

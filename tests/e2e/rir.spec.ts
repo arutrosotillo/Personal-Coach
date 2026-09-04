@@ -116,7 +116,7 @@ test("RIR: objetivo visible, valor registrado honesto y persistente", async ({
 
   // La "última vez" muestra el RIR de la serie 1 (3) y NADA para la serie 2,
   // que se registró como "no lo sé": no se inventa un valor.
-  await page.getByRole("button", { name: "Repetir" }).click();
+  await page.getByRole("button", { name: "Otra vez" }).first().click();
   await expect(page.getByText(/Ejercicio 1\//)).toBeVisible();
   const lastTime = page.getByText(/Última vez \(/);
   await expect(lastTime).toContainText("50×");

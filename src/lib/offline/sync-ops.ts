@@ -5,12 +5,14 @@ import { SYNC } from "@/lib/offline/sync-config";
  * confirmado el servidor.
  *
  * Es COALESCENTE POR CLAVE, no un registro de eventos, y eso no es una
- * simplificación: es una consecuencia de cómo escribe ya el servidor. Las tres
+ * simplificación: es una consecuencia de cómo escribe ya el servidor. Las
  * mutaciones de una sesión son ABSOLUTAS e IDEMPOTENTES —`logSet` es un upsert
  * por (workoutExerciseId, setNumber), `setPlannedSets` escribe un número, no un
- * delta, y cerrar la sesión es una transición de estado—, así que una operación
- * pendiente queda descrita por su ÚLTIMO payload. Corregir el RIR de la serie 2
- * cuatro veces sin cobertura deja UNA operación, no cuatro.
+ * delta, `saveExerciseNote` es un upsert por (perfil, variante) que manda el
+ * texto entero, y cerrar la sesión es una transición de estado—, así que una
+ * operación pendiente queda descrita por su ÚLTIMO payload. Corregir el RIR de
+ * la serie 2 cuatro veces sin cobertura deja UNA operación, no cuatro; reescribir
+ * la nota de un ejercicio seis veces, también UNA.
  *
  * Todo este módulo es puro: sin `Date.now()`, sin almacenamiento, sin red. El
  * reloj entra como parámetro para que los tests puedan mentirle.
@@ -24,6 +26,15 @@ export function setOpKey(workoutExerciseId: string, setNumber: number): string {
 /** Nº de series previstas de un ejercicio (añadir/quitar serie). */
 export function plannedOpKey(workoutExerciseId: string): string {
   return `PLANNED:${workoutExerciseId}`;
+}
+
+/**
+ * Nota personal de una variante. La clave es la variante y no el
+ * `workoutExerciseId`: la nota es del banco de ejercicios, no de esta sesión, y
+ * si el mismo ejercicio aparece dos veces en el día es la MISMA nota.
+ */
+export function noteOpKey(exerciseVariantId: string): string {
+  return `NOTE:${exerciseVariantId}`;
 }
 
 /** Cierre de la sesión. Uno como mucho, por eso la clave es constante. */
@@ -40,6 +51,12 @@ export interface LogSetOpPayload {
 export interface PlannedSetsOpPayload {
   workoutExerciseId: string;
   plannedSets: number;
+}
+
+export interface SaveNoteOpPayload {
+  exerciseVariantId: string;
+  /** Texto COMPLETO que debe quedar guardado. Vacío = borrar la nota. */
+  text: string;
 }
 
 export interface FinishOpPayload {
@@ -60,6 +77,7 @@ export interface FinishOpPayload {
 export type OpBody =
   | { kind: "LOG_SET"; payload: LogSetOpPayload }
   | { kind: "SET_PLANNED_SETS"; payload: PlannedSetsOpPayload }
+  | { kind: "SAVE_EXERCISE_NOTE"; payload: SaveNoteOpPayload }
   | { kind: "FINISH_SESSION"; payload: FinishOpPayload };
 
 export type PendingOp = OpBody & {
@@ -210,4 +228,18 @@ export function hasPendingPlanned(
   workoutExerciseId: string,
 ): boolean {
   return outbox.ops.some((op) => op.key === plannedOpKey(workoutExerciseId));
+}
+
+/**
+ * Notas con escritura pendiente, por variante. Lo usa la reconciliación: una
+ * nota escrita sin cobertura no la puede pisar el texto (más viejo) que venga
+ * del servidor.
+ */
+export function pendingNoteVariantIds(outbox: Outbox): Set<string> {
+  const out = new Set<string>();
+  for (const op of outbox.ops) {
+    if (op.kind !== "SAVE_EXERCISE_NOTE") continue;
+    out.add(op.payload.exerciseVariantId);
+  }
+  return out;
 }

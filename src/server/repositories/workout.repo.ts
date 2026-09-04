@@ -1,5 +1,6 @@
 import { PROGRESSION } from "@/core/config/training-config";
 import {
+  addDays,
   DEFAULT_TIMEZONE,
   isoWeekOf,
   toLocalDate,
@@ -147,9 +148,13 @@ export interface ExecutionExercise {
   ordinal: number;
   exerciseId: string;
   exerciseName: string;
-  /** Nota personal de ESTE perfil sobre el ejercicio; `null` si no hay. */
-  note: string | null;
   variantId: string;
+  /**
+   * Nota personal de ESTE perfil sobre ESTA VARIANTE; `null` si no hay. Cuelga
+   * de la variante, no del ejercicio: "con el bloque azul en la espalda" es
+   * verdad en el press inclinado en máquina y mentira con mancuernas.
+   */
+  note: string | null;
   variantName: string;
   equipment: string;
   plannedSets: number;
@@ -219,13 +224,10 @@ export async function getExecutionSession(
         include: {
           exerciseVariant: {
             include: {
-              // La nota se filtra por perfil: el ejercicio es compartido, la
+              exercise: true,
+              // La nota se filtra por perfil: el catálogo es compartido, la
               // nota no.
-              exercise: {
-                include: {
-                  notes: { where: { profileId }, select: { text: true } },
-                },
-              },
+              notes: { where: { profileId }, select: { text: true } },
             },
           },
           setLogs: { orderBy: { setNumber: "asc" } },
@@ -246,8 +248,8 @@ export async function getExecutionSession(
     ordinal: we.ordinal,
     exerciseId: we.exerciseVariant.exerciseId,
     exerciseName: we.exerciseVariant.exercise.name,
-    note: we.exerciseVariant.exercise.notes[0]?.text ?? null,
     variantId: we.exerciseVariantId,
+    note: we.exerciseVariant.notes[0]?.text ?? null,
     variantName: we.exerciseVariant.name,
     equipment: we.exerciseVariant.equipment,
     plannedSets: we.plannedSets,
@@ -272,6 +274,85 @@ export async function getExecutionSession(
     localDate: session.localDate,
     status: session.status,
     exercises,
+  };
+}
+
+/**
+ * La sesión que SALDRÍA de una plantilla, sin crearla.
+ *
+ * Es el mismo objeto que consume `buildSuggestions`, construido desde
+ * `TemplateExercise` en vez de desde un `WorkoutSession` ya creado. Existe por
+ * dos motivos, y los dos importan:
+ *
+ *  · **Offline.** Los objetivos de la próxima sesión se calculaban al ABRIR la
+ *    pantalla de ejecución, o sea después de un `startSessionAction` que
+ *    necesita cobertura. Con esto, `/train` —que el service worker sí cachea—
+ *    ya lleva impresos el peso y las repeticiones de cada ejercicio, así que
+ *    entrar al gimnasio sin cobertura y saber qué te toca deja de depender de
+ *    la red.
+ *  · **Auditoría.** Permite preguntarle al motor "¿qué me vas a mandar la
+ *    semana que viene?" sin escribir una fila.
+ *
+ * No persiste NADA. El `id` va vacío a propósito: esto no es una sesión.
+ */
+export async function previewTemplateSession(
+  profileId: string,
+  templateId: string,
+  onLocalDate: string,
+): Promise<ExecutionSession | null> {
+  const template = await prisma.workoutTemplate.findFirst({
+    where: {
+      id: templateId,
+      deletedAt: null,
+      mesocycle: { program: { profileId } },
+    },
+    include: {
+      exercises: {
+        orderBy: { ordinal: "asc" },
+        include: {
+          exerciseVariant: {
+            include: {
+              exercise: true,
+              notes: { where: { profileId }, select: { text: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!template || template.exercises.length === 0) return null;
+
+  // Sin sesión que excluir: se mira TODO el historial completado del perfil.
+  const lastByVariant = await recentWorkingSetsForVariants(
+    profileId,
+    template.exercises.map((te) => te.exerciseVariantId),
+    "",
+  );
+
+  return {
+    id: "",
+    templateName: template.name,
+    weekNumber: 0,
+    localDate: onLocalDate,
+    status: "PREVIEW",
+    exercises: template.exercises.map((te) => ({
+      id: te.id,
+      ordinal: te.ordinal,
+      exerciseId: te.exerciseVariant.exerciseId,
+      exerciseName: te.exerciseVariant.exercise.name,
+      variantId: te.exerciseVariantId,
+      note: te.exerciseVariant.notes[0]?.text ?? null,
+      variantName: te.exerciseVariant.name,
+      equipment: te.exerciseVariant.equipment,
+      plannedSets: te.baseSets,
+      repRangeMin: te.repRangeMin,
+      repRangeMax: te.repRangeMax,
+      targetRir: te.targetRir,
+      restSeconds: te.restSeconds,
+      loadStepKg: te.exerciseVariant.loadStepKg,
+      setLogs: [],
+      lastTime: lastByVariant.get(te.exerciseVariantId) ?? null,
+    })),
   };
 }
 
@@ -336,12 +417,26 @@ export async function getTodayOverview(
     done: doneTemplateIds.has(t.id),
   }));
 
+  // Cuándo empieza la SIGUIENTE semana y con qué día. La semana se deriva del
+  // calendario ISO, así que al completar los días de esta semana no hay nada
+  // que "generar": el lunes vuelven a estar todos pendientes. Pero eso solo lo
+  // sabía el código; en pantalla, terminar la semana dejaba un "Puedes repetir
+  // cualquiera" que no responde a "¿y ahora qué hago?".
+  const nextWeekStartDate = addDays(isoWeekOf(todayLocalDate).weekStartDate, 7);
+
   return {
     programName: program.name,
     weekNumber,
     weeksPlanned: mesocycle.weeksPlanned,
     templates,
     active,
+    nextWeekStartDate,
+    nextWeekNumber: weekIndexSince(
+      first?.localDate ?? todayLocalDate,
+      nextWeekStartDate,
+    ),
+    /** El día con el que arrancará la semana que viene (el primero del split). */
+    nextWeekTemplate: templates[0] ?? null,
   };
 }
 

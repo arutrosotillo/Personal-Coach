@@ -11,6 +11,7 @@ import { getCurrentProfileOverview } from "@/server/auth/current-user";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
 import { getWeeklyVolume } from "@/server/repositories/weekly-volume.repo";
 import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
+import { defaultTargetRir } from "@/core/training/prescription-defaults";
 import { canRestoreProgram } from "@/server/services/program-source.service";
 
 export const dynamic = "force-dynamic";
@@ -143,6 +144,15 @@ export default async function ProgramPage() {
             repRangeMin: te.repRangeMin,
             repRangeMax: te.repRangeMax,
             targetRir: te.targetRir,
+            // Lo que el modelo prescribiría HOY para esta variante. Solo se
+            // usa para sugerir cuando difiere: el programa no se reescribe
+            // solo, porque un RIR puede estar puesto a mano a propósito.
+            suggestedTargetRir: defaultTargetRir(
+              te.exerciseVariant.exercise.movementPattern,
+              te.exerciseVariant.exercise.systemicFatigue,
+              te.exerciseVariant.stability,
+              te.exerciseVariant.equipment,
+            ),
             restSeconds: te.restSeconds,
           })),
         }))}

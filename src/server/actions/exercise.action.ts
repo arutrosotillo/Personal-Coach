@@ -12,6 +12,10 @@ import {
 } from "@/core/schemas/exercise-note";
 import { requireProfileId } from "@/server/auth/current-user";
 import {
+  getBuilderVariant,
+  type BuilderVariant,
+} from "@/server/repositories/builder-catalog.repo";
+import {
   createCustomExercise,
   deleteCustomExercise,
   DuplicateExerciseNameError,
@@ -42,7 +46,19 @@ function revalidateExercisePages() {
  */
 export async function createCustomExerciseAction(
   input: CustomExerciseInput,
-): Promise<ExerciseActionResult & { exerciseId?: string; variantId?: string }> {
+): Promise<
+  ExerciseActionResult & {
+    exerciseId?: string;
+    variantId?: string;
+    /**
+     * La fila lista para el picker del builder. Se devuelve aquí para que
+     * crear un ejercicio y añadirlo al programa sea UN gesto: sin ella el
+     * cliente tendría que recomponerla —incluido el RIR por defecto— y habría
+     * dos implementaciones del mismo cálculo.
+     */
+    builderVariant?: BuilderVariant;
+  }
+> {
   const parsed = customExerciseSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -54,7 +70,9 @@ export async function createCustomExerciseAction(
     const profileId = await requireProfileId();
     const created = await createCustomExercise(profileId, parsed.data);
     revalidateExercisePages();
-    return { ok: true, ...created };
+    const builderVariant =
+      (await getBuilderVariant(profileId, created.variantId)) ?? undefined;
+    return { ok: true, ...created, builderVariant };
   } catch (error) {
     if (error instanceof DuplicateExerciseNameError) {
       return { ok: false, error: error.message };
@@ -83,7 +101,11 @@ export async function deleteCustomExerciseAction(
 }
 
 /**
- * Guarda la nota personal de un ejercicio. Texto vacío = borrarla.
+ * Guarda la nota personal de una variante de ejercicio. Texto vacío = borrarla.
+ *
+ * Es la ruta ONLINE (biblioteca). Desde la sesión de entrenamiento la nota va
+ * por la outbox (`syncWorkoutOpsAction`), que llama al MISMO servicio: la
+ * validación y la guarda de propiedad son idénticas por las dos vías.
  *
  * Devuelve el texto guardado para que la interfaz pinte exactamente lo que hay
  * en la base (recortado por Zod), no lo que se tecleó.

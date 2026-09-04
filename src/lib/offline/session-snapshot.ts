@@ -1,6 +1,7 @@
 import {
   emptyOutbox,
   hasPendingPlanned,
+  pendingNoteVariantIds,
   pendingSetNumbers,
   type Outbox,
 } from "@/lib/offline/sync-ops";
@@ -33,10 +34,20 @@ export interface RowState {
 
 export type RowsMap = Record<string, RowState[]>;
 
+/**
+ * Notas personales tal y como están AHORA en este móvil, por `variantId`.
+ * `null` = el usuario la borró. Se guarda por variante y no por
+ * `workoutExerciseId` porque la nota es del banco de ejercicios, no de esta
+ * sesión: si el mismo ejercicio sale dos veces en el día, es la misma nota.
+ */
+export type NotesMap = Record<string, string | null>;
+
 /** Lo que la reconciliación necesita saber de un ejercicio del servidor. */
 export interface ServerExerciseView {
   id: string;
   variantId: string;
+  /** Nota que el servidor tiene guardada para esta variante. */
+  note: string | null;
   plannedSets: number;
   repRangeMin: number;
   setLogs: Array<{
@@ -54,6 +65,8 @@ export interface SessionSnapshot {
   version: number;
   sessionId: string;
   rows: RowsMap;
+  /** Notas escritas en este móvil, confirmadas o no. */
+  notes: NotesMap;
   /**
    * `variantId` de cada ejercicio en el momento de guardar. Sustituir un
    * ejercicio CONSERVA el id del `WorkoutExercise` pero borra sus series; sin
@@ -94,8 +107,16 @@ export function initRows(exercises: ServerExerciseView[]): RowsMap {
   return map;
 }
 
+/** Notas iniciales a partir de lo que dice el servidor. */
+export function initNotes(exercises: ServerExerciseView[]): NotesMap {
+  const map: NotesMap = {};
+  for (const ex of exercises) map[ex.variantId] = ex.note;
+  return map;
+}
+
 export interface ReconciledState {
   rows: RowsMap;
+  notes: NotesMap;
   current: number;
   restEndsAt: number | null;
   finishedLocally: boolean;
@@ -136,9 +157,11 @@ export function reconcile(
   sessionId: string,
 ): ReconciledState {
   const base = initRows(exercises);
+  const serverNotes = initNotes(exercises);
   if (!snapshot || snapshot.sessionId !== sessionId) {
     return {
       rows: base,
+      notes: serverNotes,
       current: 0,
       restEndsAt: null,
       finishedLocally: false,
@@ -196,8 +219,23 @@ export function reconcile(
     if (hasPendingPlanned(outbox, ex.id)) recovered = true;
   }
 
+  // Notas: MISMA política que las series. El servidor manda salvo que haya una
+  // escritura pendiente sobre esa variante, en cuyo caso manda lo local — que
+  // es lo que el usuario acaba de escribir sin cobertura. Sin esto, recargar en
+  // el gimnasio (el service worker sirve un HTML de hace media hora) pintaba la
+  // nota vieja encima de la recién escrita.
+  const pendingNotes = pendingNoteVariantIds(outbox);
+  const notes: NotesMap = { ...serverNotes };
+  for (const [variantId, local] of Object.entries(snapshot.notes ?? {})) {
+    if (!(variantId in notes)) continue; // variante que ya no está en la sesión
+    if (!pendingNotes.has(variantId)) continue;
+    notes[variantId] = local;
+    recovered = true;
+  }
+
   return {
     rows,
+    notes,
     current: clampIndex(snapshot.current, exercises.length),
     restEndsAt: snapshot.restEndsAt,
     finishedLocally: snapshot.finishedLocally,

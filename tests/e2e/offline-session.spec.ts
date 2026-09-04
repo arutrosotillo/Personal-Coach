@@ -300,3 +300,131 @@ test("registrar una serie no espera al servidor por lento que vaya", async ({
   expect(await seriesEnDb(sessionId)).toBe(3);
   await descartar(page);
 });
+
+/** El texto de la nota de ejercicio que hay ahora mismo en Postgres. */
+async function notaEnDb(sessionOrdinal: number): Promise<string | null> {
+  const client = new Client({ connectionString: e2eDatabaseUrl() });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ text: string }>(
+      `SELECT n.text
+         FROM "ExerciseNote" n
+         JOIN "WorkoutExercise" we ON we."exerciseVariantId" = n."exerciseVariantId"
+         JOIN "WorkoutSession" s ON s.id = we."sessionId"
+        WHERE we.ordinal = $1
+        ORDER BY n."updatedAt" DESC
+        LIMIT 1`,
+      [sessionOrdinal],
+    );
+    return rows[0]?.text ?? null;
+  } finally {
+    await client.end();
+  }
+}
+
+test("una nota escrita sin cobertura no se pierde y se sincroniza sola", async ({
+  page,
+  context,
+}) => {
+  // El fallo que motivó esto: escribir una nota sin cobertura llamaba a la
+  // server action y esperaba. Fallaba, salía un toast de error y el texto se
+  // quedaba SOLO en el estado de React, así que perderlo era cuestión de
+  // cerrar la pantalla. Las series eran local-first desde hacía tiempo; las
+  // notas, no.
+  //
+  // Aquí se prueba la cola (guardado inmediato, coalescencia, sincronización
+  // al volver). Que además sobreviva a MATAR la app lo prueba
+  // `offline-shell.spec.ts`, que es donde hay service worker.
+  test.setTimeout(300_000);
+  await empezarDeCero(page);
+
+  await cortarRed(context);
+
+  await page.getByRole("button", { name: "+ Añadir nota" }).first().click();
+  await page
+    .getByRole("textbox", { name: /^Nota sobre / })
+    .fill("Sin cobertura: 2 discos son 40 kg");
+  await page.getByRole("button", { name: "Guardar" }).click();
+
+  // 1. Se ve YA, sin esperar al servidor, y se dice honestamente que de momento
+  //    solo está guardada aquí.
+  await expect(page.getByText("Sin cobertura: 2 discos son 40 kg")).toBeVisible();
+  await expect(page.getByText(/sin sincronizar/i)).toBeVisible();
+  expect(await notaEnDb(1)).toBeNull();
+
+  // 2. Está escrita en el cuaderno del móvil, que es lo que la salva si iOS
+  //    mata la app entre series.
+  const enDisco = await page.evaluate(() => {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith("pc:session:")) return localStorage.getItem(key);
+    }
+    return null;
+  });
+  expect(enDisco).toContain("Sin cobertura: 2 discos son 40 kg");
+
+  // 3. Se puede reeditar sin cobertura y gana la última versión (una sola
+  //    operación en la cola, no seis).
+  await page
+    .getByRole("button", { name: /^Editar mi nota sobre / })
+    .first()
+    .click();
+  await page
+    .getByRole("textbox", { name: /^Nota sobre / })
+    .fill("Corregido sin cobertura: 40 kg son 2 discos por lado");
+  await page.getByRole("button", { name: "Guardar" }).click();
+  await expect(
+    page.getByText("Corregido sin cobertura: 40 kg son 2 discos por lado"),
+  ).toBeVisible();
+
+  // 4. Y navegar por la sesión sin cobertura no la borra.
+  await page.getByRole("button", { name: "Siguiente" }).click();
+  await page.getByRole("button", { name: "Anterior", exact: true }).click();
+  await expect(
+    page.getByText("Corregido sin cobertura: 40 kg son 2 discos por lado"),
+  ).toBeVisible();
+
+  // 5. Vuelve la cobertura: se sincroniza sola, sin que nadie toque nada, y
+  //    llega UNA sola vez con el texto corregido.
+  await devolverRed(context);
+  await expect(indicador(page)).toHaveText(/Guardado/, { timeout: 90_000 });
+  await expect
+    .poll(() => notaEnDb(1), { timeout: 60_000 })
+    .toBe("Corregido sin cobertura: 40 kg son 2 discos por lado");
+  await expect(page.getByText(/sin sincronizar/i)).toHaveCount(0);
+
+  await descartar(page);
+});
+
+test("empezar un entrenamiento sin cobertura lo dice claro, y no rompe nada", async ({
+  page,
+  context,
+}) => {
+  // Decisión de producto CERRADA: iniciar la sesión es lo único del
+  // entrenamiento que necesita servidor, porque es lo que da los ids con los
+  // que se registra todo después. Lo que no puede pasar es fallar en silencio,
+  // que es lo que hacía: la promesa se rechazaba dentro de `startTransition` y
+  // el botón volvía a su texto sin decir nada.
+  test.setTimeout(300_000);
+  await empezarDeCero(page);
+  await descartar(page);
+
+  await page.goto("/train");
+  const empezar = page.getByRole("button", { name: /^Empezar/ }).first();
+  await expect(empezar).toBeVisible();
+
+  await cortarRed(context);
+  await empezar.click();
+
+  await expect(page.getByText(/Necesitas conexión solo para empezar/)).toBeVisible({
+    timeout: 30_000,
+  });
+  // Y sigue en /train, sin navegar a una sesión que no existe.
+  await expect(page).toHaveURL(/\/train$/);
+
+  // Al volver la cobertura, el mismo botón funciona.
+  await devolverRed(context);
+  await page.getByRole("button", { name: /^Empezar/ }).first().click();
+  await expect(page).toHaveURL(/\/train\/session\//, { timeout: 60_000 });
+  await descartar(page);
+});

@@ -12,7 +12,7 @@ export const SYNC = {
    * ignoran en vez de intentar migrarlos: perder el borrador de una sesión al
    * desplegar es molesto; leerlo mal y pintar series equivocadas es peor.
    */
-  SNAPSHOT_VERSION: 1,
+  SNAPSHOT_VERSION: 2,
 
   /** Prefijo de todas las claves en localStorage (se borran juntas al salir). */
   STORAGE_PREFIX: "pc:session:v1:",

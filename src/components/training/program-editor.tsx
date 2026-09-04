@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import type { SubstitutionExercise } from "@/components/training/session-runner";
 import { Button } from "@/components/ui/button";
+import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   addDayAction,
@@ -27,6 +28,14 @@ export interface EditorExercise {
   repRangeMin: number;
   repRangeMax: number;
   targetRir: number;
+  /**
+   * El RIR que el modelo de defaults prescribiría hoy para ESTA variante.
+   * Se enseña solo cuando difiere del guardado, y como SUGERENCIA: el programa
+   * no se reescribe solo. Existe porque durante un tiempo añadir un ejercicio
+   * desde aquí grababa un `2` fijo, sin mirar el ejercicio ni el material, y
+   * esos objetivos siguen guardados en programas reales.
+   */
+  suggestedTargetRir: number;
   restSeconds: number;
 }
 
@@ -352,17 +361,27 @@ function AddDay({
 }
 
 function ReadRow({ ex }: { ex: EditorExercise }) {
+  const distinto = ex.suggestedTargetRir !== ex.targetRir;
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <div className="min-w-0">
-        <p className="truncate font-medium">{ex.exerciseName}</p>
-        <p className="text-muted-foreground truncate text-xs">
-          {ex.variantName}
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-medium">{ex.exerciseName}</p>
+          <p className="text-muted-foreground truncate text-xs">
+            {ex.variantName}
+          </p>
+        </div>
+        <p className="tnum text-muted-foreground shrink-0 text-sm">
+          {ex.baseSets} × {ex.repRangeMin}–{ex.repRangeMax} · RIR {ex.targetRir}
         </p>
       </div>
-      <p className="tnum text-muted-foreground shrink-0 text-sm">
-        {ex.baseSets} × {ex.repRangeMin}–{ex.repRangeMax} · RIR {ex.targetRir}
-      </p>
+      {distinto ? (
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          Para {ex.variantName.toLowerCase()} yo prescribiría{" "}
+          <span className="tnum">RIR {ex.suggestedTargetRir}</span>. Si el tuyo
+          es deliberado, déjalo: no lo cambio yo.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -593,6 +612,12 @@ function AddExercise({
             setOpen(false);
             run(() => addTemplateExerciseAction(templateId, variantId));
           }}
+          // Solo al AÑADIR. Al sustituir, crear un ejercicio nuevo no es el
+          // gesto que se está haciendo, y el botón sobraría en pantalla.
+          onCreated={(variantId) => {
+            setOpen(false);
+            run(() => addTemplateExerciseAction(templateId, variantId));
+          }}
         />
       ) : (
         <Button
@@ -614,17 +639,24 @@ function VariantPicker({
   substitutionOptions,
   disabled,
   onPick,
+  onCreated,
 }: {
   substitutionOptions: SubstitutionExercise[];
   disabled: boolean;
   onPick: (variantId: string) => void;
+  /** Si se pasa, el picker ofrece crear un ejercicio sin salir de aquí. */
+  onCreated?: (variantId: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const filtered = substitutionOptions
-    .flatMap((e) => e.variants)
-    .filter((v) => (q ? v.name.toLowerCase().includes(q) : true))
-    .slice(0, 30);
+  const todas = substitutionOptions.flatMap((e) => e.variants);
+  const coincidencias = todas.filter((v) =>
+    q ? v.name.toLowerCase().includes(q) : true,
+  );
+  // Mismo criterio que el picker del builder: se recorta para que el móvil no
+  // pinte 200 filas, y se dice que se ha recortado.
+  const LIMITE = 50;
+  const filtered = coincidencias.slice(0, LIMITE);
 
   return (
     <div className="border-border bg-muted/30 mt-2 space-y-2 rounded-lg border p-2">
@@ -632,7 +664,7 @@ function VariantPicker({
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Buscar ejercicio…"
+        placeholder={`Buscar entre ${todas.length} ejercicios…`}
         className="border-border bg-background min-h-11 w-full rounded-md border px-3 text-sm"
         aria-label="Buscar ejercicio para sustituir o añadir"
       />
@@ -657,7 +689,23 @@ function VariantPicker({
             Sin resultados.
           </li>
         ) : null}
+        {coincidencias.length > LIMITE ? (
+          <li className="text-muted-foreground px-2 py-2 text-xs">
+            Mostrando {LIMITE} de {coincidencias.length}. Escribe para acotar.
+          </li>
+        ) : null}
       </ul>
+      {onCreated ? (
+        <div className="border-border flex items-center justify-between gap-2 border-t pt-2">
+          <p className="text-muted-foreground text-xs">
+            ¿No lo encuentras? Créalo aquí.
+          </p>
+          <CustomExerciseForm
+            triggerLabel="+ Crear ejercicio"
+            onCreated={({ variantId }) => onCreated(variantId)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -118,7 +118,7 @@ preview rota que una preview escribiendo en producción.
 
 1. Con las variables puestas, **Deploy**.
 2. Vercel ejecuta el script `vercel-build`:
-   `prisma generate && prisma migrate deploy && next build`.
+   `prisma generate && prisma migrate deploy && tsx prisma/seed/seed.ts && next build`.
    Las migraciones se aplican **antes** de construir y usan
    `DIRECT_DATABASE_URL`. Si fallan, el despliegue falla y no se publica: es
    lo correcto, no queremos código nuevo sobre un schema viejo.
@@ -179,18 +179,22 @@ ha ido mal y tienes la copia de hace cinco minutos.
 
 ### Si el despliegue añade ejercicios al catálogo
 
-Las migraciones se aplican solas; **el seed NO**. Un ejercicio nuevo en
-`src/core/catalog/exercises.ts` no aparece en producción hasta que se siembra a
-mano:
+**No hay que hacer nada.** El seed corre dentro de `vercel-build`, después de
+las migraciones y antes de construir, así que un ejercicio nuevo en
+`src/core/catalog/` llega a producción en el mismo despliegue que su código.
 
-```bash
-DATABASE_URL="<cadena directa de Neon>" pnpm db:seed
-```
+Antes no era así —las migraciones se aplicaban solas y el seed no— y eso dejaba
+la puerta abierta al peor estado posible: código nuevo sobre catálogo viejo, sin
+error en ningún sitio, hasta que alguien se acordara de ejecutarlo a mano.
 
-Es idempotente (`upsert` por nombre de ejercicio y por `(exerciseId, name)` de
-variante): no duplica nada ni toca los ejercicios propios de nadie, así que se
-puede repetir sin miedo. Si se olvida, el único síntoma es que el ejercicio
-nuevo no sale en el buscador — nada se rompe.
+El seed **lee primero y solo escribe lo que difiere**: un despliegue que no toca
+el catálogo son cuatro `SELECT` y cero escrituras (lo dice en el log,
+`Filas escritas: 0`). Es idempotente y no toca los ejercicios propios de nadie.
+Si un ejercicio del catálogo choca de nombre con uno propio de alguien, el suyo
+manda: el seed lo salta y lo avisa en el log en vez de tumbar el despliegue.
+
+Sigue existiendo `pnpm db:seed` para ejecutarlo a mano contra la cadena directa
+si hace falta.
 
 ---
 

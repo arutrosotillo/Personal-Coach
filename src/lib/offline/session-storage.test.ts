@@ -39,6 +39,7 @@ function snapshot(sessionId = "s1"): SessionSnapshot {
     rows: {
       we1: [{ weight: "60", reps: 8, rir: 2, rirAnswered: true, done: true }],
     },
+    notes: {},
     variantByExercise: { we1: "v1" },
     current: 0,
     restEndsAt: null,

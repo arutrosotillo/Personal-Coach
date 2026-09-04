@@ -165,6 +165,61 @@ export const TARGET_RIR = {
 } as const;
 
 /**
+ * Ajuste del RIR objetivo por ESTABILIDAD de la variante (`ExerciseStability`).
+ *
+ * El rol y la fatiga sistémica son propiedades del MOVIMIENTO; la estabilidad
+ * es de lo que de verdad haces. "Sentadilla trasera" con barra libre y en
+ * multipower son el mismo `movementPattern`, la misma `systemicFatigue` y dos
+ * ejercicios distintos a la hora de acercarse al fallo — y hasta F3.2d los dos
+ * recibían el mismo objetivo.
+ *
+ * Lo que justifica el ajuste, y solo eso:
+ *
+ *  · **Consecuencia del fallo.** En banca o sentadilla con barra libre, fallar
+ *    sin pines te deja debajo del peso. En una máquina, fallar es apoyar las
+ *    placas. La reserva compra seguridad donde el fallo tiene coste real y no
+ *    compra nada donde no lo tiene. [RAZONABLE — es gestión de riesgo, no
+ *    fisiología.]
+ *  · **Fiabilidad del RIR reportado.** La estimación del esfuerzo es peor en
+ *    multiarticulares libres que en máquinas y aislamientos (Halperin 2022;
+ *    Zourdos 2016). Prescribir RIR 0 donde el dato es más ruidoso y el error se
+ *    paga caro es la peor de las combinaciones.
+ *  · **Deterioro técnico.** Cerca del fallo, un patrón libre y axial degrada
+ *    antes que uno guiado, y ahí el fallo mecánico llega por la técnica, no por
+ *    el músculo objetivo.
+ *
+ * NO se ajusta por "máquina = más intenso": el ajuste está ACOTADO (ver
+ * `defaultTargetRir`) para que un compuesto nunca baje de 1 —un compuesto a
+ * cero en todas las series es caro se haga donde se haga— ni suba de 2, que ya
+ * es la reserva máxima que este producto prescribe.
+ * [HEURÍSTICA en la magnitud; RAZONABLE en la dirección.]
+ */
+export const RIR_STABILITY_ADJUST: Readonly<Record<string, number>> = {
+  FREE: +1,
+  SUPPORTED: 0,
+  GUIDED: -1,
+};
+
+/**
+ * Estabilidad por defecto de una variante según su material. Es el default
+ * cuando la variante no declara la suya (`ExerciseVariant.stability = null`),
+ * que es el caso de la inmensa mayoría: el material predice bien la
+ * estabilidad, y las excepciones reales se declaran una a una en el catálogo
+ * (p. ej. el hip thrust con barra, que es carga libre pero con la espalda
+ * apoyada y salida trivial).
+ */
+export const STABILITY_BY_EQUIPMENT: Readonly<Record<string, string>> = {
+  BARBELL: "FREE",
+  EZ_BAR: "SUPPORTED",
+  DUMBBELL: "SUPPORTED",
+  BODYWEIGHT: "SUPPORTED",
+  CABLE: "GUIDED",
+  MACHINE: "GUIDED",
+  SMITH_MACHINE: "GUIDED",
+  BAND: "GUIDED",
+};
+
+/**
  * Umbrales del motor de progresión (`src/core/training/progression.ts`, v2 —
  * Fase 3.2b). Fuente de verdad única: nunca hardcodear estos números en la
  * lógica. Justificación de cada uno en docs/TRAINING_ENGINE_FINAL_AUDIT.md.

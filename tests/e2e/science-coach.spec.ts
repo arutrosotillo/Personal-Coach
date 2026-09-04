@@ -128,7 +128,7 @@ test("Coach: resumen semanal, pregunta libre y análisis por ejercicio", async (
   await expect(page).toHaveURL(/\/train$/, { timeout: 15_000 });
 
   // Desde el ejercicio: análisis y explicación con AI Coach.
-  await page.getByRole("button", { name: "Repetir" }).click();
+  await page.getByRole("button", { name: "Otra vez" }).first().click();
   await expect(page.getByText(/Ejercicio 1\//)).toBeVisible();
   await page.getByRole("button", { name: "Ver historial" }).click();
   const analyze = page.getByRole("button", { name: /Analizar con AI Coach/ });

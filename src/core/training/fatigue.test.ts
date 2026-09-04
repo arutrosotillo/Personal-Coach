@@ -86,6 +86,41 @@ describe("datos insuficientes", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+describe("el titular cuenta lo que ha pasado, no el tamaño de la ventana", () => {
+  /**
+   * El bug de producto que motivó esto: tras una semana entera de entrenar
+   * (3 sesiones de un programa de 3 días, en 5 días), la tarjeta decía
+   * "Sin señales de fatiga en 3 sesiones de 21 días". Es aritméticamente
+   * cierto —21 es cuánto mira el motor hacia atrás— pero se lee como un
+   * reproche de adherencia: 3 sesiones repartidas en tres semanas.
+   */
+  it("una semana completa se describe por los días que abarca, no por la ventana", () => {
+    const r = run([session(4), session(2), session(0)]);
+    expect(r.decision).toBe("NO_DELOAD");
+    expect(r.numbers.diasAbarcados).toBe(5);
+    expect(r.headline).toContain("3 sesiones");
+    expect(r.headline).toContain("5 días");
+    // Y NUNCA la ventana, que es lo que confundía.
+    expect(r.headline).not.toContain("21 días");
+  });
+
+  it("si esas 3 sesiones SÍ están repartidas en tres semanas, también lo dice", () => {
+    // La frase honesta tiene que funcionar en los dos sentidos: aquí el número
+    // grande es información real sobre la adherencia, no ruido de la ventana.
+    const r = run([session(20), session(10), session(1)]);
+    expect(r.numbers.diasAbarcados).toBe(21);
+    expect(r.headline).toContain("21 días");
+  });
+
+  it("con datos insuficientes dice cuántas faltan, sin hablar de la ventana", () => {
+    const r = run([session(3), session(1)]);
+    expect(r.headline).toContain("2 sesiones");
+    expect(r.headline).toContain("3");
+    expect(r.headline).not.toContain("21 días");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 describe("A · progreso normal → sin deload", () => {
   it("sin señales, no recomienda nada", () => {
     const r = run(NORMAL, [exercise("Press banca"), exercise("Sentadilla")]);

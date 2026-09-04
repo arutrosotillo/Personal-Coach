@@ -1,8 +1,13 @@
 import { z } from "zod";
 
 /**
- * Nota personal sobre un ejercicio: la señal técnica que uno se apunta para sí
- * ("piernas encogidas", "no bloquear el codo", "el asiento en el 4").
+ * Nota personal sobre una VARIANTE de ejercicio: la señal técnica o de montaje
+ * que uno se apunta para sí ("piernas encogidas", "el asiento en el 4", "2
+ * discos son 40 kg").
+ *
+ * Cuelga de la variante y no del ejercicio a propósito: casi todas las notas
+ * reales describen el montaje de UNA máquina concreta, y en la variante de al
+ * lado son falsas (docs/DATA_MODEL.md § ExerciseNote).
  *
  * A diferencia del resto de esquemas del banco, aquí la validación es mínima a
  * propósito: esto es texto para leer antes de una serie, no un dato que
@@ -17,7 +22,7 @@ import { z } from "zod";
 export const EXERCISE_NOTE_MAX_LENGTH = 500;
 
 export const exerciseNoteSchema = z.object({
-  exerciseId: z.string().min(1, "Falta el ejercicio"),
+  exerciseVariantId: z.string().min(1, "Falta el ejercicio"),
   /**
    * Vacío es válido y significa BORRAR la nota: guardar un textarea vacío es
    * el gesto natural para quitarla, y no merece un botón aparte.

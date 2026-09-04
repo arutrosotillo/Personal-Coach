@@ -1,10 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
+import { EXERCISE_NOTE_MAX_LENGTH } from "@/core/schemas/exercise-note";
 import { RestTimer } from "@/components/training/rest-timer";
 import { SyncStatus } from "@/components/training/sync-status";
 import { useSessionSync } from "@/components/training/use-session-sync";
@@ -16,9 +24,11 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import {
+  initNotes,
   initRows,
   reconcile,
   variantMap,
+  type NotesMap,
   type ReconciledState,
   type RowState,
   type RowsMap,
@@ -67,6 +77,7 @@ export function SessionRunner({
   // coincidieran, y cada recarga sin cobertura —justo la que importa— tiraba un
   // error de hidratación. Lo guardado se aplica en un efecto, justo después.
   const [rows, setRows] = useState<RowsMap>(() => initRows(exercises));
+  const [notes, setNotes] = useState<NotesMap>(() => initNotes(exercises));
   const [current, setCurrent] = useState(0);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
   const [restored, setRestored] = useState<ReconciledState | null>(null);
@@ -94,6 +105,7 @@ export function SessionRunner({
     const state = reconcile(exercises, store.read(session.id), session.id);
     setRestored(state);
     setRows(state.rows);
+    setNotes(state.notes);
     setCurrent(state.current);
     setRestEndsAt(state.restEndsAt);
     if (state.recovered) {
@@ -107,6 +119,7 @@ export function SessionRunner({
     sessionId: session.id,
     restored,
     rows,
+    notes,
     variantByExercise: variants,
     current,
     restEndsAt,
@@ -125,6 +138,27 @@ export function SessionRunner({
   const ex = exercises[current];
   const exRows = rows[ex.id] ?? [];
   const suggestion = suggestions[ex.id];
+
+  /**
+   * Guardar la nota es LOCAL-FIRST, exactamente como una serie: se pinta y se
+   * escribe en el cuaderno del móvil ya, y la outbox se encarga del servidor.
+   * Nunca falla ni hace esperar, así que devuelve el texto sin `await` de red.
+   *
+   * `text` viene ya recortado por el editor; vacío = borrar la nota, la misma
+   * semántica que valida Zod y aplica el servicio.
+   */
+  const saveNote = useCallback(
+    async (text: string): Promise<string | null> => {
+      const clean = text.trim().slice(0, EXERCISE_NOTE_MAX_LENGTH);
+      const variantId = exercises[current].variantId;
+      setNotes((prev) => ({ ...prev, [variantId]: clean === "" ? null : clean }));
+      sync.queueNote({ exerciseVariantId: variantId, text: clean });
+      return clean === "" ? null : clean;
+    },
+    [current, exercises, sync],
+  );
+  /** Variantes cuya nota todavía no ha confirmado el servidor. */
+  const notePending = sync.pendingNotes;
 
   const totalPlanned = exercises.reduce(
     (a, e) => a + (rows[e.id]?.length ?? 0),
@@ -416,13 +450,20 @@ export function SessionRunner({
               Primera vez con este ejercicio: introduce la carga que uses.
             </p>
           )}
-          {/* Tu nota del ejercicio, donde de verdad se lee: justo antes de la
-              serie. Se puede editar aquí mismo sin salir de la sesión. */}
+          {/* Tu nota de ESTA variante, donde de verdad se lee: justo antes de
+              la serie. Se edita aquí mismo sin salir de la sesión, y se guarda
+              como las series —al instante en el móvil, al servidor cuando haya
+              cobertura—, no con una llamada que falla en un sótano.
+              `key` por variante y no por ejercicio: dos variantes del mismo
+              ejercicio en el mismo día son dos notas distintas, y con la clave
+              del ejercicio React reutilizaba el mismo editor para las dos. */}
           <ExerciseNoteEditor
-            key={ex.exerciseId}
-            exerciseId={ex.exerciseId}
-            exerciseName={ex.exerciseName}
-            initialNote={ex.note}
+            key={ex.variantId}
+            exerciseVariantId={ex.variantId}
+            exerciseName={`${ex.exerciseName} — ${ex.variantName}`}
+            note={notes[ex.variantId] ?? null}
+            pendingSync={notePending.has(ex.variantId)}
+            save={saveNote}
             className="mt-2"
           />
         </div>

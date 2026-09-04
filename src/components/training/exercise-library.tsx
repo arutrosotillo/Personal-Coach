@@ -6,7 +6,10 @@ import { toast } from "sonner";
 
 import { MUSCLE_GROUPS } from "@/core/catalog/muscle-groups";
 import type { Equipment, MovementPattern } from "@/core/enums";
-import { deleteCustomExerciseAction } from "@/server/actions/exercise.action";
+import {
+  deleteCustomExerciseAction,
+  saveExerciseNoteAction,
+} from "@/server/actions/exercise.action";
 import { Button } from "@/components/ui/button";
 import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
 import { ExerciseNoteEditor } from "@/components/training/exercise-note-editor";
@@ -143,10 +146,10 @@ export function ExerciseLibrary({
                       (inactivo)
                     </span>
                   ) : null}
-                  {e.note ? (
+                  {e.variants.some((v) => v.note !== null) ? (
                     <span
                       className="text-muted-foreground ml-2 align-middle text-[10px]"
-                      title="Tienes una nota en este ejercicio"
+                      title="Tienes una nota en alguna variante de este ejercicio"
                     >
                       ✎
                     </span>
@@ -169,12 +172,6 @@ export function ExerciseLibrary({
                   {e.instructions ? (
                     <p className="text-muted-foreground">{e.instructions}</p>
                   ) : null}
-                  {/* Tuya, no del catálogo: `instructions` lo ve todo el mundo. */}
-                  <ExerciseNoteEditor
-                    exerciseId={e.id}
-                    exerciseName={e.name}
-                    initialNote={e.note}
-                  />
                   <div>
                     <p className="text-muted-foreground mb-1 text-xs font-medium">
                       Músculos
@@ -200,15 +197,27 @@ export function ExerciseLibrary({
                     <p className="text-muted-foreground mb-1 text-xs font-medium">
                       Variantes
                     </p>
-                    <ul className="tnum space-y-1">
+                    {/* La nota va DENTRO de la variante, no en el ejercicio:
+                        casi todas describen el montaje de una máquina concreta
+                        ("2 discos son 40 kg") y en la variante de al lado son
+                        falsas. Es además la misma identidad que usan el
+                        historial y la progresión. */}
+                    <ul className="tnum space-y-3">
                       {e.variants.map((v) => (
-                        <li key={v.id} className="flex justify-between gap-3">
-                          <span>{v.name}</span>
-                          <span className="text-muted-foreground">
-                            {EQUIPMENT_LABELS[v.equipment as Equipment] ??
-                              v.equipment}{" "}
-                            · {v.repRangeMin}–{v.repRangeMax} reps
-                          </span>
+                        <li key={v.id} className="space-y-1">
+                          <div className="flex justify-between gap-3">
+                            <span>{v.name}</span>
+                            <span className="text-muted-foreground">
+                              {EQUIPMENT_LABELS[v.equipment as Equipment] ??
+                                v.equipment}{" "}
+                              · {v.repRangeMin}–{v.repRangeMax} reps
+                            </span>
+                          </div>
+                          <VariantNote
+                            variantId={v.id}
+                            label={`${e.name} — ${v.name}`}
+                            initialNote={v.note}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -268,5 +277,45 @@ function FilterChip({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * La nota de UNA variante en la biblioteca. Guarda contra el servidor y se
+ * queda con el texto que este devuelve, que es el que de verdad hay guardado.
+ * Aquí no hay capa offline a propósito: la biblioteca es una pantalla de casa
+ * y sin cobertura ni siquiera carga. La sesión, que sí se usa en el gimnasio,
+ * guarda por la outbox (ver `session-runner`).
+ */
+function VariantNote({
+  variantId,
+  label,
+  initialNote,
+}: {
+  variantId: string;
+  label: string;
+  initialNote: string | null;
+}) {
+  const [note, setNote] = useState(initialNote);
+  return (
+    <ExerciseNoteEditor
+      exerciseVariantId={variantId}
+      exerciseName={label}
+      note={note}
+      save={async (text) => {
+        const result = await saveExerciseNoteAction({
+          exerciseVariantId: variantId,
+          text,
+        });
+        if (!result.ok) {
+          toast.error(result.error ?? "No se pudo guardar la nota.");
+          return note;
+        }
+        const saved = result.text ?? null;
+        setNote(saved);
+        toast.success(saved ? "Nota guardada." : "Nota borrada.");
+        return saved;
+      }}
+    />
   );
 }

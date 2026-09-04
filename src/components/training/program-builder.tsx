@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Drawer,
@@ -60,7 +61,21 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
   ]);
   const [openDay, setOpenDay] = useState(0);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  /**
+   * Ejercicios creados desde aquí mismo. `router.refresh()` los traerá también
+   * en el `catalog` del servidor, pero eso llega DESPUÉS: sin esta lista, el
+   * ejercicio que acabas de crear no está en el picker en el instante en que lo
+   * quieres añadir, que es justo el gesto que esta pantalla venía a arreglar.
+   */
+  const [creados, setCreados] = useState<BuilderVariant[]>([]);
   const [pending, startTransition] = useTransition();
+
+  // El catálogo del servidor más lo recién creado, sin duplicar si el refresh
+  // ya lo ha traído.
+  const catalogoCompleto = useMemo(() => {
+    const ids = new Set(catalog.map((v) => v.variantId));
+    return [...creados.filter((v) => !ids.has(v.variantId)), ...catalog];
+  }, [catalog, creados]);
 
   const valid =
     name.trim().length > 0 &&
@@ -248,7 +263,7 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
 
       <PickerSheet
         open={pickerFor !== null}
-        catalog={catalog}
+        catalog={catalogoCompleto}
         dayName={pickerFor !== null ? days[pickerFor]?.name : undefined}
         existing={
           pickerFor !== null
@@ -257,6 +272,12 @@ export function ProgramBuilder({ catalog }: { catalog: BuilderVariant[] }) {
         }
         onOpenChange={(o) => setPickerFor(o ? pickerFor : null)}
         onPick={(v) => {
+          if (pickerFor !== null) addExercise(pickerFor, v);
+        }}
+        onCreated={(v) => {
+          setCreados((prev) => [v, ...prev]);
+          // Se añade al día en el mismo gesto: crear un ejercicio para NO
+          // usarlo no es un caso que exista.
           if (pickerFor !== null) addExercise(pickerFor, v);
         }}
       />
@@ -560,6 +581,7 @@ function PickerSheet({
   existing,
   onOpenChange,
   onPick,
+  onCreated,
 }: {
   open: boolean;
   catalog: BuilderVariant[];
@@ -567,6 +589,7 @@ function PickerSheet({
   existing: Set<string>;
   onOpenChange: (open: boolean) => void;
   onPick: (v: BuilderVariant) => void;
+  onCreated: (v: BuilderVariant) => void;
 }) {
   const [query, setQuery] = useState("");
   const [muscle, setMuscle] = useState<string | null>(null);
@@ -577,10 +600,14 @@ function PickerSheet({
     [catalog],
   );
   const q = query.trim().toLowerCase();
-  const filtered = catalog
+  // Con un catálogo de 200+ variantes, pintarlas todas en un drawer de móvil
+  // va lento y no sirve de nada. Se recorta, pero se DICE: un tope silencioso
+  // hace pensar que el ejercicio no existe cuando solo está en la fila 90.
+  const coincidencias = catalog
     .filter((v) => (muscle ? v.primaryMuscle === muscle : true))
-    .filter((v) => (q ? v.label.toLowerCase().includes(q) : true))
-    .slice(0, 60);
+    .filter((v) => (q ? v.label.toLowerCase().includes(q) : true));
+  const LIMITE = 80;
+  const filtered = coincidencias.slice(0, LIMITE);
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -604,7 +631,7 @@ function PickerSheet({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar ejercicio…"
+            placeholder={`Buscar entre ${catalog.length} ejercicios…`}
             aria-label="Buscar ejercicio"
             className="border-border bg-background min-h-11 w-full rounded-md border px-3 text-sm"
           />
@@ -654,10 +681,39 @@ function PickerSheet({
             })}
             {filtered.length === 0 ? (
               <li className="text-muted-foreground px-2 py-3 text-sm">
-                Sin resultados.
+                Sin resultados{q ? ` para “${query}”` : ""}.
+              </li>
+            ) : null}
+            {coincidencias.length > LIMITE ? (
+              <li className="text-muted-foreground px-2 py-2 text-xs">
+                Mostrando {LIMITE} de {coincidencias.length}. Afina la búsqueda
+                o filtra por músculo.
               </li>
             ) : null}
           </ul>
+          {/* Si tu gimnasio tiene algo que el catálogo no cubre, se crea aquí
+              mismo: mandar al usuario a la biblioteca a mitad de armar un
+              programa es perderle el hilo. Es el MISMO formulario, el mismo
+              esquema y el mismo service que en la biblioteca. */}
+          <div className="border-border flex items-center justify-between gap-2 border-t pt-3">
+            <p className="text-muted-foreground text-xs">
+              ¿No lo encuentras? Créalo sin salir de aquí.
+            </p>
+            <CustomExerciseForm
+              triggerLabel="+ Crear ejercicio"
+              onCreated={({ builderVariant, name }) => {
+                if (builderVariant) {
+                  onCreated(builderVariant);
+                  return;
+                }
+                // No debería pasar: si pasara, el ejercicio SÍ está creado y lo
+                // honesto es decir dónde está en vez de fingir que se añadió.
+                toast.message(
+                  `"${name}" se ha creado, pero no se ha podido añadir solo. Búscalo arriba.`,
+                );
+              }}
+            />
+          </div>
         </div>
       </DrawerContent>
     </Drawer>

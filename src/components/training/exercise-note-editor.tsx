@@ -10,27 +10,43 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 /**
- * Nota personal de un ejercicio: se lee de un vistazo y se edita en sitio.
+ * Nota personal de una VARIANTE de ejercicio: se lee de un vistazo y se edita
+ * en sitio.
  *
  * El mismo componente sirve en la biblioteca y en medio de la sesión, que es
- * donde de verdad se lee. Guarda el texto que devuelve el servidor (ya
- * recortado) en vez del que se tecleó, para no pintar algo distinto de lo que
- * hay guardado.
+ * donde de verdad se lee, pero NO guardan igual y esa diferencia es el punto:
+ *
+ *  · En la biblioteca (`save` sin definir) se llama a la server action y se
+ *    espera la respuesta. Es una pantalla que sin cobertura ni siquiera carga.
+ *  · En la sesión, el runner pasa `save`, que mete la nota en la outbox y en el
+ *    snapshot de `localStorage`. Queda guardada al instante en el móvil y viaja
+ *    al servidor cuando haya cobertura, igual que las series. Antes de esto,
+ *    escribir una nota sin cobertura mostraba un error y el texto solo vivía en
+ *    el estado de React: cerrar la app lo perdía.
  */
 export function ExerciseNoteEditor({
-  exerciseId,
+  exerciseVariantId,
   exerciseName,
-  initialNote,
+  note,
+  save,
+  pendingSync = false,
   className,
 }: {
-  exerciseId: string;
+  exerciseVariantId: string;
   /** Solo para las etiquetas accesibles: hay varias notas en la misma página. */
   exerciseName: string;
-  initialNote: string | null;
+  /** Texto vigente (`null` = no hay nota). Lo controla quien monta el editor. */
+  note: string | null;
+  /**
+   * Guardado alternativo. Devuelve el texto que queda (o lanza). Si no se pasa,
+   * se usa la server action directamente.
+   */
+  save?: (text: string) => Promise<string | null>;
+  /** Escrita en este móvil y todavía no confirmada por el servidor. */
+  pendingSync?: boolean;
   className?: string;
 }) {
-  const [note, setNote] = useState(initialNote);
-  const [draft, setDraft] = useState(initialNote ?? "");
+  const [draft, setDraft] = useState(note ?? "");
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -39,15 +55,28 @@ export function ExerciseNoteEditor({
     setEditing(true);
   }
 
-  function save() {
+  function commit() {
+    if (save) {
+      // Local-first: guardar no puede fallar ni hacer esperar, y sobre todo no
+      // puede DIFERIRSE. Esto vivía dentro de `startTransition` y ahí estaba el
+      // fallo: una transición es trabajo de baja prioridad, así que React podía
+      // posponer la actualización de estado —y con ella la escritura del
+      // cuaderno de `localStorage`— más allá de una recarga o de que el sistema
+      // matara la app. La nota volvía a la versión anterior. Aquí se escribe ya.
+      void save(draft).then((saved) => setDraft(saved ?? ""));
+      setEditing(false);
+      return;
+    }
     startTransition(async () => {
-      const result = await saveExerciseNoteAction({ exerciseId, text: draft });
+      const result = await saveExerciseNoteAction({
+        exerciseVariantId,
+        text: draft,
+      });
       if (!result.ok) {
         toast.error(result.error ?? "No se pudo guardar la nota.");
         return;
       }
       const saved = result.text ?? null;
-      setNote(saved);
       setDraft(saved ?? "");
       setEditing(false);
       toast.success(saved ? "Nota guardada." : "Nota borrada.");
@@ -89,7 +118,7 @@ export function ExerciseNoteEditor({
               size="sm"
               className="min-h-9"
               disabled={pending}
-              onClick={save}
+              onClick={commit}
             >
               Guardar
             </Button>
@@ -125,7 +154,16 @@ export function ExerciseNoteEditor({
       )}
     >
       <span className="text-muted-foreground flex items-center justify-between gap-2 text-[10px] tracking-wide uppercase">
-        Mi nota
+        <span className="flex items-center gap-1.5">
+          Mi nota
+          {/* La nota ya está guardada EN EL MÓVIL: esto no es un aviso de
+              error, es la misma señal honesta que llevan las series. */}
+          {pendingSync ? (
+            <span className="text-muted-foreground/80 normal-case">
+              · guardada aquí, sin sincronizar
+            </span>
+          ) : null}
+        </span>
         <span className="underline underline-offset-2">Editar</span>
       </span>
       <span className="mt-0.5 block text-sm whitespace-pre-wrap">{note}</span>

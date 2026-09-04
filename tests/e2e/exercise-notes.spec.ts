@@ -1,97 +1,113 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { onboard } from "./helpers/onboard";
 
 /**
- * Notas personales del banco (perfil móvil): apuntar la señal técnica desde la
- * biblioteca, verla EN LA SESIÓN —que es donde se lee, justo antes de la
- * serie—, editarla sin salir de ahí y borrarla guardándola vacía.
+ * Notas personales del banco (perfil móvil).
+ *
+ * La nota es de la VARIANTE que estás haciendo, no del movimiento: "con el
+ * bloque azul en la espalda" es verdad en el press inclinado en máquina y
+ * mentira con mancuernas. Aquí se prueba el recorrido completo —apuntarla en la
+ * sesión, que es donde se lee; verla en la biblioteca; editarla; borrarla— y,
+ * sobre todo, que no aparece en la variante de al lado.
  *
  * Se comprueba tras recargar en cada paso: lo que se prueba es que la nota está
  * guardada de verdad, no que el estado de React la recuerde.
  */
-test("nota de ejercicio: se apunta, se lee en la sesión, se edita y se borra", async ({
+
+/** Nombre del ejercicio y de la variante que toca ahora mismo en la sesión. */
+async function ejercicioActual(page: Page): Promise<string> {
+  const nombre = (
+    await page.getByRole("heading", { level: 1 }).textContent()
+  )?.trim();
+  if (!nombre) throw new Error("La sesión no muestra ningún ejercicio.");
+  return nombre;
+}
+
+/** La etiqueta accesible del editor incluye ejercicio y variante. */
+function editorDe(page: Page) {
+  return page.getByRole("textbox", { name: /^Nota sobre / });
+}
+
+test("nota de ejercicio: se apunta en la sesión, se lee, se edita y se borra", async ({
   page,
 }) => {
   await onboard(page);
 
-  // Empezar la sesión para saber qué ejercicio toca hoy: la nota se anota en
-  // ese, y así se puede comprobar que aparece en la pantalla de ejecución.
   await page.goto("/train");
   await page.getByRole("button", { name: "Empezar entrenamiento" }).click();
   await expect(page).toHaveURL(/\/train\/session\//);
   const sessionUrl = page.url();
-  const exerciseName = (
-    await page.getByRole("heading", { level: 1 }).textContent()
-  )?.trim();
-  expect(exerciseName).toBeTruthy();
+  const primerEjercicio = await ejercicioActual(page);
 
-  // Apuntarla desde la biblioteca.
-  await page.goto("/train/exercises");
-  await page
-    .getByRole("searchbox", { name: "Buscar ejercicio" })
-    .fill(exerciseName as string);
-  await page
-    .getByRole("button", { name: new RegExp(exerciseName as string) })
-    .first()
-    .click();
+  // Apuntarla donde de verdad se escribe: en medio de la serie.
   await page.getByRole("button", { name: "+ Añadir nota" }).first().click();
-  await page
-    .getByRole("textbox", { name: `Nota sobre ${exerciseName}` })
-    .fill("Piernas encogidas, no estiradas");
+  await editorDe(page).fill("Asiento en el 4, agarre neutro");
   await page.getByRole("button", { name: "Guardar" }).click();
-  await expect(page.getByText("Piernas encogidas, no estiradas")).toBeVisible();
+  await expect(page.getByText("Asiento en el 4, agarre neutro")).toBeVisible();
+  // Guardar es local-first: la nota se pinta sin esperar al servidor. Antes de
+  // recargar hay que dejar que el lote llegue, o se comprobaría otra cosa.
+  await expect(page.locator("header").getByRole("status")).toHaveText(
+    /Guardado/,
+    { timeout: 30_000 },
+  );
 
   // Sobrevive a la recarga: está en la base, no en el estado del componente.
   await page.reload();
+  await expect(page.getByText("Mi nota")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Asiento en el 4, agarre neutro")).toBeVisible();
+
+  // No se ha derramado sobre los demás ejercicios de la sesión.
+  await page.getByRole("button", { name: "Siguiente" }).click();
+  const segundoEjercicio = await ejercicioActual(page);
+  expect(segundoEjercicio).not.toBe(primerEjercicio);
+  await expect(page.getByText("Asiento en el 4, agarre neutro")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "+ Añadir nota" })).toBeVisible();
+  await page.getByRole("button", { name: "Anterior", exact: true }).click();
+
+  // Editarla sin salir de la sesión.
   await page
-    .getByRole("searchbox", { name: "Buscar ejercicio" })
-    .fill(exerciseName as string);
-  await page
-    .getByRole("button", { name: new RegExp(exerciseName as string) })
+    .getByRole("button", { name: /^Editar mi nota sobre / })
     .first()
     .click();
-  await expect(page.getByText("Piernas encogidas, no estiradas")).toBeVisible();
-
-  // Y se lee en la sesión, junto al ejercicio.
-  await page.goto(sessionUrl);
-  await expect(page.getByText("Mi nota")).toBeVisible();
-  await expect(page.getByText("Piernas encogidas, no estiradas")).toBeVisible();
-
-  // Editarla desde la propia sesión, sin salir.
-  await page
-    .getByRole("button", { name: `Editar mi nota sobre ${exerciseName}` })
-    .click();
-  await page
-    .getByRole("textbox", { name: `Nota sobre ${exerciseName}` })
-    .fill("Omóplatos retraídos");
+  await editorDe(page).fill("Asiento en el 4, agarre neutro y codos pegados");
   await page.getByRole("button", { name: "Guardar" }).click();
-  await expect(page.getByText("Omóplatos retraídos")).toBeVisible();
+  await expect(
+    page.getByText("Asiento en el 4, agarre neutro y codos pegados"),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.getByText("Omóplatos retraídos")).toBeVisible();
+  await expect(
+    page.getByText("Asiento en el 4, agarre neutro y codos pegados"),
+  ).toBeVisible({ timeout: 30_000 });
+
+  // Y se ve también en la biblioteca, colgando de SU variante.
+  await page.goto("/train/exercises");
+  await page
+    .getByRole("searchbox", { name: "Buscar ejercicio" })
+    .fill(primerEjercicio);
+  await page
+    .getByRole("button", { name: new RegExp(primerEjercicio) })
+    .first()
+    .click();
+  await expect(
+    page.getByText("Asiento en el 4, agarre neutro y codos pegados"),
+  ).toBeVisible();
 
   // Guardarla vacía la borra.
+  await page.goto(sessionUrl);
   await page
-    .getByRole("button", { name: `Editar mi nota sobre ${exerciseName}` })
+    .getByRole("button", { name: /^Editar mi nota sobre / })
+    .first()
     .click();
-  await page
-    .getByRole("textbox", { name: `Nota sobre ${exerciseName}` })
-    .fill("");
+  await editorDe(page).fill("");
   await expect(page.getByText("Vacía = borrar la nota")).toBeVisible();
   await page.getByRole("button", { name: "Guardar" }).click();
   await expect(
-    page.getByRole("button", { name: "+ Añadir nota" }),
-  ).toBeVisible();
-  await page.reload();
-  await expect(
-    page.getByRole("button", { name: "+ Añadir nota" }),
+    page.getByRole("button", { name: "+ Añadir nota" }).first(),
   ).toBeVisible();
 
-  // Se descarta la sesión que este spec abrió. La base e2e es compartida y una
-  // sesión IN_PROGRESS impide re-hacer el onboarding ("Finaliza o descarta la
-  // sesión en curso antes de cambiar de programa"), así que dejarla viva
-  // reventaba todos los specs posteriores que se onboardan.
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Descartar sesión" }).click();
-  await expect(page.getByRole("heading", { name: "Entrenar" })).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "+ Añadir nota" }).first(),
+  ).toBeVisible({ timeout: 30_000 });
 });

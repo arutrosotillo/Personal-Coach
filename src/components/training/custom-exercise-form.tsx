@@ -17,6 +17,7 @@ import {
   type SecondaryFactor,
 } from "@/core/schemas/custom-exercise";
 import { createCustomExerciseAction } from "@/server/actions/exercise.action";
+import type { BuilderVariant } from "@/server/repositories/builder-catalog.repo";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -116,7 +117,36 @@ const INITIAL: FormState = {
  * defecto, y sin incremento real de carga el motor de progresión sugeriría
  * kilos que no existen en el gimnasio.
  */
-export function CustomExerciseForm() {
+/**
+ * Alta de ejercicio propio.
+ *
+ * Un solo componente para las dos entradas —la biblioteca y el flujo de
+ * programa— porque es una sola capability: el mismo esquema Zod, el mismo
+ * service, la misma detección de duplicados y la misma semántica de propiedad
+ * (el ejercicio es de quien lo crea y solo él lo ve). Lo que cambia es qué se
+ * hace DESPUÉS de crearlo, y eso entra por `onCreated`.
+ */
+export function CustomExerciseForm({
+  triggerLabel = "Añadir ejercicio",
+  triggerVariant = "secondary",
+  triggerClassName,
+  onCreated,
+}: {
+  triggerLabel?: string;
+  triggerVariant?: "default" | "secondary";
+  triggerClassName?: string;
+  /**
+   * Se llama con el ejercicio recién creado. Desde el builder sirve para
+   * añadirlo al programa en el mismo gesto; desde la biblioteca no se pasa y
+   * basta con refrescar.
+   */
+  onCreated?: (created: {
+    exerciseId: string;
+    variantId: string;
+    builderVariant?: BuilderVariant;
+    name: string;
+  }) => void;
+} = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(INITIAL);
@@ -183,8 +213,19 @@ export function CustomExerciseForm() {
         return;
       }
       toast.success(`"${form.name}" añadido a tu banco.`);
+      const nombre = form.name;
       setForm(INITIAL);
       setOpen(false);
+      if (onCreated && result.exerciseId && result.variantId) {
+        onCreated({
+          exerciseId: result.exerciseId,
+          variantId: result.variantId,
+          builderVariant: result.builderVariant,
+          name: nombre,
+        });
+      }
+      // Siempre: el ejercicio tiene que aparecer también en la biblioteca y en
+      // los pickers que se rendericen a partir de ahora.
       router.refresh();
     } finally {
       setSaving(false);
@@ -195,12 +236,12 @@ export function CustomExerciseForm() {
     <>
       <Button
         type="button"
-        variant="secondary"
+        variant={triggerVariant}
         size="sm"
-        className="min-h-9"
+        className={cn("min-h-9", triggerClassName)}
         onClick={() => setOpen(true)}
       >
-        Añadir ejercicio
+        {triggerLabel}
       </Button>
 
       <Drawer open={open} onOpenChange={setOpen}>

@@ -172,6 +172,26 @@ export const Equipment = z.enum([
 ]);
 export type Equipment = z.infer<typeof Equipment>;
 
+/**
+ * Cuánto sostiene la trayectoria de la carga algo que no seas tú. Es una
+ * propiedad de la VARIANTE, no del ejercicio: la sentadilla en multipower y la
+ * sentadilla con barra libre son el mismo movimiento y no se acercan al fallo
+ * igual.
+ *
+ *  · FREE       — carga libre y sin apoyo, con la barra encima o sobre la
+ *                 espalda. Fallar cuesta técnica y, a veces, quedar atrapado:
+ *                 sentadilla con barra, press banca con barra, remo con barra.
+ *  · SUPPORTED  — carga libre pero con el cuerpo apoyado o con salida fácil:
+ *                 mancuernas, peso corporal, hip thrust. Fallar es soltar.
+ *  · GUIDED     — la máquina, el multipower o la polea sostienen la
+ *                 trayectoria. Fallar es apoyar las placas.
+ *
+ * Decide el RIR objetivo junto al rol y la fatiga sistémica
+ * (`defaultTargetRir`), no por sí sola: "máquina" nunca significa "al fallo".
+ */
+export const ExerciseStability = z.enum(["FREE", "SUPPORTED", "GUIDED"]);
+export type ExerciseStability = z.infer<typeof ExerciseStability>;
+
 export const MuscleRole = z.enum(["PRIMARY", "SECONDARY"]);
 export type MuscleRole = z.infer<typeof MuscleRole>;
 

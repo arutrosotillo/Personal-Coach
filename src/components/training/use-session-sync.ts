@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { RowsMap } from "@/lib/offline/session-snapshot";
+import type { NotesMap, RowsMap } from "@/lib/offline/session-snapshot";
 import {
   browserStorage,
   createSnapshotStore,
@@ -16,7 +16,9 @@ import {
   FINISH_OP_KEY,
   isDegraded,
   markTransportFailure,
+  noteOpKey,
   pendingCount,
+  pendingNoteVariantIds,
   plannedOpKey,
   settle,
   setOpKey,
@@ -24,6 +26,7 @@ import {
   type LogSetOpPayload,
   type Outbox,
   type PlannedSetsOpPayload,
+  type SaveNoteOpPayload,
 } from "@/lib/offline/sync-ops";
 import { syncWorkoutOpsAction } from "@/server/actions/workout.action";
 
@@ -63,8 +66,12 @@ export interface SessionSync {
   reachable: boolean;
   /** El usuario ya pulsó "Guardar y finalizar" (con o sin cobertura). */
   finishedLocally: boolean;
+  /** Variantes con la nota escrita aquí y todavía no confirmada por el servidor. */
+  pendingNotes: Set<string>;
   queueSet: (payload: LogSetOpPayload) => void;
   queuePlanned: (payload: PlannedSetsOpPayload) => void;
+  /** Guarda la nota de una variante. Local al instante, servidor cuando pueda. */
+  queueNote: (payload: SaveNoteOpPayload) => void;
   queueFinish: (feedback: Omit<FinishOpPayload, "token">) => void;
 }
 
@@ -88,6 +95,7 @@ export function useSessionSync(options: {
   restored: { outbox: Outbox; finishedLocally: boolean } | null;
   /** Estado de pantalla que hay que poder recuperar tras recargar. */
   rows: RowsMap;
+  notes: NotesMap;
   variantByExercise: Record<string, string>;
   current: number;
   restEndsAt: number | null;
@@ -98,6 +106,7 @@ export function useSessionSync(options: {
     sessionId,
     restored,
     rows,
+    notes,
     variantByExercise,
     current,
     restEndsAt,
@@ -150,6 +159,7 @@ export function useSessionSync(options: {
       version: SYNC.SNAPSHOT_VERSION,
       sessionId,
       rows,
+      notes,
       variantByExercise,
       current,
       restEndsAt,
@@ -163,6 +173,7 @@ export function useSessionSync(options: {
     archived,
     sessionId,
     rows,
+    notes,
     variantByExercise,
     current,
     restEndsAt,
@@ -271,6 +282,15 @@ export function useSessionSync(options: {
     );
   }, []);
 
+  const queueNote = useCallback((payload: SaveNoteOpPayload) => {
+    setOutbox((prev) =>
+      enqueue(prev, noteOpKey(payload.exerciseVariantId), {
+        kind: "SAVE_EXERCISE_NOTE",
+        payload,
+      }),
+    );
+  }, []);
+
   const queueFinish = useCallback(
     (feedback: Omit<FinishOpPayload, "token">) => {
       setFinishedLocally(true);
@@ -307,8 +327,10 @@ export function useSessionSync(options: {
     pending,
     reachable,
     finishedLocally,
+    pendingNotes: pendingNoteVariantIds(outbox),
     queueSet,
     queuePlanned,
+    queueNote,
     queueFinish,
   };
 }

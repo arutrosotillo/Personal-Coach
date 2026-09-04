@@ -68,6 +68,26 @@ async function descartar(page: Page) {
   await expect(page).toHaveURL(/\/train$/, { timeout: 30_000 });
 }
 
+/**
+ * Abre el editor de la nota del ejercicio visible, haya nota o no.
+ *
+ * Hace falta distinguirlo porque la nota es del BANCO, no de la sesión: una
+ * spec anterior puede haber dejado una en esta misma variante y sobrevive a
+ * descartar la sesión. Que sobreviva es el comportamiento correcto; lo que no
+ * puede es hacer frágil el test.
+ */
+async function abrirEditorDeNota(page: Page) {
+  const anadir = page.getByRole("button", { name: "+ Añadir nota" }).first();
+  const editar = page
+    .getByRole("button", { name: /^Editar mi nota sobre / })
+    .first();
+  if (await anadir.isVisible().catch(() => false)) {
+    await anadir.click();
+    return;
+  }
+  await editar.click();
+}
+
 async function registrarSerie(page: Page, idx: number, kg: string) {
   await page
     .getByRole("textbox", { name: "Peso (kg)", exact: true })
@@ -152,19 +172,43 @@ test("recargar y reabrir la app sin cobertura recupera la sesión entera", async
   await reabierta.getByRole("button", { name: "+ Añadir serie" }).click();
   await registrarSerie(reabierta, 3, "45");
 
+  // Las NOTAS del ejercicio se comportan igual que las series: se escriben sin
+  // cobertura y sobreviven a que el sistema mate la app. Antes no: la nota
+  // llamaba al servidor y esperaba, así que sin cobertura solo existía en el
+  // estado de React y cerrar la pantalla la perdía.
+  await abrirEditorDeNota(reabierta);
+  await reabierta
+    .getByRole("textbox", { name: /^Nota sobre / })
+    .fill("Escrita con la app muerta y sin cobertura");
+  await reabierta.getByRole("button", { name: "Guardar" }).click();
+  await expect(
+    reabierta.getByText("Escrita con la app muerta y sin cobertura"),
+  ).toBeVisible();
+
+  await reabierta.close();
+  const tercera = await context.newPage();
+  await context.setOffline(true);
+  await tercera.goto(urlSesion, { waitUntil: "commit" });
+  await expect(
+    tercera.getByText("Escrita con la app muerta y sin cobertura"),
+  ).toBeVisible({ timeout: 30_000 });
+
   await context.setOffline(false);
-  await expect(reabierta.locator("header").getByRole("status")).toHaveText(
+  await expect(tercera.locator("header").getByRole("status")).toHaveText(
     /Guardado/,
     { timeout: 90_000 },
   );
-  await reabierta.reload();
-  await expect(reabierta.getByRole("button", { name: "✓ Hecha" })).toHaveCount(
-    4,
-    { timeout: 30_000 },
-  );
+  await tercera.reload();
+  await expect(tercera.getByRole("button", { name: "✓ Hecha" })).toHaveCount(4, {
+    timeout: 30_000,
+  });
+  // La nota llegó al servidor, y sigue ahí tras recargar con conexión.
+  await expect(
+    tercera.getByText("Escrita con la app muerta y sin cobertura"),
+  ).toBeVisible({ timeout: 30_000 });
 
-  reabierta.on("dialog", (dialog) => void dialog.accept());
-  await descartar(reabierta);
+  tercera.on("dialog", (dialog) => void dialog.accept());
+  await descartar(tercera);
 });
 
 test("el service worker solo cachea lo del entrenamiento, nada más", async ({

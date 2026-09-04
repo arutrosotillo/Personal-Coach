@@ -9,7 +9,9 @@ import {
   hasPendingFinish,
   isDegraded,
   markTransportFailure,
+  noteOpKey,
   pendingCount,
+  pendingNoteVariantIds,
   pendingSetNumbers,
   plannedOpKey,
   setOpKey,
@@ -203,6 +205,104 @@ describe("outbox: cierre de la sesión", () => {
     expect(outbox.ops.map((o) => o.kind)).toEqual([
       "LOG_SET",
       "FINISH_SESSION",
+    ]);
+  });
+});
+
+/**
+ * Notas de ejercicio en la outbox (F3.2d).
+ *
+ * La nota se escribía llamando a la server action y esperando: sin cobertura,
+ * la llamada fallaba, salía un toast de error y el texto se quedaba SOLO en el
+ * estado de React. Cerrar la app lo perdía. Ahora va por la misma cola que las
+ * series, y estos tests protegen las propiedades que hacen que eso sea seguro.
+ */
+function conNota(outbox: Outbox, variantId: string, text: string): Outbox {
+  return enqueue(outbox, noteOpKey(variantId), {
+    kind: "SAVE_EXERCISE_NOTE",
+    payload: { exerciseVariantId: variantId, text },
+  });
+}
+
+describe("outbox: notas de ejercicio", () => {
+  it("reescribir la nota seis veces sin cobertura deja UNA operación", () => {
+    // Es lo mismo que ya pasaba con el RIR de una serie: la escritura es
+    // absoluta (texto completo), así que la última describe a todas.
+    let outbox = emptyOutbox();
+    for (const texto of ["a", "ab", "abc", "abcd", "abcde", "asiento en el 4"])
+      outbox = conNota(outbox, "v1", texto);
+
+    expect(pendingCount(outbox)).toBe(1);
+    const op = outbox.ops[0];
+    expect(op.kind).toBe("SAVE_EXERCISE_NOTE");
+    expect(op.kind === "SAVE_EXERCISE_NOTE" && op.payload.text).toBe(
+      "asiento en el 4",
+    );
+  });
+
+  it("dos variantes distintas son dos notas distintas en la cola", () => {
+    let outbox = conNota(emptyOutbox(), "v-maquina", "bloque azul detrás");
+    outbox = conNota(outbox, "v-mancuernas", "no bloquear el codo");
+
+    expect(pendingCount(outbox)).toBe(2);
+    expect([...pendingNoteVariantIds(outbox)].sort()).toEqual([
+      "v-mancuernas",
+      "v-maquina",
+    ]);
+  });
+
+  it("borrar la nota es una operación más (texto vacío), no una ausencia", () => {
+    // Sin esto, borrar sin cobertura no se sincronizaría nunca: la cola no
+    // tendría nada que mandar y el servidor conservaría el texto viejo.
+    let outbox = conNota(emptyOutbox(), "v1", "algo");
+    outbox = conNota(outbox, "v1", "");
+
+    expect(pendingCount(outbox)).toBe(1);
+    const op = outbox.ops[0];
+    expect(op.kind === "SAVE_EXERCISE_NOTE" && op.payload.text).toBe("");
+  });
+
+  it("un fallo de red NO descarta la nota; el servidor confirmándola, sí", () => {
+    let outbox = conNota(emptyOutbox(), "v1", "asiento en el 4");
+    const enviada = outbox.ops[0];
+
+    outbox = markTransportFailure(outbox);
+    expect(pendingCount(outbox)).toBe(1);
+
+    const ok: OpResult = { key: enviada.key, seq: enviada.seq, ok: true };
+    expect(pendingCount(settle(outbox, [ok]).outbox)).toBe(0);
+  });
+
+  it("reeditar la nota mientras el lote vuela no pierde la corrección", () => {
+    // Misma garantía que las series: se compara `seq`, no solo la clave.
+    let outbox = conNota(emptyOutbox(), "v1", "primera");
+    const enviada = outbox.ops[0];
+    outbox = conNota(outbox, "v1", "corregida mientras volaba");
+
+    const ok: OpResult = { key: enviada.key, seq: enviada.seq, ok: true };
+    const despues = settle(outbox, [ok]).outbox;
+    expect(pendingCount(despues)).toBe(1);
+    const op = despues.ops[0];
+    expect(op.kind === "SAVE_EXERCISE_NOTE" && op.payload.text).toBe(
+      "corregida mientras volaba",
+    );
+  });
+
+  it("una nota escrita después de finalizar sigue en la cola detrás del cierre", () => {
+    // Se puede pulsar "Guardar y finalizar" sin cobertura y anotar algo después,
+    // mientras el cierre sigue pendiente. La nota queda detrás y eso es
+    // correcto: a diferencia de una serie, guardarla NO exige que la sesión
+    // siga en curso (es del banco de ejercicios, no de la sesión), así que el
+    // servidor la aplica igual cuando llegue el lote entero.
+    let outbox = enqueue(emptyOutbox(), FINISH_OP_KEY, {
+      kind: "FINISH_SESSION",
+      payload: { token: "tok-1" },
+    });
+    outbox = conNota(outbox, "v1", "una nota de última hora");
+
+    expect(outbox.ops.map((o) => o.kind)).toEqual([
+      "FINISH_SESSION",
+      "SAVE_EXERCISE_NOTE",
     ]);
   });
 });

@@ -8,11 +8,15 @@ import { createTestUser } from "./helpers/users";
 /**
  * Notas personales del banco de ejercicios.
  *
- * Lo que se prueba aquí, y por lo que existe la tabla aparte, es que la nota es
- * DE SU DUEÑO: el catálogo del seed es compartido, así que dos personas pueden
- * anotar el mismo "Press banca" sin verse la nota. Se ataca por donde atacaría
- * alguien de verdad —pasando a mano el id de un ejercicio ajeno— y contra el
- * SERVICE, que es donde vive la comprobación de propiedad.
+ * Dos invariantes, y la tabla existe por la primera:
+ *
+ *  1. La nota es DE SU DUEÑO. El catálogo del seed es compartido, así que dos
+ *     personas pueden anotar el mismo "Press banca" sin verse la nota. Se ataca
+ *     por donde atacaría alguien de verdad —pasando a mano el id de un
+ *     ejercicio ajeno— y contra el SERVICE, que es donde vive la comprobación.
+ *  2. La nota es de UNA VARIANTE. "Con el bloque azul en la espalda" es verdad
+ *     en el press inclinado en máquina y mentira con mancuernas; anotar una
+ *     variante no puede escribir en la de al lado.
  */
 
 const testDb = await createTestDatabase();
@@ -49,6 +53,16 @@ const BASE = {
   priorityMuscles: [],
 } as const;
 
+/** La nota que la biblioteca muestra para una VARIANTE concreta. */
+function notaEnBiblioteca(
+  library: Awaited<ReturnType<typeof listLibrary>>,
+  variantId: string,
+): string | null | undefined {
+  return library
+    .flatMap((e) => e.variants)
+    .find((v) => v.id === variantId)?.note;
+}
+
 /** Perfil recién onboardado, con su programa listo. */
 async function onboard(username: string): Promise<string> {
   const userId = await createTestUser(prisma, username);
@@ -60,18 +74,29 @@ async function onboard(username: string): Promise<string> {
   return result.profileId;
 }
 
-/** Ejercicio GLOBAL del seed: el que ven todos. */
-let sharedExerciseId: string;
+/** Dos VARIANTES del MISMO ejercicio global del seed. */
+let bancaBarra: string;
+let bancaMaquina: string;
+/** Una variante de otro ejercicio distinto, para el aislamiento entre familias. */
+let sentadillaBarra: string;
 let ana: string;
 let bruno: string;
 
 beforeAll(async () => {
   await runSeed(prisma);
-  const exercise = await prisma.exercise.findFirstOrThrow({
+  const banca = await prisma.exercise.findFirstOrThrow({
     where: { name: "Press banca" },
-    select: { id: true },
+    include: { variants: true },
   });
-  sharedExerciseId = exercise.id;
+  bancaBarra = banca.variants.find((v) => v.equipment === "BARBELL")!.id;
+  bancaMaquina = banca.variants.find((v) => v.equipment === "MACHINE")!.id;
+  const sentadilla = await prisma.exercise.findFirstOrThrow({
+    where: { name: "Sentadilla trasera" },
+    include: { variants: true },
+  });
+  sentadillaBarra = sentadilla.variants.find(
+    (v) => v.equipment === "BARBELL",
+  )!.id;
   ana = await onboard("ana");
   bruno = await onboard("bruno");
 });
@@ -84,30 +109,30 @@ afterAll(async () => {
 describe("notas personales de ejercicio", () => {
   it("guarda la nota y la devuelve recortada", async () => {
     const saved = await saveExerciseNote(ana, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Piernas encogidas, no estiradas.",
     });
     expect(saved.text).toBe("Piernas encogidas, no estiradas.");
 
     const rows = await prisma.exerciseNote.findMany({
-      where: { exerciseId: sharedExerciseId, profileId: ana },
+      where: { exerciseVariantId: bancaBarra, profileId: ana },
     });
     expect(rows).toHaveLength(1);
   });
 
   it("guardar otra vez EDITA la nota, no acumula una segunda", async () => {
     await saveExerciseNote(ana, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Piernas encogidas.",
     });
     const saved = await saveExerciseNote(ana, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Piernas encogidas y omóplatos retraídos.",
     });
     expect(saved.text).toBe("Piernas encogidas y omóplatos retraídos.");
 
     const rows = await prisma.exerciseNote.findMany({
-      where: { exerciseId: sharedExerciseId, profileId: ana },
+      where: { exerciseVariantId: bancaBarra, profileId: ana },
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text).toBe("Piernas encogidas y omóplatos retraídos.");
@@ -115,54 +140,100 @@ describe("notas personales de ejercicio", () => {
 
   it("el catálogo es compartido pero la nota NO: cada uno ve la suya", async () => {
     await saveExerciseNote(ana, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Piernas encogidas.",
     });
     await saveExerciseNote(bruno, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Bajar más despacio.",
     });
 
-    const deAna = await listLibrary(ana);
-    const deBruno = await listLibrary(bruno);
-    expect(deAna.find((e) => e.id === sharedExerciseId)?.note).toBe(
+    expect(notaEnBiblioteca(await listLibrary(ana), bancaBarra)).toBe(
       "Piernas encogidas.",
     );
-    expect(deBruno.find((e) => e.id === sharedExerciseId)?.note).toBe(
+    expect(notaEnBiblioteca(await listLibrary(bruno), bancaBarra)).toBe(
       "Bajar más despacio.",
     );
   });
 
   it("guardar el texto vacío borra la nota, y volver a borrarla no falla", async () => {
     await saveExerciseNote(bruno, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "Nota que se va.",
     });
     const borrada = await saveExerciseNote(bruno, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "",
     });
     expect(borrada.text).toBeNull();
     expect(
       await prisma.exerciseNote.count({
-        where: { exerciseId: sharedExerciseId, profileId: bruno },
+        where: { exerciseVariantId: bancaBarra, profileId: bruno },
       }),
     ).toBe(0);
 
     // Idempotente: borrar lo que ya no está es el resultado que se pedía.
     const otraVez = await saveExerciseNote(bruno, {
-      exerciseId: sharedExerciseId,
+      exerciseVariantId: bancaBarra,
       text: "",
     });
     expect(otraVez.text).toBeNull();
 
     // La de Ana sigue donde estaba: borrar la propia no toca la ajena.
-    const deAna = await listLibrary(ana);
-    expect(deAna.find((e) => e.id === sharedExerciseId)?.note).not.toBeNull();
+    expect(notaEnBiblioteca(await listLibrary(ana), bancaBarra)).not.toBeNull();
+  });
+
+  it("dos VARIANTES del mismo ejercicio son dos notas distintas", async () => {
+    // El caso real: "con el bloque azul en la espalda" es una señal del montaje
+    // de UNA máquina. Con la nota colgando del ejercicio, aparecía tal cual en
+    // el press con mancuernas, donde no significa nada.
+    await saveExerciseNote(ana, {
+      exerciseVariantId: bancaMaquina,
+      text: "Con el bloque azul en la espalda.",
+    });
+    await saveExerciseNote(ana, {
+      exerciseVariantId: bancaBarra,
+      text: "Omóplatos retraídos y pies firmes.",
+    });
+
+    const biblioteca = await listLibrary(ana);
+    expect(notaEnBiblioteca(biblioteca, bancaMaquina)).toBe(
+      "Con el bloque azul en la espalda.",
+    );
+    expect(notaEnBiblioteca(biblioteca, bancaBarra)).toBe(
+      "Omóplatos retraídos y pies firmes.",
+    );
+
+    // Y borrar una no toca la otra.
+    await saveExerciseNote(ana, {
+      exerciseVariantId: bancaMaquina,
+      text: "",
+    });
+    const despues = await listLibrary(ana);
+    expect(notaEnBiblioteca(despues, bancaMaquina)).toBeNull();
+    expect(notaEnBiblioteca(despues, bancaBarra)).toBe(
+      "Omóplatos retraídos y pies firmes.",
+    );
+  });
+
+  it("ejercicios distintos no comparten nota aunque se parezcan", async () => {
+    await saveExerciseNote(ana, {
+      exerciseVariantId: sentadillaBarra,
+      text: "Abrir un poco más los pies y bajar controlado.",
+    });
+    const biblioteca = await listLibrary(ana);
+    expect(notaEnBiblioteca(biblioteca, sentadillaBarra)).toBe(
+      "Abrir un poco más los pies y bajar controlado.",
+    );
+    // La misma nota NO puede haber aterrizado en ninguna otra variante.
+    const conEsaNota = biblioteca
+      .flatMap((e) => e.variants)
+      .filter((v) => v.note?.startsWith("Abrir un poco más"));
+    expect(conEsaNota.map((v) => v.id)).toEqual([sentadillaBarra]);
   });
 
   it("no se puede anotar el ejercicio propio de otra persona", async () => {
-    const { exerciseId } = await createCustomExercise(ana, {
+    const { variantId } = await createCustomExercise(ana, {
       name: "Máquina rara del gimnasio de Ana",
       movementPattern: "ISOLATION",
       systemicFatigue: 1,
@@ -179,13 +250,20 @@ describe("notas personales de ejercicio", () => {
     });
 
     await expect(
-      saveExerciseNote(bruno, { exerciseId, text: "Nota intrusa" }),
+      saveExerciseNote(bruno, {
+        exerciseVariantId: variantId,
+        text: "Nota intrusa",
+      }),
     ).rejects.toBeInstanceOf(ExerciseNotVisibleError);
-    expect(await prisma.exerciseNote.count({ where: { exerciseId } })).toBe(0);
+    expect(
+      await prisma.exerciseNote.count({
+        where: { exerciseVariantId: variantId },
+      }),
+    ).toBe(0);
 
     // El dueño sí puede.
     const suya = await saveExerciseNote(ana, {
-      exerciseId,
+      exerciseVariantId: variantId,
       text: "El asiento en el 4.",
     });
     expect(suya.text).toBe("El asiento en el 4.");
@@ -193,12 +271,12 @@ describe("notas personales de ejercicio", () => {
 
   it("no se puede anotar un ejercicio que no existe", async () => {
     await expect(
-      saveExerciseNote(ana, { exerciseId: "no-existe", text: "x" }),
+      saveExerciseNote(ana, { exerciseVariantId: "no-existe", text: "x" }),
     ).rejects.toBeInstanceOf(ExerciseNotVisibleError);
   });
 
   it("borrar un ejercicio propio se lleva su nota por cascada", async () => {
-    const { exerciseId } = await createCustomExercise(ana, {
+    const { exerciseId, variantId } = await createCustomExercise(ana, {
       name: "Ejercicio efímero de Ana",
       movementPattern: "ISOLATION",
       systemicFatigue: 1,
@@ -213,10 +291,17 @@ describe("notas personales de ejercicio", () => {
       restSeconds: 60,
       contraindications: [],
     });
-    await saveExerciseNote(ana, { exerciseId, text: "Codos pegados." });
+    await saveExerciseNote(ana, {
+      exerciseVariantId: variantId,
+      text: "Codos pegados.",
+    });
 
     await deleteCustomExercise(ana, exerciseId);
-    expect(await prisma.exerciseNote.count({ where: { exerciseId } })).toBe(0);
+    expect(
+      await prisma.exerciseNote.count({
+        where: { exerciseVariantId: variantId },
+      }),
+    ).toBe(0);
   });
 
   it("la sesión en curso trae la nota de quien entrena, no la del vecino", async () => {
@@ -233,16 +318,20 @@ describe("notas personales de ejercicio", () => {
     });
     const first = template.exercises[0];
     if (!first) throw new Error("La plantilla de Ana salió sin ejercicios.");
-    const exerciseId = first.exerciseVariant.exerciseId;
+    const variantId = first.exerciseVariantId;
 
-    await saveExerciseNote(ana, { exerciseId, text: "Sin rebotar abajo." });
-    await saveExerciseNote(bruno, { exerciseId, text: "Nota de Bruno." });
+    await saveExerciseNote(ana, {
+      exerciseVariantId: variantId,
+      text: "Sin rebotar abajo.",
+    });
+    await saveExerciseNote(bruno, {
+      exerciseVariantId: variantId,
+      text: "Nota de Bruno.",
+    });
 
     const { sessionId } = await startOrResumeSession(ana, template.id);
     const session = await getExecutionSession(ana, sessionId);
-    const inSession = session?.exercises.find(
-      (e) => e.exerciseId === exerciseId,
-    );
+    const inSession = session?.exercises.find((e) => e.variantId === variantId);
     expect(inSession?.note).toBe("Sin rebotar abajo.");
   });
 });

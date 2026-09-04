@@ -12,6 +12,7 @@ import { SYNC } from "@/lib/offline/sync-config";
 import {
   emptyOutbox,
   enqueue,
+  noteOpKey,
   plannedOpKey,
   setOpKey,
   type Outbox,
@@ -25,6 +26,7 @@ function ejercicio(
   return {
     id: "we1",
     variantId: "var-press-banca",
+    note: null,
     plannedSets: 3,
     repRangeMin: 8,
     setLogs: [],
@@ -53,6 +55,7 @@ function snapshot(
     version: SYNC.SNAPSHOT_VERSION,
     sessionId: SESION,
     rows,
+    notes: {},
     variantByExercise: { we1: "var-press-banca" },
     current: 0,
     restEndsAt: null,
@@ -311,5 +314,81 @@ describe("reconcile: snapshots imposibles", () => {
     const out = reconcile([ejercicio()], guardado, SESION);
     expect(out.rows.we1).toHaveLength(3);
     expect(out.rows.we1[0].done).toBe(false);
+  });
+});
+
+/**
+ * Notas de ejercicio al reconciliar (F3.2d).
+ *
+ * Misma política que las series, y por el mismo motivo: con el service worker,
+ * recargar sin cobertura sirve el HTML de la última vez que sí la hubo. Si el
+ * servidor ganara siempre, esa recarga pintaría la nota vieja encima de la que
+ * el usuario acaba de escribir entre serie y serie.
+ */
+describe("reconcile: notas de ejercicio", () => {
+  const VARIANTE = "var-press-banca";
+
+  it("sin nada guardado en el móvil, la nota es la del servidor", () => {
+    const state = reconcile(
+      [ejercicio({ note: "Bloque azul detrás." })],
+      null,
+      SESION,
+    );
+    expect(state.notes[VARIANTE]).toBe("Bloque azul detrás.");
+  });
+
+  it("una nota PENDIENTE de enviar no la pisa el servidor", () => {
+    const outbox = enqueue(emptyOutbox(), noteOpKey(VARIANTE), {
+      kind: "SAVE_EXERCISE_NOTE",
+      payload: { exerciseVariantId: VARIANTE, text: "Asiento en el 4." },
+    });
+    const state = reconcile(
+      [ejercicio({ note: "Texto viejo del servidor." })],
+      snapshot({}, outbox, { notes: { [VARIANTE]: "Asiento en el 4." } }),
+      SESION,
+    );
+    expect(state.notes[VARIANTE]).toBe("Asiento en el 4.");
+    expect(state.recovered).toBe(true);
+  });
+
+  it("un BORRADO pendiente tampoco lo resucita el servidor", () => {
+    const outbox = enqueue(emptyOutbox(), noteOpKey(VARIANTE), {
+      kind: "SAVE_EXERCISE_NOTE",
+      payload: { exerciseVariantId: VARIANTE, text: "" },
+    });
+    const state = reconcile(
+      [ejercicio({ note: "La que el usuario acaba de borrar." })],
+      snapshot({}, outbox, { notes: { [VARIANTE]: null } }),
+      SESION,
+    );
+    expect(state.notes[VARIANTE]).toBeNull();
+  });
+
+  it("sin nada pendiente, el servidor manda (otra pestaña, o la biblioteca)", () => {
+    // Es el caso simétrico: la nota local ya se confirmó y alguien la cambió
+    // desde la biblioteca. Quedarse con la copia local sería resucitar un texto
+    // que el usuario ya sustituyó.
+    const state = reconcile(
+      [ejercicio({ note: "Editada desde la biblioteca." })],
+      snapshot({}, emptyOutbox(), { notes: { [VARIANTE]: "La vieja." } }),
+      SESION,
+    );
+    expect(state.notes[VARIANTE]).toBe("Editada desde la biblioteca.");
+  });
+
+  it("una nota de una variante que ya no está en la sesión no se cuela", () => {
+    // Sustituir un ejercicio cambia la variante: la nota de la anterior no
+    // tiene dónde pintarse y no debe aparecer en el estado.
+    const outbox = enqueue(emptyOutbox(), noteOpKey("var-fantasma"), {
+      kind: "SAVE_EXERCISE_NOTE",
+      payload: { exerciseVariantId: "var-fantasma", text: "De otro ejercicio." },
+    });
+    const state = reconcile(
+      [ejercicio({ note: null })],
+      snapshot({}, outbox, { notes: { "var-fantasma": "De otro ejercicio." } }),
+      SESION,
+    );
+    expect(state.notes).not.toHaveProperty("var-fantasma");
+    expect(state.notes[VARIANTE]).toBeNull();
   });
 });

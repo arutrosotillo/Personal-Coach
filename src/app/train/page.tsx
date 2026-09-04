@@ -7,9 +7,17 @@ import { StartSessionButton } from "@/components/training/start-session-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatLocalDate } from "@/core/dates";
 import { getCurrentProfile } from "@/server/auth/current-user";
-import { getTodayOverview } from "@/server/repositories/workout.repo";
-import { getTrainingAnalysis } from "@/server/services/fatigue.service";
+import {
+  getTodayOverview,
+  previewTemplateSession,
+} from "@/server/repositories/workout.repo";
+import {
+  getRecoveryVeto,
+  getTrainingAnalysis,
+} from "@/server/services/fatigue.service";
+import { buildSuggestions } from "@/server/services/progression.service";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +46,30 @@ export default async function TrainPage() {
   // Después del early-return: sin programa, este análisis (8 consultas) se
   // calculaba solo para tirarlo.
   const analysis = await getTrainingAnalysis(profile.id);
-  const nextTemplate = overview.templates.find((t) => !t.done);
+  // Qué toca: el primer día pendiente de esta semana o, si ya están todos, el
+  // primero de la semana que viene. Nunca "nada".
+  const pendiente = overview.templates.find((t) => !t.done);
+  const nextTemplate = pendiente ?? overview.nextWeekTemplate;
+  const semanaCompleta = !pendiente;
+
+  // Objetivos del próximo entrenamiento CALCULADOS AQUÍ, antes de empezarlo.
+  // Es lo que hace que entrar al gimnasio sin cobertura siga sabiendo qué toca:
+  // este HTML lo cachea el service worker, así que los pesos y las reps ya
+  // están escritos cuando `startSessionAction` todavía no ha podido correr.
+  const preview =
+    !overview.active && nextTemplate
+      ? await previewTemplateSession(
+          profile.id,
+          nextTemplate.id,
+          analysis.context.todayLocalDate,
+        )
+      : null;
+  const previewTargets = preview
+    ? buildSuggestions(
+        preview,
+        await getRecoveryVeto(profile.id, analysis.context.todayLocalDate),
+      )
+    : null;
 
   return (
     <AppShell>
@@ -78,32 +109,77 @@ export default async function TrainPage() {
       ) : nextTemplate ? (
         <Card className="mb-4">
           <CardHeader>
-            <CardTitle className="text-base">Hoy toca</CardTitle>
+            <CardTitle className="text-base">
+              {semanaCompleta ? "Siguiente entrenamiento" : "Hoy toca"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Al terminar la semana esto decía "¡Semana completada!" y ofrecía
+                "repetir", que suena a rehacer el entrenamiento viejo. No lo es:
+                el programa es un microciclo que se repite y cada exposición
+                trae objetivos nuevos calculados con lo que hiciste. Lo que
+                faltaba era decirlo. */}
+            {semanaCompleta ? (
+              <p className="text-muted-foreground mb-2 text-sm">
+                Semana <span className="tnum">{overview.weekNumber}</span>{" "}
+                completada 💪 — has hecho los{" "}
+                <span className="tnum">{overview.templates.length}</span> días.
+                La semana <span className="tnum">{overview.nextWeekNumber}</span>{" "}
+                empieza el {formatLocalDate(overview.nextWeekStartDate)}. Puedes
+                adelantarla hoy: no repites el entrenamiento anterior, los
+                objetivos de abajo ya están recalculados con lo que hiciste.
+              </p>
+            ) : null}
             <p className="font-medium">{nextTemplate.name}</p>
             <p className="tnum text-muted-foreground text-sm">
               {nextTemplate.exerciseCount} ejercicios
             </p>
+            {preview && previewTargets ? (
+              <ul className="tnum mt-3 space-y-1 text-sm">
+                {preview.exercises.map((e) => {
+                  const t = previewTargets[e.id];
+                  const peso =
+                    t?.suggestedWeightKg !== null &&
+                    t?.suggestedWeightKg !== undefined
+                      ? `${t.suggestedWeightKg} kg`
+                      : "carga a elegir";
+                  const reps =
+                    t?.setTargets && t.setTargets.length > 0
+                      ? t.setTargets.join("/")
+                      : `${e.repRangeMin}–${e.repRangeMax}`;
+                  return (
+                    <li
+                      key={e.id}
+                      className="flex items-baseline justify-between gap-3"
+                    >
+                      <span className="truncate">
+                        {e.exerciseName}
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {e.variantName}
+                        </span>
+                      </span>
+                      <span className="text-muted-foreground shrink-0">
+                        {peso} × {reps} @ RIR {e.targetRir}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             <div className="mt-3">
               <StartSessionButton
                 templateId={nextTemplate.id}
-                label="Empezar entrenamiento"
+                label={
+                  semanaCompleta
+                    ? `Empezar semana ${overview.nextWeekNumber}`
+                    : "Empezar entrenamiento"
+                }
               />
             </div>
           </CardContent>
         </Card>
-      ) : (
-        <Card className="mb-4">
-          <CardContent className="pt-4">
-            <p className="font-medium">¡Semana completada! 💪</p>
-            <p className="text-muted-foreground text-sm">
-              Has hecho todas las sesiones de esta semana. Puedes repetir
-              cualquiera si quieres.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      ) : null}
 
       {/* El estado de recuperación es contexto, no la tarea del día: con la
           tarjeta arriba, "Empezar entrenamiento" caía por debajo de la nav. */}
@@ -135,7 +211,7 @@ export default async function TrainPage() {
                   <div className="w-24">
                     <StartSessionButton
                       templateId={t.id}
-                      label="Repetir"
+                      label="Otra vez"
                       variant="secondary"
                     />
                   </div>

@@ -121,7 +121,10 @@ export interface FatigueAssessment {
   numbers: {
     sessionsInWindow: number;
     exercisesTracked: number;
+    /** Cuánto mira el motor hacia atrás. Fijo; no es un dato del usuario. */
     windowDays: number;
+    /** Días que abarcan de verdad esas sesiones, de la primera a hoy. */
+    diasAbarcados: number;
     weeksSinceDeload: number | null;
   };
 }
@@ -178,10 +181,22 @@ export function assessFatigue(
   );
   const recent = sessions.slice(-config.RECENT_SESSIONS);
 
+  // Días que abarcan de verdad las sesiones vistas (de la primera a hoy). NO es
+  // lo mismo que la ventana, y confundirlos era el problema: la ventana es
+  // cuánto MIRA el motor hacia atrás —fija, 21 días—, no el periodo en el que
+  // has entrenado. "3 sesiones en 21 días" se lee como un reproche de
+  // adherencia cuando lo que has hecho son 3 sesiones en 5 días, que además es
+  // tu semana entera. Con el tramo real la frase dice la verdad en los dos
+  // sentidos: si esas 3 sesiones sí están repartidas en 20 días, también se ve.
+  const spanDays =
+    sessions.length > 0
+      ? Math.max(0, diffDays(sessions[0].localDate, input.todayLocalDate)) + 1
+      : 0;
   const base = {
     sessionsInWindow: sessions.length,
     exercisesTracked: exercises.length,
     windowDays: config.WINDOW_DAYS,
+    diasAbarcados: spanDays,
     weeksSinceDeload: input.weeksSinceDeload,
   };
 
@@ -218,7 +233,7 @@ export function assessFatigue(
   if (sessions.length < config.MIN_SESSIONS) {
     return {
       level: "INSUFFICIENT_DATA",
-      headline: `Sin datos suficientes: ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} en ${config.WINDOW_DAYS} días.`,
+      headline: `Sin datos suficientes: llevo ${sessions.length} ${sessions.length === 1 ? "sesión registrada" : "sesiones registradas"} y necesito ${config.MIN_SESSIONS}.`,
       score: 0,
       objectiveScore: 0,
       signals: [],
@@ -226,7 +241,7 @@ export function assessFatigue(
       plan: null,
       jointPain,
       confidence: "LOW",
-      explanation: `Con ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} en los últimos ${config.WINDOW_DAYS} días no puedo valorar tu fatiga. Con ${config.MIN_SESSIONS} podré.`,
+      explanation: `Con ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} no puedo valorar tu fatiga: miro las de los últimos ${config.WINDOW_DAYS} días y necesito al menos ${config.MIN_SESSIONS}. Sigue entrenando y te lo digo.`,
       engineVersion: FATIGUE_ENGINE_VERSION,
       numbers: base,
     };
@@ -468,7 +483,7 @@ export function assessFatigue(
         ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
         : signals.length > 0
           ? `${tally}, nada que indique fatiga acumulada.${sigueConElPlan}`
-          : `Sin señales de fatiga en ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} de ${config.WINDOW_DAYS} días.${sigueConElPlan}`;
+          : `Sin señales de fatiga en tus últimas ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"}${spanDays > 0 ? ` (${spanDays} ${spanDays === 1 ? "día" : "días"})` : ""}.${sigueConElPlan}`;
 
   // Explicación LARGA con todos los números: la consume Coach AI y el fallback
   // determinista, no la tarjeta (que ya lista las señales una a una).

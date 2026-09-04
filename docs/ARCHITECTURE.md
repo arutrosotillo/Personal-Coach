@@ -51,11 +51,14 @@ La app está desplegada en Vercel, así que el gimnasio con mala cobertura es el
 Durante una sesión, lo que el usuario ve en pantalla no depende de que ninguna escritura haya llegado:
 
 - **Snapshot local** (`localStorage`, síncrono para sobrevivir a que iOS mate la PWA) con las filas, el ejercicio actual y el descanso. Es lo que permite recargar.
-- **Outbox coalescente por clave** (`SET:<ejercicio>:<nº>`, `PLANNED:<ejercicio>`, `FINISH`). No es un log de eventos porque no hace falta: las tres mutaciones de una sesión son absolutas e idempotentes, así que una operación pendiente queda descrita por su último payload.
+- **Outbox coalescente por clave** (`SET:<ejercicio>:<nº>`, `PLANNED:<ejercicio>`, `NOTE:<variante>`, `FINISH`). No es un log de eventos porque no hace falta: las mutaciones de una sesión son absolutas e idempotentes, así que una operación pendiente queda descrita por su último payload.
 - **Un lote por viaje** (`syncWorkoutOpsAction`), aplicado en orden y parándose en el primer fallo. La conectividad se deduce de que el servidor responda, nunca de `navigator.onLine`.
 - **Conflictos**: si el servidor tiene confirmada una serie y no hay nada pendiente sobre ella, manda el servidor; en cualquier otro caso, manda lo local. Un dato pendiente no lo pisa nadie.
-- **Idempotencia**: `logSet` es un upsert por `(workoutExerciseId, setNumber)`, `setPlannedSets` escribe un valor absoluto y el cierre lleva `WorkoutSession.finishToken`, generado por el cliente y repetido en cada reintento.
+- **Idempotencia**: `logSet` es un upsert por `(workoutExerciseId, setNumber)`, `setPlannedSets` escribe un valor absoluto, `saveExerciseNote` es un upsert por `(perfil, variante)` que manda el texto completo (vacío = borrar), y el cierre lleva `WorkoutSession.finishToken`, generado por el cliente y repetido en cada reintento.
+- **Notas de ejercicio**: van por la misma cola desde la SESIÓN (donde se leen y se escriben, en el gimnasio). Se guardan en `localStorage` al instante y sin `startTransition` —una transición es baja prioridad y podía diferir la escritura más allá de que iOS matara la app— y viajan al servidor cuando haya cobertura. Guardar una nota NO exige que la sesión siga en curso: la nota es del banco de ejercicios, así que un lote que llegue después del cierre la aplica igual. Desde la BIBLIOTECA se guardan online y punto: esa pantalla sin cobertura no carga.
 - **Service worker** (`public/sw.js`, escrito a mano) solo para poder recargar o reabrir la app sin cobertura: cache-first de `/_next/static`, network-first del documento de `/train` y `/train/session/<id>`, y nada más. Se borra al cerrar sesión.
+
+**Los objetivos de la próxima sesión están en `/train` antes de empezarla.** `previewTemplateSession` construye la sesión que saldría de una plantilla sin crearla, y `/train` imprime peso, repeticiones y RIR de cada ejercicio. Como el service worker cachea ese documento, entrar al gimnasio sin cobertura y saber qué toca ya no depende de la red. La prescripción sigue calculándose al vuelo y sin persistirse: no hay dos fuentes de verdad que puedan divergir, y el test de integración comprueba que lo que se ve antes de empezar es lo mismo que sale al empezar.
 
 Sigue necesitando conexión: empezar una sesión, sustituir un ejercicio y descartarla (las dos últimas borran `SetLog` sin vuelta atrás).
 

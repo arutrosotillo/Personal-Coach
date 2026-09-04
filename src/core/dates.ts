@@ -96,3 +96,43 @@ export function weekIndexSince(
   const current = isoWeekOf(localDate).weekStartDate;
   return Math.floor(diffDays(start, current) / 7) + 1;
 }
+
+const DIAS_SEMANA = [
+  "lunes",
+  "martes",
+  "miércoles",
+  "jueves",
+  "viernes",
+  "sábado",
+  "domingo",
+] as const;
+
+const MESES = [
+  "enero",
+  "febrero",
+  "marzo",
+  "abril",
+  "mayo",
+  "junio",
+  "julio",
+  "agosto",
+  "septiembre",
+  "octubre",
+  "noviembre",
+  "diciembre",
+] as const;
+
+/**
+ * Un `localDate` escrito para leer: "lunes 7 de septiembre".
+ *
+ * Tabla fija y no `Intl.DateTimeFormat` a propósito: el módulo tiene que ser
+ * determinista y dar exactamente la misma cadena en el servidor y en el
+ * cliente. Con `Intl`, los datos de locale del runtime deciden, y una
+ * diferencia entre Node y el navegador es un error de hidratación.
+ */
+export function formatLocalDate(localDate: string): string {
+  const [y, m, d] = localDate.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dia = DIAS_SEMANA[(date.getUTCDay() || 7) - 1];
+  return `${dia} ${d} de ${MESES[m - 1]}`;
+}

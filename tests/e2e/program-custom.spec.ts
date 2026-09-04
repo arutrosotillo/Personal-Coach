@@ -112,3 +112,74 @@ test("crear un programa manual y entrenar con él (Casos A y C)", async ({
   await page.goto("/train/history");
   await expect(page.getByText(/[1-9]\d* series/).first()).toBeVisible();
 });
+
+test("crear un ejercicio sin salir del builder y añadirlo al programa", async ({
+  page,
+}) => {
+  // El hueco que motivó esto: descubres a mitad de armar el programa que tu
+  // gimnasio tiene algo que el catálogo no cubre, y la única salida era irse a
+  // la biblioteca y perder el hilo.
+  await onboard(page);
+  await page.goto("/program/new");
+  await expect(
+    page.getByRole("heading", { name: "Crear mi programa" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "+ Añadir ejercicio" }).click();
+  // Se busca algo que NO existe: el picker lo dice y ofrece crearlo.
+  await page
+    .getByRole("searchbox", { name: "Buscar ejercicio" })
+    .fill("Prensa Nautilus del gimnasio de abajo");
+  await expect(page.getByText(/Sin resultados/)).toBeVisible();
+
+  await page.getByRole("button", { name: "+ Crear ejercicio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Nuevo ejercicio" }),
+  ).toBeVisible();
+
+  await page
+    .getByLabel("Nombre", { exact: true })
+    .fill("Prensa Nautilus del gimnasio de abajo");
+  // El mismo músculo aparece en "principal" y en "secundarios": el primero del
+  // DOM es el principal.
+  await page
+    .getByRole("button", { name: "Cuádriceps", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", { name: "Dominante de rodilla", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Máquina", exact: true })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Añadir a mi banco" }).click();
+
+  // El picker sigue abierto para poder añadir más, igual que al elegir del
+  // catálogo; el ejercicio nuevo ya aparece ahí marcado como añadido.
+  await expect(page.getByText("✓ añadido")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Hecho" }).click();
+
+  // Y queda en el día EN EL MISMO GESTO: no hay que volver a buscarlo. Con el
+  // RIR que le toca por su patrón y material (compuesto guiado → 1), no un
+  // literal: es el mismo motor de defaults que el resto del catálogo.
+  await expect(
+    page.getByRole("button", {
+      name: /Prensa Nautilus del gimnasio de abajo — Máquina.*RIR 1/,
+    }),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: /Guardar programa/ }).click();
+  await expect(page).toHaveURL(/\/program$/, { timeout: 15_000 });
+  await expect(
+    page.getByText("Prensa Nautilus del gimnasio de abajo").first(),
+  ).toBeVisible();
+
+  // Y aparece en la biblioteca, como cualquier otro ejercicio.
+  await page.goto("/train/exercises");
+  await page
+    .getByRole("searchbox", { name: "Buscar ejercicio" })
+    .fill("Prensa Nautilus");
+  await expect(
+    page.getByRole("button", { name: /Prensa Nautilus del gimnasio de abajo/ }),
+  ).toBeVisible();
+});

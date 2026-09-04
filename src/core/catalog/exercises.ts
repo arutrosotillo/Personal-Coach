@@ -1,10 +1,16 @@
 import type {
   Contraindication,
   Equipment,
+  ExerciseStability,
   MovementPattern,
   MuscleGroupCode,
   MuscleRole,
 } from "@/core/enums";
+import { withExtraVariants } from "@/core/catalog/exercise-builders";
+import {
+  EXPANSION,
+  EXTRA_VARIANTS,
+} from "@/core/catalog/exercises-expansion";
 
 /**
  * Catálogo seed de ejercicios (~45 ejercicios, ~60 variantes).
@@ -26,6 +32,13 @@ export interface ContributionSeed {
 export interface VariantSeed {
   name: string;
   equipment: Equipment;
+  /**
+   * Cuánto sostiene la trayectoria algo que no seas tú. Solo se declara en las
+   * EXCEPCIONES: si se omite, la deduce el material
+   * (`STABILITY_BY_EQUIPMENT`), que acierta en la inmensa mayoría. Decide el
+   * RIR objetivo por defecto junto al rol y la fatiga sistémica.
+   */
+  stability?: ExerciseStability;
   loadStepKg: number;
   repRangeMin: number;
   repRangeMax: number;
@@ -53,7 +66,26 @@ const c = (
   factor,
 });
 
-export const EXERCISES: ExerciseSeed[] = [
+/**
+ * Los 45 ejercicios originales, TAL CUAL estaban.
+ *
+ * No se tocan ni un número: sus rangos de repeticiones, pasos de carga y
+ * descansos llevan meses en producción y el seed los reescribiría en cada
+ * despliegue. Lo nuevo se añade en `exercises-expansion.ts`, y las variantes
+ * que le faltaban a uno de estos se declaran allí como `EXTRA_VARIANTS` (solo
+ * añaden filas; no modifican las que ya existen).
+ *
+ * Cinco nombres SÍ cambian, y por eso están renombrados aquí y en una migración
+ * de datos: "Pullover en polea" → "Pullover", "Curl en máquina predicador" →
+ * "Curl predicador", "Remo sentado en polea" → "Remo sentado", "Jalón
+ * unilateral en polea" → "Jalón unilateral" y "Crunch en polea" → "Crunch
+ * abdominal". Los cinco llevaban el MATERIAL metido en el nombre del
+ * MOVIMIENTO, así que la máquina o la mancuerna del mismo ejercicio no tenían
+ * dónde ir salvo creando un duplicado — que es justo el problema que esta
+ * ampliación venía a evitar. La migración renombra la fila existente, así que
+ * el historial (que cuelga del id) no se entera.
+ */
+const BASE_EXERCISES: ExerciseSeed[] = [
   // ============ PECHO SUPERIOR ============
   {
     name: "Press inclinado",
@@ -506,7 +538,7 @@ export const EXERCISES: ExerciseSeed[] = [
     ],
   },
   {
-    name: "Jalón unilateral en polea",
+    name: "Jalón unilateral",
     movementPattern: "VERTICAL_PULL",
     systemicFatigue: 1,
     instructions:
@@ -526,7 +558,7 @@ export const EXERCISES: ExerciseSeed[] = [
     ],
   },
   {
-    name: "Pullover en polea",
+    name: "Pullover",
     movementPattern: "ISOLATION",
     systemicFatigue: 1,
     instructions:
@@ -610,7 +642,7 @@ export const EXERCISES: ExerciseSeed[] = [
     ],
   },
   {
-    name: "Remo sentado en polea",
+    name: "Remo sentado",
     movementPattern: "HORIZONTAL_PULL",
     systemicFatigue: 2,
     instructions:
@@ -856,7 +888,7 @@ export const EXERCISES: ExerciseSeed[] = [
     ],
   },
   {
-    name: "Curl en máquina predicador",
+    name: "Curl predicador",
     movementPattern: "ISOLATION",
     systemicFatigue: 1,
     instructions:
@@ -1246,6 +1278,9 @@ export const EXERCISES: ExerciseSeed[] = [
       {
         name: "Barra",
         equipment: "BARBELL",
+        // Carga libre, pero la espalda va apoyada en el banco y fallar es
+        // sentarse: no es la barra encima que justifica reserva extra.
+        stability: "SUPPORTED",
         loadStepKg: 2.5,
         repRangeMin: 8,
         repRangeMax: 12,
@@ -1318,7 +1353,7 @@ export const EXERCISES: ExerciseSeed[] = [
 
   // ============ CORE ============
   {
-    name: "Crunch en polea",
+    name: "Crunch abdominal",
     movementPattern: "CORE",
     systemicFatigue: 1,
     instructions:
@@ -1380,4 +1415,14 @@ export const EXERCISES: ExerciseSeed[] = [
       },
     ],
   },
+];
+
+/**
+ * El catálogo que consume el seed: los 45 originales con las variantes que les
+ * faltaban, más la ampliación. El orden es estable (base y después ampliación)
+ * para que el seed sea determinista y su diff se pueda leer.
+ */
+export const EXERCISES: ExerciseSeed[] = [
+  ...withExtraVariants(BASE_EXERCISES, EXTRA_VARIANTS),
+  ...EXPANSION,
 ];

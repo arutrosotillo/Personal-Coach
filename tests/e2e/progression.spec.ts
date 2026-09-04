@@ -60,7 +60,7 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   await finishSession(page);
 
   // ── Sesión 2 (repetir la misma plantilla) ────────────────────────────────
-  await page.getByRole("button", { name: "Repetir" }).click();
+  await page.getByRole("button", { name: "Otra vez" }).first().click();
   await expect(page.getByText(/Ejercicio 1\//)).toBeVisible();
 
   // Mismo primer ejercicio (generador determinista) y contexto "última vez".

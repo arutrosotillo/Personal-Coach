@@ -108,6 +108,19 @@ function opSerie(
   };
 }
 
+function opNota(
+  seq: number,
+  exerciseVariantId: string,
+  text: string,
+): SyncOpData {
+  return {
+    key: `NOTE:${exerciseVariantId}`,
+    seq,
+    kind: "SAVE_EXERCISE_NOTE",
+    payload: { exerciseVariantId, text },
+  };
+}
+
 function opCierre(seq: number, token: string): SyncOpData {
   return {
     key: "FINISH",
@@ -379,5 +392,114 @@ describe("invariantes de la base de datos", () => {
       }),
     ).rejects.toThrow();
     expect(await prisma.setLog.count()).toBe(0);
+  });
+});
+
+/**
+ * Notas escritas sin cobertura (F3.2d).
+ *
+ * Antes de esto la nota no pasaba por la cola: se llamaba a la server action y
+ * se esperaba. Sin cobertura salía un toast de error y el texto solo vivía en
+ * el estado de React, así que cerrar la app lo perdía. Aquí se prueba la parte
+ * de servidor de la solución, que es la que hace segura la de cliente.
+ */
+describe("notas de ejercicio en el lote offline", () => {
+  it("una nota escrita sin cobertura se guarda al volver la conexión", async () => {
+    const { sessionId, exercises } = await nuevaSesion();
+    const we = exercises[0];
+
+    const outcome = await session.applySyncOps(profileId, sessionId, [
+      opSerie(1, we.id, 1, 40),
+      opNota(2, we.exerciseVariantId, "Asiento en el 4, agarre neutro."),
+    ]);
+
+    expect(outcome.results.every((r) => r.ok)).toBe(true);
+    const nota = await prisma.exerciseNote.findFirst({
+      where: { profileId, exerciseVariantId: we.exerciseVariantId },
+    });
+    expect(nota?.text).toBe("Asiento en el 4, agarre neutro.");
+  });
+
+  it("reenviar el mismo lote no duplica la nota ni la multiplica", async () => {
+    const { sessionId, exercises } = await nuevaSesion();
+    const we = exercises[0];
+    const ops = [opNota(1, we.exerciseVariantId, "Codos pegados.")];
+
+    await session.applySyncOps(profileId, sessionId, ops);
+    await session.applySyncOps(profileId, sessionId, ops);
+    await session.applySyncOps(profileId, sessionId, ops);
+
+    expect(
+      await prisma.exerciseNote.count({
+        where: { profileId, exerciseVariantId: we.exerciseVariantId },
+      }),
+    ).toBe(1);
+  });
+
+  it("la última reescritura gana: la cola manda el texto completo", async () => {
+    const { sessionId, exercises } = await nuevaSesion();
+    const we = exercises[0];
+
+    await session.applySyncOps(profileId, sessionId, [
+      opNota(1, we.exerciseVariantId, "primera versión"),
+    ]);
+    await session.applySyncOps(profileId, sessionId, [
+      opNota(2, we.exerciseVariantId, "versión corregida sin cobertura"),
+    ]);
+
+    const nota = await prisma.exerciseNote.findFirst({
+      where: { profileId, exerciseVariantId: we.exerciseVariantId },
+    });
+    expect(nota?.text).toBe("versión corregida sin cobertura");
+  });
+
+  it("borrar la nota sin cobertura también viaja (texto vacío)", async () => {
+    const { sessionId, exercises } = await nuevaSesion();
+    const we = exercises[0];
+
+    await session.applySyncOps(profileId, sessionId, [
+      opNota(1, we.exerciseVariantId, "una nota"),
+    ]);
+    await session.applySyncOps(profileId, sessionId, [
+      opNota(2, we.exerciseVariantId, ""),
+    ]);
+
+    expect(
+      await prisma.exerciseNote.count({
+        where: { profileId, exerciseVariantId: we.exerciseVariantId },
+      }),
+    ).toBe(0);
+  });
+
+  it("una nota escrita tras el cierre se guarda igual: no es dato de la sesión", async () => {
+    // Se puede finalizar sin cobertura y anotar algo después; el lote llega
+    // entero cuando vuelve la conexión, con el cierre por delante. La nota es
+    // del banco de ejercicios, así que no exige que la sesión siga en curso.
+    const { sessionId, exercises } = await nuevaSesion();
+    const we = exercises[0];
+
+    const outcome = await session.applySyncOps(profileId, sessionId, [
+      opSerie(1, we.id, 1, 40),
+      opCierre(2, "tok-nota"),
+      opNota(3, we.exerciseVariantId, "Se me olvidó: subir el asiento."),
+    ]);
+
+    expect(outcome.results.map((r) => r.ok)).toEqual([true, true, true]);
+    const nota = await prisma.exerciseNote.findFirst({
+      where: { profileId, exerciseVariantId: we.exerciseVariantId },
+    });
+    expect(nota?.text).toBe("Se me olvidó: subir el asiento.");
+  });
+
+  it("una nota sobre un ejercicio que no es visible se rechaza para siempre", async () => {
+    // Descartarla es lo correcto: reintentar no va a arreglarlo. Pero tiene que
+    // avisar, que es lo que hace `permanent`.
+    const { sessionId } = await nuevaSesion();
+
+    const outcome = await session.applySyncOps(profileId, sessionId, [
+      opNota(1, "variante-que-no-existe", "nota fantasma"),
+    ]);
+    expect(outcome.results[0].ok).toBe(false);
+    expect(outcome.results[0].permanent).toBe(true);
   });
 });

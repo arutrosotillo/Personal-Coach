@@ -319,11 +319,21 @@ export const PHILOSOPHY: PhilosophySection[] = [
         id: "objetivos-rir",
         title: "Nuestros objetivos: 2 / 1 / 0",
         summary:
-          "Compuestos pesados 2 RIR, el resto de compuestos 1, aislamientos 0 (al fallo). Solo sentadilla, peso muerto y remo con barra frenan la subida la primera vez que cierras el rango al fallo; en todo lo demás el fallo es exactamente lo prescrito y la carga sube.",
+          "Compuestos pesados 2 RIR, el resto de compuestos 1, aislamientos 0 (al fallo). Solo los movimientos que de verdad cuesta fallar frenan la subida la primera vez que cierras el rango al fallo; en todo lo demás el fallo es exactamente lo prescrito y la carga sube.",
         detail:
-          "Dejar reserva NO te hace crecer más: la evidencia apunta al revés (acercarse al fallo crece igual o algo más, y la fuerza es casi indiferente). Lo único que compra la reserva es fatiga más barata y menos riesgo técnico, así que solo se paga donde ese coste es real: los tres ejercicios del catálogo con mayor fatiga sistémica. Que el objetivo varíe por tipo de ejercicio sigue siendo una elección nuestra: no hay ningún estudio que asigne distintos RIR a distintas categorías, y el subgrupo meta-analítico más pertinente sale nulo.",
+          "Dejar reserva NO te hace crecer más: la evidencia apunta al revés (acercarse al fallo crece igual o algo más, y la fuerza es casi indiferente). Lo único que compra la reserva es fatiga más barata y menos riesgo técnico, así que solo se paga donde ese coste es real. Que el objetivo varíe por tipo de ejercicio sigue siendo una elección nuestra: no hay ningún estudio que asigne distintos RIR a distintas categorías, y el subgrupo meta-analítico más pertinente sale nulo.",
         evidence: "HEURISTIC",
         citations: ["remmert2023", "acsm2026"],
+      },
+      {
+        id: "rir-por-variante",
+        title: "El objetivo depende del aparato, no solo del movimiento",
+        summary:
+          "La sentadilla con barra libre pide 2 de reserva; la misma sentadilla en multipower, 1. Es el mismo patrón de movimiento y no se acercan igual al fallo.",
+        detail:
+          "El patrón describe qué músculos trabajan y cuánto cuesta recuperarse; no dice nada sobre qué pasa si fallas, que es justo lo que decide cuánta reserva merece la pena. Sobre la carga libre y sin apoyo se suma una repetición de reserva por tres motivos: fallar tiene consecuencia real (una banca con barra sin pines te deja debajo del peso), el RIR que reportas es menos fiable en multiarticulares libres que en máquinas y aislamientos, y cerca del fallo el patrón libre se degrada por técnica antes que por músculo. Sobre lo guiado —máquina, multipower, polea— se resta una. Con dos topes: un compuesto nunca baja de 1, porque llevar todas las series de un multiarticular al fallo es caro se haga donde se haga; y nunca sube de 2, que es la reserva máxima que prescribimos. «Máquina» no significa «al fallo».",
+        evidence: "REASONABLE",
+        citations: ["halperin2022", "refalo2023", "remmert2023"],
       },
     ],
   },
@@ -547,9 +557,10 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
   no se resetea al mínimo del rango.
 - Esfuerzo compatible = RIR ≥ objetivo − 1 (banda por el error de medida del RIR).
   Llegar al fallo con objetivo ≥2 frena la subida la primera vez; a la segunda sube igual.
-- Objetivos de RIR por rol: compuesto pesado 2 (sentadilla, peso muerto rumano, remo con
-  barra), resto de compuestos 1, aislamientos 0. Con objetivo 1 ó 0 el fallo es lo prescrito
-  y NO frena nada.
+- Objetivos de RIR por rol Y por variante: base compuesto pesado 2, resto de compuestos 1,
+  aislamientos 0; ±1 según la estabilidad de la variante (carga libre sin apoyo +1, guiada
+  −1), acotado a 1..2 en compuestos y 0..1 en aislamientos. Con objetivo 1 ó 0 el fallo es
+  lo prescrito y NO frena nada.
 - DECREASE_LOAD exige DOS exposiciones comparables con la mediana por debajo del
   mínimo del rango (o cuatro ignorando el RIR). Nunca por una sesión mala.
 - El RIR ausente no se imputa: baja la confianza y bloquea el salto doble.

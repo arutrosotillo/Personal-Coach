@@ -298,7 +298,6 @@ model Exercise {
 
   variants      ExerciseVariant[]
   contributions ExerciseMuscleContribution[]
-  notes         ExerciseNote[]
 
   @@index([movementPattern])
   @@index([profileId])
@@ -312,23 +311,33 @@ model Exercise {
 /// escribe, y por eso vive en su propia tabla con `profileId` en vez de en una
 /// columna de `Exercise`.
 ///
-/// Cuelga del EJERCICIO (el movimiento), no de la variante: la señal es de
-/// cómo ejecutas el movimiento, así que sigue apareciendo si pasas de barra a
-/// mancuernas o si sustituyes en sesión dentro del mismo ejercicio. Una nota
-/// por persona y ejercicio: se edita en sitio, no acumula historial —para lo
-/// que pasó un día concreto ya están las notas de la sesión—.
+/// Cuelga de la VARIANTE, no del ejercicio. Colgaba del ejercicio con el
+/// argumento de que la señal es del movimiento y debía sobrevivir al cambio de
+/// barra a mancuernas. Los datos dijeron lo contrario: las notas que la gente
+/// escribe de verdad son del MONTAJE —"con el bloque azul en la espalda", "el
+/// peso es por lado", "asiento alto para que sea remo bajo", "2 discos son
+/// 40 kg"—, y esas no viajan entre variantes: son falsas o absurdas en la
+/// siguiente. Con la nota en el ejercicio, apuntarla en el press inclinado en
+/// máquina la hacía aparecer en el press inclinado con mancuernas.
+///
+/// Es además la clave que ya usa TODO lo demás: historial, e1RM, progresión,
+/// mesetas y volumen efectivo cuelgan de `exerciseVariantId`. La nota era el
+/// único dato del dominio con una identidad de ejercicio distinta.
+///
+/// Una nota por persona y variante: se edita en sitio, no acumula historial
+/// —para lo que pasó un día concreto ya están las notas de la sesión—.
 model ExerciseNote {
-  id         String      @id @default(cuid())
-  profileId  String
-  profile    UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-  exerciseId String
-  exercise   Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-  text       String
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           UserProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  exerciseVariantId String
+  exerciseVariant   ExerciseVariant @relation(fields: [exerciseVariantId], references: [id], onDelete: Cascade)
+  text              String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  @@unique([profileId, exerciseId])
-  @@index([exerciseId])
+  @@unique([profileId, exerciseVariantId])
+  @@index([exerciseVariantId])
 }
 
 model ExerciseMuscleContribution {
@@ -350,6 +359,12 @@ model ExerciseVariant {
   exercise           Exercise  @relation(fields: [exerciseId], references: [id])
   name               String // "Press inclinado — barra"
   equipment          String // enum Equipment
+  /// enum ExerciseStability: FREE | SUPPORTED | GUIDED. `null` = la que predice
+  /// el material (`STABILITY_BY_EQUIPMENT`), que es el caso normal; se declara
+  /// solo en las excepciones (el hip thrust con barra es carga libre y sin
+  /// embargo se falla sentándose). Decide el RIR objetivo por defecto junto al
+  /// rol y la fatiga sistémica: ver `defaultTargetRir`.
+  stability          String?
   loadStepKg         Float     @default(2.5) // incremento mínimo real de carga
   repRangeMin        Int       @default(8)
   repRangeMax        Int       @default(12)
@@ -362,6 +377,7 @@ model ExerciseVariant {
   templateExercises TemplateExercise[]
   workoutExercises  WorkoutExercise[]
   setLogs           SetLog[]
+  notes             ExerciseNote[]
 
   @@unique([exerciseId, name])
   @@index([equipment])

@@ -11,7 +11,6 @@ import {
   SESSION_OVERHEAD_MIN,
   SESSION_SET_CAP,
   SETS_PER_EXERCISE,
-  TARGET_RIR,
   TIME_COST_MIN,
   WARN_FRACTION,
 } from "@/core/config/training-config";
@@ -21,6 +20,7 @@ import {
 } from "@/core/catalog/muscle-groups";
 import type { ExperienceLevel, MuscleGroupCode } from "@/core/enums";
 import { splitForDays } from "@/core/program/splits";
+import { defaultTargetRir } from "@/core/training/prescription-defaults";
 import type {
   CatalogExercise,
   CatalogVariant,
@@ -312,7 +312,15 @@ export function generateInitialProgram(
         sets,
         repRangeMin: pick.variant.repRangeMin,
         repRangeMax: pick.variant.repRangeMax,
-        targetRir: TARGET_RIR[kind],
+        // El RIR sale de la VARIANTE elegida, no solo del ejercicio: el press
+        // inclinado en máquina y con barra son el mismo patrón y no se acercan
+        // igual al fallo (`defaultTargetRir`).
+        targetRir: defaultTargetRir(
+          pick.exercise.movementPattern,
+          pick.exercise.systemicFatigue,
+          pick.variant.stability,
+          pick.variant.equipment,
+        ),
         restSeconds: pick.variant.defaultRestSeconds,
       });
 
