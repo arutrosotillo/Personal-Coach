@@ -148,6 +148,12 @@ export interface ExecutionExercise {
   ordinal: number;
   exerciseId: string;
   exerciseName: string;
+  /**
+   * Cómo se hace el ejercicio, del catálogo COMPARTIDO. No confundir con
+   * `note`: esto lo lee todo el mundo y lo escribe el catálogo; la nota es
+   * privada y la escribe quien entrena.
+   */
+  instructions: string | null;
   variantId: string;
   /**
    * Nota personal de ESTE perfil sobre ESTA VARIANTE; `null` si no hay. Cuelga
@@ -248,6 +254,7 @@ export async function getExecutionSession(
     ordinal: we.ordinal,
     exerciseId: we.exerciseVariant.exerciseId,
     exerciseName: we.exerciseVariant.exercise.name,
+    instructions: we.exerciseVariant.exercise.instructions,
     variantId: we.exerciseVariantId,
     note: we.exerciseVariant.notes[0]?.text ?? null,
     variantName: we.exerciseVariant.name,
@@ -340,6 +347,7 @@ export async function previewTemplateSession(
       ordinal: te.ordinal,
       exerciseId: te.exerciseVariant.exerciseId,
       exerciseName: te.exerciseVariant.exercise.name,
+      instructions: te.exerciseVariant.exercise.instructions,
       variantId: te.exerciseVariantId,
       note: te.exerciseVariant.notes[0]?.text ?? null,
       variantName: te.exerciseVariant.name,

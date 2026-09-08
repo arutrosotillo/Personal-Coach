@@ -84,6 +84,7 @@ export function SessionRunner({
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [subOpen, setSubOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [howToOpen, setHowToOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const variants = useMemo(() => variantMap(exercises), [exercises]);
@@ -107,7 +108,14 @@ export function SessionRunner({
     setRows(state.rows);
     setNotes(state.notes);
     setCurrent(state.current);
-    setRestEndsAt(state.restEndsAt);
+    // Un descanso que venció mientras la app estaba cerrada ya no es un
+    // descanso: restaurarlo dejaba pegado abajo un "¡Descanso!" que no contaba
+    // nada y que había que cerrar a mano.
+    setRestEndsAt(
+      state.restEndsAt !== null && state.restEndsAt > nowMs()
+        ? state.restEndsAt
+        : null,
+    );
     if (state.recovered) {
       // Recargar en mitad de un entrenamiento y ver tus series ahí es lo
       // esperable; enterarte de que además siguen pendientes de enviar, no.
@@ -151,7 +159,10 @@ export function SessionRunner({
     async (text: string): Promise<string | null> => {
       const clean = text.trim().slice(0, EXERCISE_NOTE_MAX_LENGTH);
       const variantId = exercises[current].variantId;
-      setNotes((prev) => ({ ...prev, [variantId]: clean === "" ? null : clean }));
+      setNotes((prev) => ({
+        ...prev,
+        [variantId]: clean === "" ? null : clean,
+      }));
       sync.queueNote({ exerciseVariantId: variantId, text: clean });
       return clean === "" ? null : clean;
     },
@@ -420,13 +431,28 @@ export function SessionRunner({
                 {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps ·
                 objetivo {ex.targetRir} RIR
               </p>
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="text-muted-foreground mt-1 min-h-9 text-xs underline underline-offset-2"
-              >
-                Ver historial
-              </button>
+              <div className="mt-1 flex gap-4">
+                {/* El catálogo ya explicaba cómo se hace cada ejercicio, pero
+                    solo en el banco de ejercicios: para leerlo había que salir
+                    del entrenamiento. Quien más lo necesita es justo quien
+                    tiene la máquina delante y no la ha tocado nunca. */}
+                {ex.instructions ? (
+                  <button
+                    type="button"
+                    onClick={() => setHowToOpen(true)}
+                    className="text-muted-foreground min-h-9 text-xs underline underline-offset-2"
+                  >
+                    ¿Cómo se hace?
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(true)}
+                  className="text-muted-foreground min-h-9 text-xs underline underline-offset-2"
+                >
+                  Ver historial
+                </button>
+              </div>
             </div>
             {suggestion ? (
               <SuggestionBadge
@@ -576,6 +602,13 @@ export function SessionRunner({
         onPick={substitute}
       />
 
+      <HowToSheet
+        open={howToOpen}
+        onOpenChange={setHowToOpen}
+        title={`${ex.exerciseName} — ${ex.variantName}`}
+        instructions={ex.instructions}
+      />
+
       <ExerciseHistorySheet
         open={historyOpen}
         onOpenChange={setHistoryOpen}
@@ -667,6 +700,38 @@ function SuggestionBadge({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Cómo se hace el ejercicio, tal cual lo escribe el catálogo. Es texto
+ * estático que ya viaja con la sesión: no pide nada al servidor, así que se
+ * puede leer sin cobertura como todo lo demás del cuaderno. */
+function HowToSheet({
+  open,
+  onOpenChange,
+  title,
+  instructions,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  title: string;
+  instructions: string | null;
+}) {
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent>
+        <DrawerHeader>
+          <DrawerTitle>{title}</DrawerTitle>
+        </DrawerHeader>
+        <div className="overflow-y-auto px-4 pb-8 text-sm">
+          {/* El catálogo separa montaje, ejecución y error típico con saltos de
+              línea; sin `whitespace-pre-line` se leería como un párrafo único. */}
+          <p className="text-muted-foreground whitespace-pre-line">
+            {instructions}
+          </p>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }
 

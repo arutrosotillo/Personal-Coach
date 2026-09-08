@@ -170,7 +170,9 @@ export function ExerciseLibrary({
               {open ? (
                 <div className="border-border space-y-3 border-t px-4 py-3 text-sm">
                   {e.instructions ? (
-                    <p className="text-muted-foreground">{e.instructions}</p>
+                    <p className="text-muted-foreground whitespace-pre-line">
+                      {e.instructions}
+                    </p>
                   ) : null}
                   <div>
                     <p className="text-muted-foreground mb-1 text-xs font-medium">

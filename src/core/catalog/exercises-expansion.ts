@@ -242,7 +242,11 @@ export const EXPANSION: ExerciseSeed[] = [
     variants: [
       // Un extremo anclado y agarre unilateral: fallar es soltar. La reserva
       // de un remo con barra libre aquí sobra.
-      barra({ name: "Barra en landmine", reps: [8, 12], stability: "SUPPORTED" }),
+      barra({
+        name: "Barra en landmine",
+        reps: [8, 12],
+        stability: "SUPPORTED",
+      }),
     ],
   }),
 
@@ -258,7 +262,9 @@ export const EXPANSION: ExerciseSeed[] = [
       ["DELT_LATERAL", 0.5],
       ["TRICEPS", 0.5],
     ],
-    variants: [mancuernas({ name: "Mancuernas sentado", contra: ["SHOULDER"] })],
+    variants: [
+      mancuernas({ name: "Mancuernas sentado", contra: ["SHOULDER"] }),
+    ],
   }),
   ex({
     name: "Elevación frontal",
@@ -276,7 +282,9 @@ export const EXPANSION: ExerciseSeed[] = [
     pattern: "ISOLATION",
     fatigue: 1,
     instructions:
-      "Codos pegados al torso. Supina al subir y baja controlando la última parte.",
+      "Montaje — De pie, pies a la anchura de la cadera, una mancuerna en cada mano y los brazos estirados a los lados.\n" +
+      "Ejecución — Sube girando la muñeca hasta que la palma mire hacia arriba, con el codo pegado al costado y quieto. Baja despacio hasta estirar el brazo del todo.\n" +
+      "Error típico — Balancear el cuerpo o adelantar el codo para subir más. Si necesitas impulso, la mancuerna pesa demasiado.",
     primary: "BICEPS",
     secondary: [["ANTEBRAZO", 0.25]],
     variants: [
@@ -430,7 +438,9 @@ export const EXPANSION: ExerciseSeed[] = [
     pattern: "LUNGE",
     fatigue: 2,
     instructions:
-      "Cajón a la altura de la rodilla. Sube sin impulso del pie de abajo.",
+      "Montaje — Cajón a la altura de la rodilla, o algo más bajo al principio. Una mancuerna en cada mano con los brazos relajados a los lados. Apoya el pie entero en el cajón, no solo la punta.\n" +
+      "Ejecución — Sube empujando con el talón de la pierna de arriba, sin tomar impulso con el pie del suelo, hasta estirar la cadera. Baja controlando con esa misma pierna. Termina todas las repeticiones de un lado y cambia.\n" +
+      "Error típico — Dar un saltito con la pierna de abajo. Si no puedes subir sin impulso, baja el cajón antes que el peso. Cuanto más alto el cajón, más glúteo.",
     primary: "CUADRICEPS",
     secondary: [["GLUTEO", 0.75]],
     variants: [mancuernas(), corporal({ reps: [10, 20] })],
@@ -464,7 +474,9 @@ export const EXPANSION: ExerciseSeed[] = [
       ["CUADRICEPS", 0.5],
       ["ESPALDA_ALTA", 0.25],
     ],
-    variants: [barra({ reps: [3, 8], rest: 210, contra: ["LOWER_BACK", "HIP"] })],
+    variants: [
+      barra({ reps: [3, 8], rest: 210, contra: ["LOWER_BACK", "HIP"] }),
+    ],
   }),
   ex({
     name: "Peso muerto con barra hexagonal",
@@ -555,7 +567,12 @@ export const EXPANSION: ExerciseSeed[] = [
     variants: [
       // Misma excepción que el hip thrust: carga libre, pero apoyado y con
       // salida trivial. Fallar es bajar la cadera al suelo.
-      barra({ name: "Barra", reps: [10, 15], rest: 120, stability: "SUPPORTED" }),
+      barra({
+        name: "Barra",
+        reps: [10, 15],
+        rest: 120,
+        stability: "SUPPORTED",
+      }),
       corporal({ reps: [12, 25] }),
     ],
   }),
@@ -611,7 +628,9 @@ export const EXPANSION: ExerciseSeed[] = [
     pattern: "ISOLATION",
     fatigue: 1,
     instructions:
-      "Sentado o de pie. Abre sin girar la pelvis y controla la vuelta.",
+      "Montaje — En máquina: sentada, espalda apoyada y las almohadillas por fuera de los muslos; inclinar el tronco un poco hacia delante lleva más trabajo al glúteo. De pie con polea o banda: la tobillera en la pierna de fuera y apóyate con la mano libre.\n" +
+      "Ejecución — Abre hasta el final del recorrido y aprieta un segundo. Vuelve despacio, sin dejar que el peso caiga de golpe.\n" +
+      "Error típico — Girar la pelvis o echar el cuerpo hacia el lado para llegar más lejos. El tronco no se mueve: solo la cadera.",
     primary: "GLUTEO",
     variants: [
       maquina(),
@@ -675,7 +694,9 @@ export const EXPANSION: ExerciseSeed[] = [
     pattern: "CORE",
     fatigue: 1,
     instructions:
-      "De lado a la polea. Extiende los brazos sin dejar que el tronco rote.",
+      "Montaje — De pie, de lado a la polea, con el agarre a la altura del pecho y las dos manos. Sepárate hasta que el cable tenga tensión. Pies a la anchura de los hombros y rodillas un poco flexionadas.\n" +
+      "Ejecución — Extiende los brazos hacia delante y aguanta dos segundos sin dejar que el tronco gire hacia la polea. Vuelve al pecho con control. Haz todas las repeticiones de un lado y cambia.\n" +
+      "Error típico — Poner tanto peso que el tronco acaba girando. Aquí no se trata de mover peso, sino de que no te muevan: baja carga hasta poder quedarte quieta.",
     primary: "CORE",
     variants: [polea(), banda()],
   }),
@@ -715,7 +736,9 @@ export const EXPANSION: ExerciseSeed[] = [
       "Carga en UNA mano. Camina sin inclinarte hacia el lado libre.",
     primary: "CORE",
     secondary: [["ANTEBRAZO", 0.75]],
-    variants: [mancuernas({ name: "Mancuerna unilateral", reps: [1, 3], rest: 90 })],
+    variants: [
+      mancuernas({ name: "Mancuerna unilateral", reps: [1, 3], rest: 90 }),
+    ],
   }),
 
   // ═══════════════════════════════════════════════════ ANTEBRAZO ══════════
@@ -789,11 +812,7 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     maquina({ name: "Máquina de discos" }),
   ],
   "Remo con mancuerna": [maquina({ name: "Máquina unilateral con apoyo" })],
-  Encogimientos: [
-    multipower(),
-    maquina(),
-    polea({ name: "Polea baja" }),
-  ],
+  Encogimientos: [multipower(), maquina(), polea({ name: "Polea baja" })],
   "Press militar": [
     multipower({ contra: ["SHOULDER"] }),
     mancuernas({ name: "Mancuernas de pie", contra: ["SHOULDER"] }),
@@ -811,10 +830,7 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     mancuernas({ name: "Mancuerna unilateral" }),
   ],
   "Curl martillo": [mancuernas({ name: "Cruzado al pecho" })],
-  "Curl inverso": [
-    polea({ name: "Polea con barra" }),
-    mancuernas(),
-  ],
+  "Curl inverso": [polea({ name: "Polea con barra" }), mancuernas()],
   // Skull crusher = press francés. Las variantes son de material, no otro
   // ejercicio.
   "Press francés": [
@@ -835,10 +851,7 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     maquina({ name: "Prensa vertical" }),
   ],
   "Extensión de cuádriceps": [maquina({ name: "Máquina unilateral" })],
-  "Zancada búlgara": [
-    multipower(),
-    barra(),
-  ],
+  "Zancada búlgara": [multipower(), barra()],
   "Hip thrust": [
     multipower(),
     mancuernas({ name: "Mancuerna sobre la cadera" }),

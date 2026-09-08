@@ -7,10 +7,7 @@ import type {
   MuscleRole,
 } from "@/core/enums";
 import { withExtraVariants } from "@/core/catalog/exercise-builders";
-import {
-  EXPANSION,
-  EXTRA_VARIANTS,
-} from "@/core/catalog/exercises-expansion";
+import { EXPANSION, EXTRA_VARIANTS } from "@/core/catalog/exercises-expansion";
 
 /**
  * Catálogo seed de ejercicios (~45 ejercicios, ~60 variantes).
@@ -169,7 +166,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "HORIZONTAL_PUSH",
     systemicFatigue: 2,
     instructions:
-      "Escápulas retraídas, pies firmes. Baja al pecho medio y empuja recto.",
+      "Montaje — En máquina, ajusta el asiento para que los agarres queden a la altura media del pecho, no del cuello. Espalda y cabeza apoyadas y pies planos en el suelo.\n" +
+      "Ejecución — Empuja hasta casi estirar los brazos, sin bloquear los codos de golpe. Vuelve controlando unos dos segundos, hasta notar que el pecho se estira.\n" +
+      "Error típico — Subir los hombros hacia las orejas al empujar. Mantén los omóplatos apoyados y hacia abajo toda la serie.",
     contributions: [
       c("PECHO_MEDIO_INFERIOR", "PRIMARY", 1.0),
       c("PECHO_SUPERIOR", "SECONDARY", 0.5),
@@ -499,7 +498,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "VERTICAL_PULL",
     systemicFatigue: 2,
     instructions:
-      "Lleva la barra a la clavícula con el torso casi vertical. Estira del todo arriba.",
+      "Montaje — Ajusta el rodillo para que apriete los muslos y no te levantes del asiento. Agarre algo más ancho que los hombros. Torso casi vertical, con una inclinación mínima hacia atrás que no cambia durante la serie.\n" +
+      "Ejecución — Tira llevando los codos hacia abajo y atrás, hasta la clavícula. Aprieta un segundo y sube dejando que los brazos se estiren del todo, notando cómo tira la espalda arriba.\n" +
+      "Error típico — Tirar con los brazos y echarse hacia atrás para ayudarse. Piensa en bajar los codos, no en bajar la barra.",
     contributions: [
       c("DORSAL", "PRIMARY", 1.0),
       c("BICEPS", "SECONDARY", 0.5),
@@ -914,7 +915,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "ISOLATION",
     systemicFatigue: 1,
     instructions:
-      "Codos fijos al torso. Extiende del todo y controla la vuelta.",
+      "Montaje — De pie frente a la polea alta, un paso atrás y el tronco ligeramente inclinado. Codos pegados al costado y fijos ahí toda la serie.\n" +
+      "Ejecución — Estira los brazos hacia abajo hasta el final y aprieta un segundo; con cuerda, separa las manos al llegar abajo. Vuelve dejando que el antebrazo suba sin mover el codo.\n" +
+      "Error típico — Que los codos se abran o se vayan hacia delante al final. Lo único que se mueve es el antebrazo.",
     contributions: [c("TRICEPS", "PRIMARY", 1.0)],
     variants: [
       {
@@ -1084,7 +1087,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "SQUAT",
     systemicFatigue: 2,
     instructions:
-      "Pies a la anchura de cadera. Baja profundo sin despegar la lumbar del respaldo.",
+      "Montaje — Espalda y cadera pegadas al respaldo. Pies en la plataforma a la anchura de la cadera; cuanto más altos y separados los pongas, más glúteo y menos cuádriceps.\n" +
+      "Ejecución — Baja doblando las rodillas hasta que el muslo se acerque al pecho, o hasta donde la cadera siga pegada al respaldo. Empuja con todo el pie y no bloquees las rodillas arriba.\n" +
+      "Error típico — Bajar tanto que la cadera se despegue y la lumbar se redondee. Ese punto es tu tope: baja un dedo menos.",
     contributions: [
       c("CUADRICEPS", "PRIMARY", 1.0),
       c("GLUTEO", "SECONDARY", 0.5),
@@ -1194,7 +1199,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "HINGE",
     systemicFatigue: 3,
     instructions:
-      "Bisagra de cadera, espalda neutra. Baja hasta estirar isquios; sube apretando glúteo.",
+      "Montaje — De pie, pies a la anchura de la cadera, el peso pegado a los muslos. Rodillas un poco flexionadas y FIJAS: no se doblan más durante la serie.\n" +
+      "Ejecución — Lleva la cadera hacia atrás, como si empujaras una puerta con el culo, dejando que el peso baje rozando la pierna. Para cuando notes tirar detrás del muslo, normalmente por debajo de la rodilla. Sube extendiendo la cadera y apretando el glúteo.\n" +
+      "Error típico — Bajar doblando la espalda en vez de echando la cadera atrás. La espalda va recta todo el rato: el movimiento es de cadera, no de columna.",
     contributions: [
       c("ISQUIOS", "PRIMARY", 1.0),
       c("GLUTEO", "SECONDARY", 0.75),
@@ -1247,7 +1254,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "ISOLATION",
     systemicFatigue: 1,
     instructions:
-      "Mayor estiramiento que tumbado. Flexiona completo con pausa.",
+      "Montaje — Sentada con la espalda apoyada, el rodillo de arriba por encima de las rodillas y el de abajo sobre el tobillo. Ajusta el respaldo para que la rodilla coincida con el eje de giro de la máquina.\n" +
+      "Ejecución — Dobla las rodillas hasta el final del recorrido y aprieta un segundo. Vuelve despacio dejando que la pierna se estire del todo.\n" +
+      "Error típico — Levantar la cadera del asiento para llegar más lejos. Si te pasa, baja peso.",
     contributions: [c("ISQUIOS", "PRIMARY", 1.0)],
     variants: [
       {
@@ -1269,7 +1278,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "HINGE",
     systemicFatigue: 2,
     instructions:
-      "Espalda alta apoyada en banco. Extiende cadera y aprieta arriba 1 s sin hiperextender.",
+      "Montaje — Espalda alta apoyada en el borde del banco (o en el respaldo de la máquina), justo por debajo de los omóplatos. La almohadilla o la barra van sobre el hueso de la cadera, nunca sobre el abdomen. Pies planos a la anchura de la cadera, colocados para que arriba las espinillas queden verticales.\n" +
+      "Ejecución — Empuja con los talones y sube hasta formar una línea recta de rodillas a hombros. Aprieta el glúteo un segundo arriba. Baja controlando dos segundos, sin soltar del todo la tensión abajo.\n" +
+      "Error típico — Subir arqueando la lumbar en vez de extendiendo la cadera. Si arriba notas tirón en la espalda baja, mete la pelvis hacia dentro y sube un poco menos.",
     contributions: [
       c("GLUTEO", "PRIMARY", 1.0),
       c("ISQUIOS", "SECONDARY", 0.5),
@@ -1357,7 +1368,9 @@ const BASE_EXERCISES: ExerciseSeed[] = [
     movementPattern: "CORE",
     systemicFatigue: 1,
     instructions:
-      "De rodillas, flexiona el tronco llevando codos a muslos. El abdomen tira, no los brazos.",
+      "Montaje — De rodillas y de espaldas a la polea alta, con la cuerda sujeta a los lados de la cara. La cadera queda fija: ni se sienta ni se mueve durante la serie.\n" +
+      "Ejecución — Enrolla la espalda llevando las costillas hacia la pelvis, como si te hicieras una bola. Aprieta abajo un segundo y sube despacio.\n" +
+      "Error típico — Bajar doblando la cadera con la espalda recta. Eso lo hace la cadera, no el abdomen: la espalda tiene que redondearse.",
     contributions: [c("CORE", "PRIMARY", 1.0)],
     variants: [
       {
