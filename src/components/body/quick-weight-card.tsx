@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatNumber } from "@/lib/body-labels";
+import { parseDecimalInput } from "@/lib/decimal-input";
 import { saveQuickWeightAction } from "@/server/actions/body.action";
 
 /**
@@ -43,8 +44,8 @@ export function QuickWeightCard({
   const [pending, startTransition] = useTransition();
 
   function save() {
-    const weightKg = Number(draft.replace(",", "."));
-    if (!Number.isFinite(weightKg)) {
+    const weightKg = parseDecimalInput(draft);
+    if (weightKg === null) {
       toast.error("Escribe tu peso en kg.");
       return;
     }

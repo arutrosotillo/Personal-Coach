@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatNumber, formatShortDate } from "@/lib/body-labels";
+import { parseDecimalInput } from "@/lib/decimal-input";
 import {
   deleteBodyMeasurementAction,
   saveBodyMeasurementAction,
@@ -43,13 +44,6 @@ const RELIABILITY_LABEL: Record<BodyFatReliability, string> = {
 
 function toInput(value: number | null): string {
   return value === null ? "" : String(value).replace(".", ",");
-}
-
-function toNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-  const parsed = Number(trimmed.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** Fila vacía de hoy, para poder anotar cintura o % graso sin salir de aquí. */
@@ -258,14 +252,14 @@ function EditRow({
   );
   const [pending, startTransition] = useTransition();
   const fecha = formatShortDate(row.localDate, todayLocalDate);
-  const fatValue = toNumber(fat);
+  const fatValue = parseDecimalInput(fat);
 
   function save() {
     startTransition(async () => {
       const result = await saveBodyMeasurementAction({
         localDate: row.localDate,
-        weightKg: toNumber(weight),
-        waistCm: toNumber(waist),
+        weightKg: parseDecimalInput(weight),
+        waistCm: parseDecimalInput(waist),
         bodyFatPct: fatValue,
         // La procedencia solo viaja si hay porcentaje: el schema rechaza una
         // sin la otra, en los dos sentidos.

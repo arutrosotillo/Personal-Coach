@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatNumber, formatShortDate } from "@/lib/body-labels";
+import { parseDecimalInput } from "@/lib/decimal-input";
 import { STRATEGY_DESCRIPTIONS, STRATEGY_LABELS } from "@/lib/labels";
 import {
   submitCheckInAction,
@@ -33,13 +34,6 @@ const RELIABILITY_LABEL: Record<BodyFatReliability, string> = {
   MEASURED: "DEXA o plicómetro",
   ESTIMATED: "báscula o estimación",
 };
-
-function toNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === "") return null;
-  const parsed = Number(trimmed.replace(",", "."));
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 export interface CheckInGoal {
   strategy: GoalStrategy;
@@ -128,7 +122,11 @@ function CheckInForm({
   const [showGoal, setShowGoal] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const tomas = [toNumber(w1), toNumber(w2), toNumber(w3)];
+  const tomas = [
+    parseDecimalInput(w1),
+    parseDecimalInput(w2),
+    parseDecimalInput(w3),
+  ];
   const completas = tomas.filter((t): t is number => t !== null);
   const media =
     completas.length === 3
@@ -143,12 +141,13 @@ function CheckInForm({
     startTransition(async () => {
       const result = await submitCheckInAction({
         localDate: todayLocalDate,
-        weightKg: toNumber(weight),
+        weightKg: parseDecimalInput(weight),
         waist1: tomas[0],
         waist2: tomas[1],
         waist3: tomas[2],
-        bodyFatPct: toNumber(fat),
-        bodyFatReliability: toNumber(fat) === null ? null : reliability,
+        bodyFatPct: parseDecimalInput(fat),
+        bodyFatReliability:
+          parseDecimalInput(fat) === null ? null : reliability,
       });
       if (!result.ok) {
         toast.error(result.error ?? "No se pudo guardar el check-in.");
@@ -371,8 +370,8 @@ export function GoalReview({
     startTransition(async () => {
       const result = await updateGoalAction({
         strategy,
-        weeklyRatePct: toNumber(rate) ?? 0,
-        targetWeightKg: toNumber(target),
+        weeklyRatePct: parseDecimalInput(rate) ?? 0,
+        targetWeightKg: parseDecimalInput(target),
       });
       if (!result.ok) {
         toast.error(result.error ?? "No se pudo guardar el objetivo.");

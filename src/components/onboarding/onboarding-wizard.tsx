@@ -7,6 +7,7 @@ import { useForm, type FieldPath } from "react-hook-form";
 import { toast } from "sonner";
 
 import { ChipGroup } from "@/components/onboarding/chip-group";
+import { parseDecimalInput } from "@/lib/decimal-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -239,17 +240,20 @@ export function OnboardingWizard({
     });
   }
 
-  const numberField = (
-    name: FieldPath<OnboardingInput>,
-    opts?: { step?: string },
-  ) => ({
+  /**
+   * Campo numérico de texto, no `type="number"`.
+   *
+   * El teclado del iPhone en es-ES imprime una COMA y un `type="number"` la
+   * rechaza en silencio: el campo se queda vacío y el dato se pierde sin que
+   * nadie avise. Aquí la coma vale tanto como el punto.
+   */
+  const numberField = (name: FieldPath<OnboardingInput>) => ({
     ...form.register(name, {
       setValueAs: (v: unknown) =>
-        v === "" || v === null ? undefined : Number(v),
+        typeof v === "string" ? (parseDecimalInput(v) ?? undefined) : undefined,
     }),
-    type: "number" as const,
+    type: "text" as const,
     inputMode: "decimal" as const,
-    step: opts?.step ?? "any",
   });
 
   const error = (name: FieldPath<OnboardingInput>) => {
@@ -346,7 +350,7 @@ export function OnboardingWizard({
                   <Input
                     id="weightKg"
                     placeholder="84,0"
-                    {...numberField("weightKg", { step: "0.1" })}
+                    {...numberField("weightKg")}
                   />
                   {error("weightKg")}
                 </div>
@@ -359,7 +363,7 @@ export function OnboardingWizard({
                 <Input
                   id="waistCm"
                   placeholder="88"
-                  {...numberField("waistCm", { step: "0.5" })}
+                  {...numberField("waistCm")}
                 />
                 <p className="text-muted-foreground mt-1 text-xs">
                   Es el mejor indicador barato de pérdida de grasa. Puedes
@@ -375,7 +379,7 @@ export function OnboardingWizard({
                 <Input
                   id="bodyFatPct"
                   placeholder="15"
-                  {...numberField("bodyFatPct", { step: "0.5" })}
+                  {...numberField("bodyFatPct")}
                 />
                 <label className="mt-2 flex items-start gap-2 text-xs">
                   <input
@@ -406,7 +410,7 @@ export function OnboardingWizard({
                 <Input
                   id="trainingYears"
                   placeholder="3"
-                  {...numberField("trainingYears", { step: "0.5" })}
+                  {...numberField("trainingYears")}
                 />
                 {error("trainingYears")}
               </div>
@@ -523,7 +527,7 @@ export function OnboardingWizard({
                 <Input
                   id="targetWeightKg"
                   placeholder="78"
-                  {...numberField("targetWeightKg", { step: "0.5" })}
+                  {...numberField("targetWeightKg")}
                 />
                 {error("targetWeightKg")}
               </div>
@@ -632,7 +636,7 @@ export function OnboardingWizard({
                 <Input
                   id="dailySteps"
                   placeholder="6000"
-                  {...numberField("dailySteps", { step: "500" })}
+                  {...numberField("dailySteps")}
                 />
                 {error("dailySteps")}
               </div>
@@ -659,7 +663,7 @@ export function OnboardingWizard({
                   <Input
                     id="sleepHoursTypical"
                     placeholder="7,5"
-                    {...numberField("sleepHoursTypical", { step: "0.5" })}
+                    {...numberField("sleepHoursTypical")}
                   />
                   {error("sleepHoursTypical")}
                 </div>

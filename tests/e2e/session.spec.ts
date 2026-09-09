@@ -74,11 +74,15 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
   await expect(page).toHaveURL(/\/train\/session\//);
   await expect(page.getByText(/Ejercicio 1\//)).toBeVisible();
 
-  // Registrar la primera serie: introducir peso y completar
-  await page
+  // Registrar la primera serie: introducir peso y completar.
+  // Antes se teclea una coma: el teclado decimal del iPhone en es-ES no ofrece
+  // punto, y "62,5" tiene que entrar como 62,5 kg en vez de obligar a redondear.
+  const peso = page
     .getByRole("textbox", { name: "Peso (kg)", exact: true })
-    .first()
-    .fill("40");
+    .first();
+  await peso.fill("62,5");
+  await expect(peso).toHaveValue("62.5");
+  await peso.fill("40");
   await page.getByRole("button", { name: "Completar" }).first().click();
   // Queda marcada como hecha y el contador avanza
   await expect(

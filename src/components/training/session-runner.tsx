@@ -47,6 +47,7 @@ import type { ExerciseHistorySummary } from "@/server/services/progression.servi
 import type { ProgressionSuggestion } from "@/core/training/progression";
 import { CoachPanel } from "@/components/coach/coach-panel";
 import { ExerciseNoteEditor } from "@/components/training/exercise-note-editor";
+import { parseDecimalInput, sanitizeDecimalInput } from "@/lib/decimal-input";
 import { cn } from "@/lib/utils";
 
 export interface SubstitutionExercise {
@@ -199,8 +200,9 @@ export function SessionRunner({
    * y la cola se encarga de que llegue, hoy o dentro de media hora.
    */
   function persistSet(idx: number, row: RowState) {
-    const weightKg = row.weight === "" ? 0 : Number(row.weight);
-    if (Number.isNaN(weightKg)) {
+    const weightKg =
+      row.weight.trim() === "" ? 0 : parseDecimalInput(row.weight);
+    if (weightKg === null) {
       toast.error("Peso no válido");
       return false;
     }
@@ -883,7 +885,7 @@ function SetRow({
   onComplete: () => void;
   onRepeat: () => void;
 }) {
-  const weightNum = row.weight === "" ? 0 : Number(row.weight);
+  const weightNum = parseDecimalInput(row.weight) ?? 0;
   const ghost = lastSet
     ? `${lastSet.weightKg}×${lastSet.reps}${lastSet.rir != null ? `@${lastSet.rir}` : ""}`
     : null;
@@ -940,7 +942,7 @@ function SetRow({
           onDec={() => onChange({ reps: Math.max(0, row.reps - 1) })}
           onInc={() => onChange({ reps: row.reps + 1 })}
           onInput={(v) =>
-            onChange({ reps: v === "" ? 0 : Math.round(Number(v)) })
+            onChange({ reps: Math.round(parseDecimalInput(v) ?? 0) })
           }
         />
       </div>
@@ -1027,7 +1029,15 @@ function Stepper({
         <input
           inputMode={decimal ? "decimal" : "numeric"}
           value={value}
-          onChange={(e) => onInput(e.target.value)}
+          // El teclado numérico del iPhone en es-ES da coma, no punto: se
+          // normaliza aquí para que "62,5" entre como 62,5 y no como nada.
+          onChange={(e) =>
+            onInput(
+              decimal
+                ? sanitizeDecimalInput(e.target.value)
+                : e.target.value.replace(/\D/g, ""),
+            )
+          }
           aria-label={label}
           className="border-border bg-card tnum h-11 w-full min-w-0 rounded-md border text-center text-lg"
         />
