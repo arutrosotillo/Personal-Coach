@@ -133,6 +133,10 @@ const NOT_ACTIONABLE = new Set([
   "ONE_OFF_UNDERPERFORMANCE",
   "ATYPICAL_LOAD_DROP",
   "SESSION_INCOMPLETE",
+  // La caída entre series con la mejor serie DENTRO del rango: el motor dice
+  // explícitamente que no es un problema de carga y no la mueve, así que la
+  // tarjeta de recuperación tampoco puede leerla como rendimiento a la baja.
+  "SET_DROP_OFF",
 ]);
 
 function walkedBack(

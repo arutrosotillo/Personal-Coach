@@ -281,6 +281,23 @@ export const PROGRESSION = {
    * considera claramente corta y se permite un salto doble. [HEURÍSTICA]
    */
   DOUBLE_STEP_OVERSHOOT_REPS: 3,
+  /**
+   * Exposiciones al mismo peso sin cerrar el rango tras las que el motor
+   * COMENTA (nunca cambia) que el rango es más ancho de lo que el material
+   * necesita. Mismo umbral de paciencia que la señal de meseta: tres
+   * exposiciones son una tendencia, una es un martes.
+   */
+  RANGE_WIDTH_EXPOSURES: 3,
+  /**
+   * Repeticiones de más que debe sobrar el rango sobre lo que cuesta un
+   * escalón de carga antes de comentarlo. El ancho ÚTIL de un rango es el
+   * número de repeticiones que cuesta subir un escalón: con saltos del 4 % son
+   * ~2 reps, y un rango de 8–15 (7 de ancho) deja al usuario cinco sesiones
+   * de más en la misma carga. Con saltos del 25 % (mancuernas ligeras) pasa lo
+   * contrario y la señal calla: ahí el ancho lo exige el material.
+   * [HEURÍSTICA]
+   */
+  RANGE_WIDTH_MARGIN_REPS: 2,
   /** Nunca más de este nº de incrementos en una sola subida. */
   MAX_STEPS_PER_INCREASE: 2,
   /**
@@ -474,7 +491,7 @@ export const FATIGUE = {
 export const FATIGUE_ENGINE_VERSION = "1.0.0";
 
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
-export const PROGRESSION_ENGINE_VERSION = "2.0.0";
+export const PROGRESSION_ENGINE_VERSION = "2.1.0";
 
 /** Patrones de movimiento considerados "compuestos" (multiarticulares). */
 export const COMPOUND_PATTERNS: ReadonlySet<string> = new Set([

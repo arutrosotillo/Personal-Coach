@@ -785,7 +785,7 @@ describe("11 · invariantes (rejilla determinista)", () => {
       expect(a).toEqual(b);
       expect(a.explanation.length).toBeGreaterThan(20);
       expect(["LOW", "MEDIUM", "HIGH"]).toContain(a.confidence);
-      expect(a.engineVersion).toBe("2.0.0");
+      expect(a.engineVersion).toBe("2.1.0");
     }
   });
 });
@@ -960,5 +960,185 @@ describe("13 · el motor no castiga lo que él mismo pidió", () => {
     // respetar.
     const r = run([s(80, [5, 4, 4], 2), s(82.5, [5, 4, 4], 2)]);
     expect(r.action).toBe("DECREASE_LOAD");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+/**
+ * Fase 3.2e — cuatro defectos encontrados entrenando de verdad (sesiones del
+ * 2026-09). Los números de cada caso son los del cuaderno, no inventados.
+ */
+describe("12 · la forma del objetivo y quién juzga la carga", () => {
+  /** Elevación lateral: 3×8–15 @0 RIR, mancuernas de 2 en 2 kg. */
+  const LATERAL = {
+    repRangeMin: 8,
+    repRangeMax: 15,
+    targetRir: 0,
+    loadStepKg: 2,
+    plannedSets: 3,
+  };
+  /** Curl inclinado: 2×8–12 @0 RIR, mancuernas de 2 en 2 kg. */
+  const CURL = {
+    repRangeMin: 8,
+    repRangeMax: 12,
+    targetRir: 0,
+    loadStepKg: 2,
+    plannedSets: 2,
+  };
+
+  it("series empatadas: el objetivo sube las tres y el texto lo DICE", () => {
+    const r = run([s(8, [11, 11, 11], 0)], LATERAL);
+    expect(r.action).toBe("ADD_REP");
+    expect(r.setTargets).toEqual([12, 12, 12]);
+    // El texto decía "sube la serie más floja" mientras pedía +1 en las tres.
+    expect(r.explanation).not.toMatch(/la serie (más floja|que se quedó)/i);
+    expect(r.explanation).toMatch(/una repetición más en cada serie/i);
+    // Y con RIR 0 un objetivo plano necesita el aviso: la última cae sola.
+    expect(r.explanation).toMatch(/normal que las últimas caigan/i);
+  });
+
+  it("series desiguales: sube solo la floja y el texto también lo dice", () => {
+    const r = run([s(41, [15, 13, 13], 0)], LATERAL);
+    expect(r.setTargets).toEqual([15, 14, 14]);
+    expect(r.explanation).toMatch(/serie[s]? que se quedaron? más cortas?/i);
+    expect(r.explanation).not.toMatch(/en cada serie/i);
+  });
+
+  it("el objetivo NUNCA crece de una serie a la siguiente", () => {
+    // 9/8/9 a la misma carga es ruido (descanso largo, serie mal contada):
+    // pedirlo de vuelta sería prescribir que la 3ª supere a la 2ª más cansado.
+    const r = run([s(12, [9, 8, 9], 0), s(12, [9, 7, 8], 0)], LATERAL);
+    expect(r.setTargets).toEqual([9, 8, 8]);
+    expect(r.explanation).toMatch(/Objetivo de hoy: 9\/8\/8/);
+  });
+
+  it("una serie a OTRO peso no entra en el objetivo de las demás", () => {
+    // Extensión de tríceps: las 9 reps de la 3ª serie fueron a 10 kg, no a 12.
+    // El trinquete las pedía a 12 kg — comparar peras con manzanas.
+    const r = run(
+      [
+        {
+          sets: [
+            { weightKg: 12, reps: 9, rir: 1 },
+            { weightKg: 12, reps: 7, rir: 1 },
+            { weightKg: 10, reps: 9, rir: 0 },
+          ],
+        },
+        {
+          sets: [
+            { weightKg: 12, reps: 9, rir: 0 },
+            { weightKg: 12, reps: 7, rir: null },
+            { weightKg: 14, reps: 8, rir: 0 },
+          ],
+        },
+      ],
+      LATERAL,
+    );
+    expect(r.numbers.pesoRef).toBe(12);
+    // Solo las dos series de 12 kg: el titular no puede decir "(9/7/8)" — las
+    // 8 reps fueron a 14 kg y las 9 de la sesión anterior, a 10.
+    expect(r.explanation).toMatch(/\(9\/7\)/);
+    expect(r.explanation).not.toMatch(/9\/7\/8/);
+    expect(r.setTargets).toEqual([9, 8, 8]);
+    expect(r.signals.map((x) => x.code)).toContain("MIXED_LOADS");
+  });
+
+  it("si la mitad de las series entra en el rango, la carga NO baja", () => {
+    // Curl inclinado a 12 kg: 7/7 y después 9/7. La mediana baja de 2 series
+    // es la peor de las dos, así que el motor bajaba a 10 kg pese a que la
+    // primera serie entró de sobra.
+    const r = run([s(12, [7, 7], [0, 1]), s(12, [9, 7], 0)], CURL);
+    expect(r.action).toBe("HOLD");
+    expect(r.reasonCode).toBe("SET_DROP_OFF");
+    expect(r.suggestedWeightKg).toBe(12);
+    expect(r.explanation).toMatch(/9 reps, mínimo 8/);
+    expect(r.explanation).toMatch(/La carga no es el problema/i);
+    expect(r.setTargets).toEqual([9, 8]);
+  });
+
+  it("con nº IMPAR de series el criterio sigue siendo el de siempre", () => {
+    // 1 de 3 series en rango: eso no es caída entre series, es carga de más.
+    const dos = run([s(80, [6, 5, 5], 2), s(80, [6, 5, 4], 2)]);
+    expect(dos.action).toBe("DECREASE_LOAD");
+    expect(dos.reasonCode).toBe("REPEATED_UNDERPERFORMANCE");
+  });
+
+  it("no se baja la carga mientras el total de repeticiones SUBE", () => {
+    const r = run([s(80, [5, 4, 4], 2), s(80, [5, 5, 5], 2)]);
+    expect(r.action).toBe("HOLD");
+    expect(r.suggestedWeightKg).toBe(80);
+    expect(r.explanation).toMatch(/13 → 15 repeticiones totales/);
+    // …pero estancarse después sí baja: la paciencia no es infinita.
+    const luego = run([
+      s(80, [5, 4, 4], 2),
+      s(80, [5, 5, 5], 2),
+      s(80, [5, 5, 4], 2),
+    ]);
+    expect(luego.action).toBe("DECREASE_LOAD");
+  });
+
+  it("rango más ancho de lo que el salto necesita → lo COMENTA, no lo cambia", () => {
+    // Extensión de tríceps en polea: 59 kg, escalón de 2,5 kg = 4 %. Subir
+    // cuesta ~2 reps; el rango tiene 7 de ancho, así que sobran 5 sesiones.
+    const rx = { ...LATERAL, loadStepKg: 2.5, plannedSets: 2 };
+    const r = run([s(59, [8, 8], 0), s(59, [9, 9], 0), s(59, [11, 11], 0)], rx);
+    const sig = r.signals.find((x) => x.code === "RANGE_TOO_WIDE");
+    expect(sig, r.signals.map((x) => x.code).join(",")).toBeDefined();
+    expect(sig!.numbers.anchoUtil).toBe(2);
+    expect(sig!.numbers.techoSugerido).toBe(11);
+    expect(sig!.numbers.sueloSugerido).toBe(9);
+    expect(sig!.message).toMatch(/Con 9–11 ya subirías/);
+    // Informativa: ni la acción ni el objetivo se mueven.
+    expect(r.action).toBe("ADD_REP");
+    expect(r.setTargets).toEqual([12, 12]);
+  });
+
+  it("con mancuernas ligeras el rango ancho hace falta: la señal calla", () => {
+    // Elevación lateral: 8 kg de 2 en 2 = 25 %. Subir cuesta ~9 reps, así que
+    // un rango de 7 no es ancho, es CORTO. Avisar ahí sería un mal consejo.
+    const r = run(
+      [s(8, [10, 10, 10], 0), s(8, [11, 11, 11], 0), s(8, [12, 12, 12], 0)],
+      LATERAL,
+    );
+    expect(r.signals.map((x) => x.code)).not.toContain("RANGE_TOO_WIDE");
+  });
+
+  it("no comenta el rango si ya lo estás cerrando", () => {
+    const rx = { ...LATERAL, repRangeMax: 12, loadStepKg: 5, plannedSets: 3 };
+    const r = run(
+      [s(50, [12, 12, 12], 0), s(50, [12, 12, 12], 0), s(50, [12, 12, 12], 0)],
+      rx,
+    );
+    expect(r.action).toBe("INCREASE_LOAD");
+    expect(r.signals.map((x) => x.code)).not.toContain("RANGE_TOO_WIDE");
+  });
+
+  it("invariante P9 · los objetivos por serie nunca crecen", () => {
+    const formas = [
+      [11, 11, 11],
+      [9, 8, 9],
+      [7, 9, 9],
+      [15, 13, 13],
+      [6, 5, 4],
+      [12, 12, 8],
+      [8, 8, 8],
+    ];
+    for (const rangos of [LATERAL, CURL, BENCH]) {
+      for (const forma of formas) {
+        const reps = forma.slice(0, rangos.plannedSets);
+        for (const rir of [0, 2, null]) {
+          const r = run([s(20, reps, rir)], rangos);
+          const t = r.setTargets;
+          if (t === null) continue;
+          expect(t.length).toBe(rangos.plannedSets);
+          for (let i = 1; i < t.length; i++) {
+            expect(
+              t[i],
+              `${reps.join("/")} @${rir} → ${t.join("/")}`,
+            ).toBeLessThanOrEqual(t[i - 1]);
+          }
+        }
+      }
+    }
   });
 });

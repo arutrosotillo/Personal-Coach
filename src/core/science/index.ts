@@ -262,9 +262,9 @@ export const PHILOSOPHY: PhilosophySection[] = [
         id: "double-progression",
         title: "Cómo funciona en la práctica: 3×6–8 @1 RIR",
         summary:
-          "Eliges una carga con la que cierres 6 repeticiones dejando ~1 en reserva. Cada sesión subes la serie más floja. Cuando cierras 8 en casi todas, sube la carga.",
+          "Eliges una carga con la que cierres 6 repeticiones dejando ~1 en reserva. Cada sesión subes el suelo: la serie más floja. Cuando cierras 8 en casi todas, sube la carga.",
         detail:
-          "80×6/6/6 → objetivo 7/7/7 · 80×8/8/6 → objetivo 8/8/7 · 80×8/8/7 → sube a 82,5 kg buscando 7 reps (no 6: la equivalencia carga↔repeticiones dice que a 82,5 kg te corresponden ~7). El rango se considera cerrado con n−1 series en el techo y ninguna por debajo de repMax−1.",
+          "80×6/6/6 → objetivo 7/7/7 (el suelo son las tres) · 80×8/8/6 → objetivo 8/8/7 · 80×8/8/7 → sube a 82,5 kg buscando 7 reps (no 6: la equivalencia carga↔repeticiones dice que a 82,5 kg te corresponden ~7). El objetivo nunca sube de una serie a la siguiente: a carga fija la fatiga se acumula, así que 9/8/9 no es un plan, es ruido. El rango se considera cerrado con n−1 series en el techo y ninguna por debajo de repMax−1.",
         evidence: "HEURISTIC",
         citations: ["plotkin2022"],
       },
@@ -528,10 +528,12 @@ export const REASON_CODE_EXPLANATIONS: Record<ProgressionReasonCode, string> = {
     "Sin carga que añadir y con las repeticiones muy altas: toca una variante más difícil.",
   ONE_OFF_UNDERPERFORMANCE:
     "El rendimiento quedó por debajo del rango una vez. No se cambia nada por una sesión.",
+  SET_DROP_OFF:
+    "Tu mejor serie sí llegó al mínimo del rango y las siguientes se cayeron: eso es caída entre series (fatiga, descanso), no un problema de carga, así que los kilos no se tocan.",
   NEAR_FAILURE_HOLD:
     "Llegaste al fallo o casi sin cerrar el rango: se mantiene la carga y se buscan repeticiones con algo de reserva.",
   ADD_REP:
-    "Dentro del rango: mismo peso, subiendo la serie más floja hasta cerrar el techo.",
+    "Dentro del rango: mismo peso, subiendo el suelo (la serie más floja) hasta cerrar el techo. Si todas las series iban empatadas, el suelo son todas.",
   STALE_HISTORY:
     "Han pasado semanas desde esa sesión: se vuelve con el mismo peso para reconfirmar antes de subir. El tiempo no baja la carga.",
   HOLD_DEFAULT: "Mantener la carga y consolidar.",
@@ -549,8 +551,13 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
 - Double progression: primero repeticiones dentro del rango, después carga.
 - "Rango cerrado" = n−1 series en el techo del rango y ninguna por debajo de (techo − 1).
   Con 3 series: 8/8/8 y 8/8/7 SÍ cierran; 8/8/6 y 8/7/7 NO.
-- ADD_REP mantiene el peso y sube la serie más floja, con trinquete: nunca pide
-  menos de lo ya logrado a esa carga.
+- ADD_REP mantiene el peso y sube el SUELO de repeticiones —la serie más floja—,
+  con trinquete: nunca pide menos de lo ya logrado a esa carga. Si todas las series
+  iban empatadas, subir el suelo las sube todas. Los objetivos por serie nunca
+  crecen de una serie a la siguiente: a carga fija la fatiga se acumula.
+- El motor solo compara series hechas al MISMO peso de trabajo. En una sesión con
+  cargas mezcladas, las series a otro peso no entran ni en la mediana, ni en el
+  rango cerrado, ni en el trinquete.
 - INCREASE_LOAD sube UN incremento del material (dos solo si superaste el techo
   del rango en ≥3 reps, con RIR registrado y sin pasar del 10 % de la carga).
   El objetivo de repeticiones tras subir se calcula por equivalencia carga↔reps,
@@ -561,12 +568,22 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
   aislamientos 0; ±1 según la estabilidad de la variante (carga libre sin apoyo +1, guiada
   −1), acotado a 1..2 en compuestos y 0..1 en aislamientos. Con objetivo 1 ó 0 el fallo es
   lo prescrito y NO frena nada.
-- DECREASE_LOAD exige DOS exposiciones comparables con la mediana por debajo del
-  mínimo del rango (o cuatro ignorando el RIR). Nunca por una sesión mala.
+- DECREASE_LOAD exige DOS exposiciones comparables en las que NINGUNA serie llegó
+  al mínimo del rango (o cuatro con la mediana por debajo, ignorando el RIR).
+  Nunca por una sesión mala, y nunca si la última exposición mejoró el total de
+  repeticiones respecto a la anterior al mismo peso.
+- Si la mejor serie SÍ entra en el rango y las siguientes caen, eso es SET_DROP_OFF:
+  se mantiene la carga y se nombra la caída entre series. Bajar kilos ahí sería
+  corregir la serie que funcionaba.
 - El RIR ausente no se imputa: baja la confianza y bloquea el salto doble.
 - Historial de ≥3 semanas: se suspenden las subidas hasta reconfirmar; ≥6 semanas,
   confianza mínima. El tiempo nunca baja la carga por sí solo.
 - El motor NUNCA añade ni quita series, ni cambia el programa, ni aplica descargas.
+- El RANGO de repeticiones es del usuario. Si lleva 3 exposiciones al mismo peso sin
+  cerrarlo y el rango es mucho más ancho de lo que cuesta subir un escalón de carga,
+  el motor lo COMENTA (señal RANGE_TOO_WIDE) con el ancho útil calculado, y nada más:
+  no reescribe la prescripción. Con saltos grandes (mancuernas ligeras) el rango ancho
+  es necesario y la señal calla.
 - Con dolor articular repetido o una descarga recomendada, las SUBIDAS DE CARGA
   quedan suspendidas (la salud y la recuperación tienen precedencia). Progresar
   en repeticiones sigue permitido, y la carga nunca baja por este motivo.
