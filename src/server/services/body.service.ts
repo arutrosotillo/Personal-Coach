@@ -127,7 +127,7 @@ function today(now: Date): string {
  * como kilos o centímetros: es un acto deliberado y en un solo sitio, que es
  * justo lo que hace útil el marcado de tipos.
  */
-function toEnginePoints(
+export function toEnginePoints(
   records: readonly BodyMeasurementRecord[],
 ): BodyMeasurementPoint[] {
   return records.map((r) => ({
@@ -150,7 +150,7 @@ function toEnginePoints(
  */
 type GoalRow = NonNullable<Awaited<ReturnType<typeof getActiveGoal>>>;
 
-function toEngineGoal(goal: GoalRow | null): BodyGoalInput | null {
+export function toEngineGoal(goal: GoalRow | null): BodyGoalInput | null {
   if (!goal) return null;
 
   const type = GoalType.safeParse(goal.type);

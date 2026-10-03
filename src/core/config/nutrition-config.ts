@@ -57,4 +57,33 @@ export const NUTRITION_CONFIG = {
   highBodyFatPctForProteinRef: { MALE: 30, FEMALE: 40 },
   /** Redondeo de objetivos calóricos. */
   kcalRounding: 25,
+
+  /**
+   * Ajuste calórico por tendencia de peso (docs/NUTRITION_ENGINE.md §5, versión
+   * reducida: solo usa la báscula, porque la app aún no registra ingesta).
+   */
+  calorieAdjustment: {
+    /** Paso del ajuste, kcal/día. [HEURÍSTICA] spec §5: default 100. */
+    stepKcal: 100,
+    /** R4a: las 2 primeras semanas de dieta son agua y glucógeno. */
+    initialPhaseDays: 14,
+    /** R3: tras cualquier cambio de objetivo calórico, no tocar en 7 días… */
+    cooldownAnyDirectionDays: 7,
+    /** …ni repetir la MISMA dirección en 14 (el cambio tarda en verse en la báscula). */
+    cooldownSameDirectionDays: 14,
+    /** Tras un "ahora no", no volver a proponer lo mismo en una semana. */
+    rejectionSnoozeDays: 7,
+    /** Distancia entre las dos lecturas que tienen que coincidir (×2 semanas). */
+    confirmationLagDays: 7,
+    /** R6: banda "vas bien" del ratio observado/objetivo. */
+    onTrackRatio: { min: 0.6, max: 1.4 },
+    /** R7: por debajo de este ratio, estancado. */
+    stalledRatio: 0.5,
+    /**
+     * R5 (pérdida): pérdida excesiva = más rápida que max(1 % del peso,
+     * 1,5 × objetivo) por semana. En ganancia: ratio ≥ 1,5.
+     */
+    excessiveLossPctOfWeight: 1,
+    excessiveRatio: 1.5,
+  },
 } as const;

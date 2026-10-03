@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CalorieAdjustmentCard } from "@/components/body/calorie-adjustment-card";
 import { CheckInCard } from "@/components/body/check-in-card";
 import { InsightCard } from "@/components/body/insight-card";
 import { MeasurementHistory } from "@/components/body/measurement-history";
@@ -23,6 +24,7 @@ import {
   getBodyProgress,
   getGoalForEdit,
 } from "@/server/services/body.service";
+import { getCalorieAdjustment } from "@/server/services/nutrition-adjustment.service";
 
 export const dynamic = "force-dynamic";
 
@@ -69,9 +71,11 @@ export default async function ProgressPage() {
   const [
     { analysis, history, chartSeries, checkIn, phaseStartLocalDate, insight },
     editableGoal,
+    calorieAdjustment,
   ] = await Promise.all([
     getBodyProgress(profile.id),
     getGoalForEdit(profile.id),
+    getCalorieAdjustment(profile.id),
   ]);
   const { weight, waist, bodyFat, goal, todayLocalDate } = analysis;
   const hoy = history.find((m) => m.localDate === todayLocalDate);
@@ -251,6 +255,12 @@ export default async function ProgressPage() {
             </CardContent>
           </Card>
         ) : null}
+
+        {/* ── Ajuste calórico: solo propone, nunca aplica solo ── */}
+        <CalorieAdjustmentCard
+          adjustment={calorieAdjustment}
+          todayLocalDate={todayLocalDate}
+        />
 
         {/* ── Check-in: discreto, y nunca bloquea nada ── */}
         <CheckInCard

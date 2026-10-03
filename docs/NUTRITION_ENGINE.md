@@ -99,6 +99,17 @@ Se evalúa al cerrar el check-in semanal. `r = tendencia / objetivo`. Paso defau
 
 Casos de test canónicos T1–T11 en TEST_PLAN.md.
 
+### 5.1 Implementado hoy: versión solo-báscula (`src/core/nutrition/calorie-adjustment.ts`, v1.0.0)
+
+Adelanta una parte de F4 porque la pregunta "¿me he estancado y debo bajar calorías?" no puede esperar al registro de comidas. Se ve en `/progress` (tarjeta "Calorías"), se calcula al vuelo y **no escribe nada hasta que el usuario responde**: al aceptar o descartar, el servidor recalcula, y si la propuesta ya no coincide con la que vio el usuario no aplica nada. Aceptar guarda `AlgorithmDecision` (engine `nutrition`) + `Recommendation` (`ADJUST_CALORIES`) + `NutritionTarget` nuevo (`source = ALGORITHM`, `effectiveFrom` = hoy) en una transacción.
+
+- **Tendencia**: la del motor corporal (`analyzeBody`, ventanas 28/21/14/56 días, acotada a `Goal.startDate`), no la EMA α 0,10 de §4.
+- **"Confirmado"** = ratio fuera de banda **y** el intervalo de confianza entero del mismo lado del objetivo (si el margen aún admite ir al ritmo → `UNCONFIRMED_*`, no se ajusta). Y tiene que repetirse en la lectura de hace 7 días (×2 semanas).
+- **Reglas aplicadas**: R0 (suelo: no recortar si ya está en él; recortar el paso hasta el suelo), R1, R3 (+ "ahora no" silencia 7 días), R4a, R5, R6, R6b, R7b, R8. Simétrico para LEAN_GAIN. RECOMP y MAINTENANCE: no aplica (§10 pendiente).
+- **No aplicadas, porque faltan los datos**: R2 (adherencia), R4b (retención/eventos), R7a (pasos), alertas de §9 basadas en ingesta. Compensación: un ajuste nunca sale con confianza alta y, si es un recorte, la explicación pide confirmar que se está comiendo el objetivo antes de aceptar.
+- **Macros**: proteína y grasa se mantienen; el cambio sale de los carbohidratos (si bajaran de 100 g, se recorta grasa hasta su suelo).
+- Umbrales en `NUTRITION_CONFIG.calorieAdjustment`.
+
 ## 6. Adherencia (F4)
 
 Por semana: `loggingRate` (días con registro/7) · `desvioKcal` (media |real−objetivo|/objetivo — valor absoluto: pasarse y quedarse corto penalizan igual) · `weighRate` (pesajes/7).
