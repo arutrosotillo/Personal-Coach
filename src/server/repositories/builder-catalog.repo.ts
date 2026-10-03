@@ -112,7 +112,7 @@ export async function getBuilderVariant(
   });
   if (!variant) return null;
   const primaryMuscle =
-    variant.exercise.contributions.find((c) => c.role === "PRIMARY")?.muscleGroup
-      .nameEs ?? "";
+    variant.exercise.contributions.find((c) => c.role === "PRIMARY")
+      ?.muscleGroup.nameEs ?? "";
   return toBuilderVariant(variant.exercise, variant, primaryMuscle);
 }

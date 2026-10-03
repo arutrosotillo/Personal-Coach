@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { QuickWeightCard } from "@/components/body/quick-weight-card";
 import { AppShell } from "@/components/layout/app-shell";
-import { PhaseNote } from "@/components/layout/phase-note";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { diffDays } from "@/core/dates";
@@ -136,13 +135,6 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         ) : null}
-
-        <PhaseNote phase="Fase 4">
-          Lo que todavía no puedes hacer aquí: registrar lo que comes. Las
-          kilocalorías y la proteína de arriba son tu objetivo calculado, no un
-          seguimiento. El entrenamiento y el seguimiento corporal sí están
-          operativos.
-        </PhaseNote>
       </div>
     </AppShell>
   );

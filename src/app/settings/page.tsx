@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { isCoachConfigured } from "@/ai/config";
 import { AppShell } from "@/components/layout/app-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LogoutButton } from "@/components/layout/logout-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -128,10 +127,6 @@ export default async function SettingsPage() {
               <p>
                 Copia de seguridad manual: <code>pnpm db:backup</code> guarda un
                 volcado completo en <code>exports/</code>.
-              </p>
-              <p className="flex items-center gap-2">
-                <Badge variant="outline">Fase 7</Badge> Exportación JSON/CSV,
-                importación y borrado total desde esta pantalla.
               </p>
             </CardContent>
           </Card>

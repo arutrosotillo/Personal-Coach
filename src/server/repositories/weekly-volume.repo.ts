@@ -126,7 +126,10 @@ export async function getWeeklyVolume(
 
   // Una fila = una serie. Se agrupan por (variante, día) para que la
   // frecuencia cuente días distintos y no series.
-  const counts = new Map<string, { variantId: string; dayKey: string; sets: number }>();
+  const counts = new Map<
+    string,
+    { variantId: string; dayKey: string; sets: number }
+  >();
   for (const row of rows) {
     const key = `${row.exerciseVariantId}|${row.localDate}`;
     const current = counts.get(key);
