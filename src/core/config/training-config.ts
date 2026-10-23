@@ -473,8 +473,18 @@ export const FATIGUE = {
      * señal de sesiones acortadas —justo la que debería sonar— desaparecía.
      */
     COOLDOWN_DAYS: 28,
-    /** Sesiones marcadas que hacen falta para reiniciar la acumulación. */
+    /**
+     * Sesiones marcadas que hacen falta para reiniciar la acumulación y para
+     * dar una descarga por COMPLETA (`src/core/training/deload.ts`): una sola
+     * sesión recortada no es una descarga.
+     */
     MIN_SESSIONS_TO_RESET: 2,
+    /**
+     * Sesiones por semana cuando no hay programa activo del que leerlas. Una
+     * descarga dura como mucho una semana del plan, y en sesiones eso son los
+     * días que entrenas.
+     */
+    DEFAULT_SESSIONS_PER_WEEK: 3,
   },
 
   DELOAD_PLAN: {
@@ -487,8 +497,14 @@ export const FATIGUE = {
   },
 } as const;
 
-/** Versión del motor de fatiga. */
-export const FATIGUE_ENGINE_VERSION = "1.0.0";
+/**
+ * Versión del motor de fatiga. Cambiar comportamiento obliga a subirla.
+ *
+ * 1.1.0 · la descarga tiene principio y fin: en curso / terminada. Al
+ * terminarla, las caídas de antes dejan de contar (cada ejercicio se juzga con
+ * lo que haces después) y el titular dice "vuelve a tu volumen normal".
+ */
+export const FATIGUE_ENGINE_VERSION = "1.1.0";
 
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
 export const PROGRESSION_ENGINE_VERSION = "2.1.0";

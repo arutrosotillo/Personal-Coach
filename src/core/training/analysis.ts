@@ -1,3 +1,5 @@
+import { FATIGUE } from "@/core/config/training-config";
+import { deloadStatus, type TimelineSession } from "@/core/training/deload";
 import {
   assessFatigue,
   type FatigueAssessment,
@@ -67,6 +69,15 @@ export interface TrainingContext {
   variants: ContextVariant[];
   /** Semanas de acumulación continua sin descarga. */
   weeksSinceDeload: number | null;
+  /**
+   * TODAS las sesiones completadas hasta hoy —no solo la ventana—, con su
+   * fecha y si fueron descarga. Sirve para situar la descarga (`deload.ts`):
+   * una terminada hace dos meses sigue marcando desde cuándo los datos de un
+   * ejercicio son nuevos. Si falta, se usan las sesiones de la ventana.
+   */
+  timeline?: TimelineSession[];
+  /** Días por semana del programa activo; `null` si no hay programa activo. */
+  sessionsPerWeek?: number | null;
 }
 
 export interface VariantAnalysis {
@@ -75,7 +86,13 @@ export interface VariantAnalysis {
   variantName: string;
   daysSinceLast: number;
   exposures: number;
+  /** Sobre TODO el historial: es lo mismo que ve la pantalla de sesión. */
   suggestion: ProgressionSuggestion;
+  /**
+   * Entradas del motor de fatiga. Tras una descarga completa se juzgan solo
+   * con las exposiciones POSTERIORES a ella (ver `analyzeTraining`), así que
+   * pueden no coincidir con lo que diría `suggestion`.
+   */
   regressed: boolean;
   plateaued: boolean;
 }
@@ -210,12 +227,48 @@ function hasRegressed(
 }
 
 export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
+  const deload = deloadStatus(
+    context.timeline ?? context.sessions,
+    context.todayLocalDate,
+    context.sessionsPerWeek ??
+      FATIGUE.DELOAD_DETECTION.DEFAULT_SESSIONS_PER_WEEK,
+  );
+
+  // Tras una descarga COMPLETA, cada ejercicio se juzga —para la fatiga— solo
+  // con lo que has hecho DESPUÉS de ella. Las caídas que la motivaron ya se
+  // han gastado en ella: como las sesiones de descarga no cuentan como
+  // exposición, al volver el motor seguía viendo esas mismas caídas, volvía a
+  // recomendar la descarga y vetaba las subidas el primer día de vuelta.
+  //
+  // Mientras no vuelvas a entrenar un ejercicio, no cuenta ni a favor ni en
+  // contra. Cuando lo entrenas, cuenta con datos NUEVOS: si sigue cayendo
+  // después de descargar, el motor lo ve —y con las mismas reglas de siempre,
+  // así que una sola sesión mala tampoco basta aquí—.
+  //
+  // `suggestion` sigue saliendo de TODO el historial: es la carga que ve la
+  // pantalla de sesión, y el motor de progresión no sabe nada de descargas.
+  const nuevoDesde = deload.lastCompleted?.endLocalDate ?? null;
+
   const variants: VariantAnalysis[] = context.variants.map((v) => {
     const suggestion = suggestProgression({
       prescription: v.prescription,
       history: v.exposures,
       todayLocalDate: context.todayLocalDate,
     });
+    const nuevas =
+      nuevoDesde === null
+        ? v.exposures
+        : v.exposures.filter((e) => e.localDate > nuevoDesde);
+    const juzgada =
+      nuevas.length === v.exposures.length
+        ? suggestion
+        : nuevas.length > 0
+          ? suggestProgression({
+              prescription: v.prescription,
+              history: nuevas,
+              todayLocalDate: context.todayLocalDate,
+            })
+          : null;
     return {
       variantId: v.variantId,
       exerciseName: v.exerciseName,
@@ -225,8 +278,16 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
       suggestion,
       // Una regresión "de verdad": el motor bajó la carga, o lleva varias
       // exposiciones sin alcanzar el rango. Un mal día suelto no cuenta.
-      regressed: hasRegressed(v, suggestion, context.todayLocalDate),
-      plateaued: suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
+      regressed:
+        juzgada !== null &&
+        hasRegressed(
+          { ...v, exposures: nuevas },
+          juzgada,
+          context.todayLocalDate,
+        ),
+      plateaued:
+        juzgada !== null &&
+        juzgada.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
     };
   });
 
@@ -251,6 +312,7 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
     })),
     exercises,
     weeksSinceDeload: context.weeksSinceDeload,
+    deload,
   });
 
   // El veto va al final, con el veredicto ya cerrado: la fatiga se calcula
@@ -269,6 +331,12 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
 /**
  * Traduce el veredicto de recuperación al veto que suspende las subidas.
  * El dolor tiene precedencia sobre la descarga: si hay las dos cosas, manda él.
+ *
+ * Con la descarga EN CURSO tampoco se sube, la siga recomendando el motor o
+ * no: el plan es la misma carga con la mitad de las series, y a mitad de
+ * semana el veredicto puede bajar —la propia descarga reinicia el contador de
+ * acumulación— sin que la descarga haya terminado. Al terminarla, el veto se
+ * levanta con ella.
  */
 export function recoveryVeto(fatigue: FatigueAssessment): RecoveryVeto | null {
   if (fatigue.jointPain.level === "ACTION") {
@@ -277,7 +345,10 @@ export function recoveryVeto(fatigue: FatigueAssessment): RecoveryVeto | null {
       message: `${fatigue.jointPain.message ?? "Has reportado dolor articular repetido."} La app no registra QUÉ articulación te duele, así que aplico el aviso a todos los ejercicios.`,
     };
   }
-  if (fatigue.decision === "DELOAD_RECOMMENDED") {
+  if (
+    fatigue.decision === "DELOAD_RECOMMENDED" ||
+    fatigue.deload.phase === "IN_PROGRESS"
+  ) {
     return { kind: "DELOAD", message: fatigue.headline };
   }
   return null;

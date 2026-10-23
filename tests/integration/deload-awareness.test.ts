@@ -33,9 +33,9 @@ const { completeOnboarding } =
   await import("@/server/services/onboarding.service");
 const { startOrResumeSession, finishSession, logSet } =
   await import("@/server/services/workout-session.service");
-const { getExecutionSession } =
+const { getExecutionSession, previewTemplateSession } =
   await import("@/server/repositories/workout.repo");
-const { getTrainingAnalysis } =
+const { getRecoveryVeto, getTrainingAnalysis } =
   await import("@/server/services/fatigue.service");
 
 // Todas estas suites prueban el comportamiento del dominio con UN usuario.
@@ -179,6 +179,56 @@ describe("B/C · el usuario CUMPLE la descarga", () => {
     expect(dias.map((d) => d.weekKind)).toEqual(["DELOAD", "DELOAD", "DELOAD"]);
   });
 
+  it("mientras la hace, la app lo sabe: en curso y sin subidas de carga", async () => {
+    // Visto desde el primer día de la descarga, con una sola sesión hecha.
+    const dia = addDays(LUNES, 77);
+    const a = await analisis(dia);
+    expect(a.fatigue.deload.phase).toBe("IN_PROGRESS");
+    expect(a.fatigue.deload.current?.sessions).toBe(1);
+    expect(a.fatigue.headline).toMatch(
+      /^Estás haciendo la descarga: llevas 1 de 3 sesiones/,
+    );
+    expect((await getRecoveryVeto(profileId, dia))?.kind).toBe("DELOAD");
+  });
+
+  it("y al completar su semana le dice que vuelva a lo normal, sin veto", async () => {
+    // Antes el titular seguía en "sigue así el resto de la semana" y, al
+    // volver, saltaba a "te recomiendo una semana de descarga" con las mismas
+    // caídas de antes, vetando las subidas el primer día de vuelta.
+    const a = await analisis(addDays(LUNES, 79));
+    expect(a.fatigue.deload.phase).toBe("FINISHED");
+    expect(a.fatigue.deload.lastCompleted).toEqual({
+      startLocalDate: addDays(LUNES, 77),
+      endLocalDate: addDays(LUNES, 79),
+      sessions: 3,
+    });
+    expect(a.fatigue.headline).toMatch(
+      /^Descarga terminada \(3 sesiones\): en la próxima sesión vuelve a tu volumen normal/,
+    );
+    expect(await getRecoveryVeto(profileId, addDays(LUNES, 80))).toBeNull();
+  });
+
+  it("la pantalla de sesión enseña la descarga como 'última vez' pero no calcula con ella", async () => {
+    // Igual que la tarjeta de recuperación: las dos pantallas razonan sobre el
+    // mismo historial. "Última vez" sí la enseña, marcada: es historial real.
+    const preview = (await previewTemplateSession(
+      profileId,
+      templateIds[0],
+      addDays(LUNES, 80),
+    ))!;
+    expect(preview.exercises.length).toBeGreaterThan(0);
+    // Un mismo ejercicio puede salir en varios días de la rutina: su "última
+    // vez" es cualquiera de las tres sesiones de la descarga.
+    const descarga = [77, 78, 79].map((d) => addDays(LUNES, d));
+    for (const ex of preview.exercises) {
+      expect(descarga).toContain(ex.lastTime?.localDate);
+      expect(ex.lastTime?.deload).toBe(true);
+      const fechas = ex.lastTime!.exposures.map((e) => e.localDate);
+      expect(fechas.length).toBeGreaterThan(1);
+      expect(fechas.every((f) => f < descarga[0])).toBe(true);
+    }
+  });
+
   it("no se le penaliza por haber acortado las sesiones", async () => {
     const a = await analisis(addDays(LUNES, 79));
     const codigos = a.fatigue.signals.map((s) => s.code);
@@ -238,6 +288,17 @@ describe("F · vuelta a la normalidad, sin estado atrapado", () => {
     const a = await analisis(addDays(LUNES, 93));
     expect(a.context.weeksSinceDeload).toBe(2);
     expect(a.fatigue.decision).not.toBe("DELOAD_RECOMMENDED");
+  });
+
+  it("de vuelta, el titular es el de siempre y la descarga queda como punto de corte", async () => {
+    const a = await analisis(addDays(LUNES, 93));
+    expect(a.fatigue.deload.phase).toBe("NONE");
+    expect(a.fatigue.deload.lastCompleted?.endLocalDate).toBe(
+      addDays(LUNES, 79),
+    );
+    expect(a.fatigue.headline).not.toMatch(
+      /Descarga terminada|Estás haciendo la descarga/,
+    );
   });
 });
 

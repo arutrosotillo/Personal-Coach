@@ -50,7 +50,11 @@ export async function getRecoveryVeto(
       onLocalDate,
     );
     return recoveryVeto(analyzeTraining(context).fatigue);
-  } catch {
+  } catch (error) {
+    // Sin traza, un fallo aquí quitaba el veto de subidas sin que nadie lo
+    // supiera: la pantalla de sesión funcionaba y proponía subir carga en
+    // plena descarga.
+    console.error("getRecoveryVeto", error);
     return null;
   }
 }
@@ -74,7 +78,8 @@ export async function wasDeloadRecommended(
       onLocalDate,
     );
     return analyzeTraining(context).fatigue.decision === "DELOAD_RECOMMENDED";
-  } catch {
+  } catch (error) {
+    console.error("wasDeloadRecommended", error);
     return false;
   }
 }

@@ -24,6 +24,7 @@ export async function seedCompletedSessionWithSets(
     status?: "COMPLETED" | "ABORTED" | "IN_PROGRESS";
     templateId?: string | null;
     weekNumber?: number;
+    weekKind?: "ACCUMULATION" | "DELOAD";
     plannedSets?: number;
     finishedAt?: Date;
     sets: SeedSet[];
@@ -37,7 +38,7 @@ export async function seedCompletedSessionWithSets(
       mesocycleId: opts.mesocycleId,
       templateId: opts.templateId ?? null,
       weekNumber: opts.weekNumber ?? 1,
-      weekKind: "ACCUMULATION",
+      weekKind: opts.weekKind ?? "ACCUMULATION",
       status,
       localDate: opts.localDate,
       startedAt: opts.finishedAt ?? undefined,

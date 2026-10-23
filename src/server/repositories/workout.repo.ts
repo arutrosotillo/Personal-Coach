@@ -30,10 +30,24 @@ export interface VariantExposure {
  * dos veces el mismo día (p. ej. serie principal + back-off), se toma la de
  * menor `ordinal`: es lo comparable entre sesiones, y mezclar ambas daría un
  * peso de referencia sin sentido.
+ *
+ * Las sesiones de DESCARGA salen en "última vez" —ese historial es real— pero
+ * NO entran en `exposures` mientras haya otras, igual que en
+ * `training-context.repo`. Si entraban, la pantalla de sesión y la tarjeta de
+ * recuperación razonaban sobre historiales distintos: a mitad de descarga la
+ * primera sesión recortada pasaba a ser "tu última sesión" y el motor la
+ * comparaba con las normales —menos repeticiones totales, falsa meseta— y, al
+ * volver, la referencia era la semana suave en vez de tu semana normal.
  */
 export interface LastComparable {
   localDate: string;
   sets: VariantExposureRow[];
+  /**
+   * La "última vez" fue una sesión de descarga. Se enseña igual —es historial
+   * real— pero se marca: el objetivo de hoy NO sale de ella, y sin la etiqueta
+   * "2 series" al lado de un objetivo de 4 parece un error.
+   */
+  deload: boolean;
   exposures: VariantExposure[];
 }
 
@@ -83,7 +97,12 @@ async function recentWorkingSetsForVariants(
       reps: true,
       rir: true,
       workoutExercise: {
-        select: { sessionId: true, id: true, ordinal: true },
+        select: {
+          sessionId: true,
+          id: true,
+          ordinal: true,
+          session: { select: { weekKind: true } },
+        },
       },
     },
   });
@@ -92,6 +111,7 @@ async function recentWorkingSetsForVariants(
   // query (sesión más reciente primero).
   interface Slot extends VariantExposure {
     ordinal: number;
+    deload: boolean;
   }
   const byVariant = new Map<string, Map<string, Map<string, Slot>>>();
   for (const r of rows) {
@@ -108,7 +128,12 @@ async function recentWorkingSetsForVariants(
     }
     let slot = slots.get(weId);
     if (!slot) {
-      slot = { localDate: r.localDate, ordinal, sets: [] };
+      slot = {
+        localDate: r.localDate,
+        ordinal,
+        deload: r.workoutExercise.session.weekKind === "DELOAD",
+        sets: [],
+      };
       slots.set(weId, slot);
     }
     slot.sets.push({
@@ -121,22 +146,35 @@ async function recentWorkingSetsForVariants(
 
   for (const [variantId, sessions] of byVariant) {
     // Una exposición por sesión: la del `ordinal` más bajo (trabajo principal).
-    const ordered: VariantExposure[] = [];
+    const ordered: Array<VariantExposure & { deload: boolean }> = [];
     for (const slots of sessions.values()) {
       const chosen = [...slots.values()].sort(
         (a, b) => a.ordinal - b.ordinal,
       )[0];
       if (!chosen) continue;
       chosen.sets.sort((a, b) => a.setNumber - b.setNumber);
-      ordered.push({ localDate: chosen.localDate, sets: chosen.sets });
+      ordered.push({
+        localDate: chosen.localDate,
+        deload: chosen.deload,
+        sets: chosen.sets,
+      });
     }
     const last = ordered[0];
     if (!last) continue;
+    // Sin otra referencia —la sustituiste justo esa semana—, la descarga es
+    // mejor que ninguna: la carga fue la de siempre. Sin esto el motor diría
+    // "primera vez con este ejercicio" al lado de una "última vez".
+    const normales = ordered.filter((e) => !e.deload);
+    const base = normales.length > 0 ? normales : ordered;
     // De la más antigua a la más reciente, acotado a la ventana del motor.
-    const exposures = ordered.slice(0, PROGRESSION.HISTORY_WINDOW).reverse();
+    const exposures = base
+      .slice(0, PROGRESSION.HISTORY_WINDOW)
+      .reverse()
+      .map(({ localDate, sets }) => ({ localDate, sets }));
     result.set(variantId, {
       localDate: last.localDate,
       sets: last.sets,
+      deload: last.deload,
       exposures,
     });
   }
@@ -201,6 +239,7 @@ export function toClientSession(
         ? {
             localDate: exercise.lastTime.localDate,
             sets: exercise.lastTime.sets,
+            deload: exercise.lastTime.deload,
           }
         : null,
     })),

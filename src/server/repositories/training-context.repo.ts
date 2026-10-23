@@ -1,10 +1,12 @@
 import { FATIGUE, PROGRESSION } from "@/core/config/training-config";
 import { addDays, diffDays } from "@/core/dates";
 import type {
+  ContextExposure,
   ContextSession,
   ContextVariant,
   TrainingContext,
 } from "@/core/training/analysis";
+import type { TimelineSession } from "@/core/training/deload";
 import { prisma } from "@/server/db";
 
 /**
@@ -132,7 +134,38 @@ export async function getTrainingContext(
   // Una sesión aporta como mucho UNA exposición por variante: si la misma
   // variante aparece dos veces el mismo día (principal + back-off), se toma la
   // de menor `ordinal`, igual que hace `workout.repo` para el motor.
-  const byVariant = new Map<string, ContextVariant>();
+  //
+  // Las sesiones de DESCARGA van a su propio montón y solo se usan si son lo
+  // ÚNICO que hay de esa variante. Hiciste menos series a propósito, así que no
+  // dicen nada nuevo sobre tu capacidad a esa carga. Si entraran, obedecer la
+  // descarga se penalizaba OTRA VEZ, ahora en el motor de progresión: media
+  // sesión dispara `SESSION_INCOMPLETE` ("repite y complétala", de la sesión
+  // que la propia app te mandó recortar) y las repeticiones totales partidas
+  // por la mitad fabrican `PLATEAU_SIGNAL` → `WIDESPREAD_PLATEAU` → dos puntos
+  // OBJETIVOS que sostienen la SIGUIENTE recomendación de descarga. Es decir:
+  // hacer la descarga alimentaba el bucle que pide otra. Tampoco su
+  // prescripción: si recortaste con "− Quitar serie", el snapshot dice 2 series
+  // donde tu programa dice 4.
+  //
+  // Pero si la variante SOLO existe en descargas —la sustituiste esa semana
+  // porque la máquina estaba ocupada—, descartarlas la dejaba sin una sola
+  // exposición, y leer "la última" rompía `/train` y `/coach`. Ahí la descarga
+  // es mejor referencia que ninguna: la carga fue la de siempre. Es la misma
+  // regla que aplica `workout.repo` a la pantalla de sesión.
+  //
+  // Los datos NO se pierden: las series, cargas, reps y RIR siguen en la base,
+  // en el historial y en el e1RM (`getVariantHistory` los lee).
+  interface Bucket {
+    prescription: ContextVariant["prescription"];
+    exposures: ContextExposure[];
+  }
+  interface Entry {
+    exerciseName: string;
+    variantName: string;
+    normal: Bucket | null;
+    deload: Bucket | null;
+  }
+  const byVariant = new Map<string, Entry>();
   for (const session of sessions) {
     const chosen = new Map<string, (typeof session.exercises)[number]>();
     for (const we of session.exercises) {
@@ -142,47 +175,25 @@ export async function getTrainingContext(
         chosen.set(we.exerciseVariantId, we);
       }
     }
+    const kind = session.weekKind === "DELOAD" ? "deload" : "normal";
     for (const [variantId, we] of chosen) {
       let entry = byVariant.get(variantId);
       if (!entry) {
         entry = {
-          variantId,
           exerciseName: we.exerciseVariant.exercise.name,
           variantName: we.exerciseVariant.name,
-          prescription: {
-            repRangeMin: we.repRangeMin,
-            repRangeMax: we.repRangeMax,
-            targetRir: we.targetRir,
-            plannedSets: we.plannedSets,
-            loadStepKg: we.exerciseVariant.loadStepKg,
-          },
-          exposures: [],
-          daysSinceLast: 0,
+          normal: null,
+          deload: null,
         };
         byVariant.set(variantId, entry);
       }
+      const bucket = (entry[kind] ??= {
+        prescription: prescriptionOf(we),
+        exposures: [],
+      });
       // La prescripción vigente es la del snapshot más reciente.
-      entry.prescription = {
-        repRangeMin: we.repRangeMin,
-        repRangeMax: we.repRangeMax,
-        targetRir: we.targetRir,
-        plannedSets: we.plannedSets,
-        loadStepKg: we.exerciseVariant.loadStepKg,
-      };
-      // Las sesiones de DESCARGA no entran como exposición: hiciste menos
-      // series a propósito, así que no dicen nada nuevo sobre tu capacidad a
-      // esa carga. Si entraran, obedecer la descarga se penalizaba OTRA VEZ,
-      // ahora en el motor de progresión: media sesión dispara
-      // `SESSION_INCOMPLETE` ("repite y complétala", de la sesión que la propia
-      // app te mandó recortar) y las repeticiones totales partidas por la mitad
-      // fabrican `PLATEAU_SIGNAL` → `WIDESPREAD_PLATEAU` → dos puntos
-      // OBJETIVOS que sostienen la SIGUIENTE recomendación de descarga. Es
-      // decir: hacer la descarga alimentaba el bucle que pide otra.
-      //
-      // Los datos NO se pierden: las series, cargas, reps y RIR siguen en la
-      // base, en el historial y en el e1RM (`getVariantHistory` los lee).
-      if (session.weekKind === "DELOAD") continue;
-      entry.exposures.push({
+      bucket.prescription = prescriptionOf(we);
+      bucket.exposures.push({
         localDate: session.localDate,
         sets: we.setLogs.map((x) => ({
           weightKg: x.weightKg,
@@ -193,31 +204,91 @@ export async function getTrainingContext(
     }
   }
 
-  const variants = [...byVariant.values()]
+  const variants: ContextVariant[] = [];
+  for (const [variantId, entry] of byVariant) {
+    // Un montón solo existe si tiene al menos una exposición, así que `last`
+    // siempre está definido.
+    const source = entry.normal ?? entry.deload;
+    const last = source?.exposures.at(-1);
+    if (!source || !last) continue;
     // Un ejercicio que no has tocado en la ventana no es parte de "cómo va tu
     // entrenamiento ahora"; sus exposiciones antiguas solo sirven para dar
     // contexto a los que SÍ has entrenado.
-    .filter(
-      (v) => v.exposures[v.exposures.length - 1].localDate >= sinceLocalDate,
-    )
-    .map((v) => ({
-      ...v,
-      exposures: v.exposures.slice(-PROGRESSION.HISTORY_WINDOW),
-      daysSinceLast: diffDays(
-        v.exposures[v.exposures.length - 1].localDate,
-        todayLocalDate,
-      ),
-    }));
+    if (last.localDate < sinceLocalDate) continue;
+    variants.push({
+      variantId,
+      exerciseName: entry.exerciseName,
+      variantName: entry.variantName,
+      prescription: source.prescription,
+      exposures: source.exposures.slice(-PROGRESSION.HISTORY_WINDOW),
+      daysSinceLast: diffDays(last.localDate, todayLocalDate),
+    });
+  }
 
-  const weeksSinceDeload = await accumulationWeeks(profileId, todayLocalDate);
+  const [timeline, program] = await Promise.all([
+    sessionTimeline(profileId, todayLocalDate),
+    prisma.trainingProgram.findFirst({
+      where: { profileId, isActive: true, deletedAt: null },
+      select: { daysPerWeek: true },
+    }),
+  ]);
 
   return {
     todayLocalDate,
     sinceLocalDate,
     sessions: contextSessions,
     variants,
-    weeksSinceDeload,
+    weeksSinceDeload: accumulationWeeks(timeline, todayLocalDate),
+    timeline,
+    sessionsPerWeek: program?.daysPerWeek ?? null,
   };
+}
+
+function prescriptionOf(we: {
+  repRangeMin: number;
+  repRangeMax: number;
+  targetRir: number;
+  plannedSets: number;
+  exerciseVariant: { loadStepKg: number };
+}): ContextVariant["prescription"] {
+  return {
+    repRangeMin: we.repRangeMin,
+    repRangeMax: we.repRangeMax,
+    targetRir: we.targetRir,
+    plannedSets: we.plannedSets,
+    loadStepKg: we.exerciseVariant.loadStepKg,
+  };
+}
+
+/**
+ * TODAS las sesiones completadas hasta hoy —no solo la ventana—, con su fecha
+ * y si fueron descarga, de la más antigua a la más reciente. Es lo que permite
+ * situar cada descarga (cuándo empezó, si ha terminado, si has vuelto) y
+ * contar las semanas de acumulación, sin migración.
+ *
+ * Cota superior en `todayLocalDate`, igual que la consulta de sesiones: sin
+ * ella, una sesión con fecha por delante del "hoy" evaluado dejaba el ancla de
+ * acumulación en el futuro y el contador salía NEGATIVO — y un número negativo
+ * nunca alcanza el umbral, así que la señal de calendario se apagaba para
+ * siempre.
+ */
+async function sessionTimeline(
+  profileId: string,
+  todayLocalDate: string,
+): Promise<TimelineSession[]> {
+  const rows = await prisma.workoutSession.findMany({
+    where: {
+      status: "COMPLETED",
+      localDate: { lte: todayLocalDate },
+      mesocycle: { program: PROGRAM_SCOPE(profileId) },
+    },
+    orderBy: [{ localDate: "asc" }, { finishedAt: "asc" }],
+    select: { localDate: true, weekKind: true },
+  });
+  return rows.map((r) => ({
+    localDate: r.localDate,
+    deload: r.weekKind === "DELOAD",
+  }));
 }
 
 /**
@@ -237,38 +308,17 @@ export async function getTrainingContext(
  * semanas seguidas acumulando". Un parón real ES, funcionalmente, la semana
  * suave que la señal busca.
  */
-async function accumulationWeeks(
-  profileId: string,
+function accumulationWeeks(
+  timeline: TimelineSession[],
   todayLocalDate: string,
-): Promise<number | null> {
-  const scope = PROGRAM_SCOPE(profileId);
-  const [deloadDates, dates] = await Promise.all([
-    prisma.workoutSession.findMany({
-      where: {
-        status: "COMPLETED",
-        weekKind: "DELOAD",
-        // Cota superior, igual que la consulta de sesiones: sin ella, una
-        // sesión con fecha por delante del "hoy" evaluado dejaba el ancla en
-        // el futuro y el contador salía NEGATIVO — y un número negativo nunca
-        // alcanza el umbral, así que la señal de calendario se apagaba para
-        // siempre.
-        localDate: { lte: todayLocalDate },
-        mesocycle: { program: scope },
-      },
-      orderBy: { localDate: "desc" },
-      select: { localDate: true },
-    }),
-    prisma.workoutSession.findMany({
-      where: {
-        status: "COMPLETED",
-        localDate: { lte: todayLocalDate },
-        mesocycle: { program: scope },
-      },
-      orderBy: { localDate: "asc" },
-      select: { localDate: true },
-      distinct: ["localDate"],
-    }),
-  ]);
+): number | null {
+  const deloadDates = timeline
+    .filter((s) => s.deload)
+    .map((s) => ({ localDate: s.localDate }))
+    .reverse();
+  const dates = timeline
+    .filter((s, i) => i === 0 || s.localDate !== timeline[i - 1].localDate)
+    .map((s) => ({ localDate: s.localDate }));
   if (dates.length === 0) return null;
 
   let anchor = dates[0].localDate;

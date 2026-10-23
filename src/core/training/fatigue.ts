@@ -1,6 +1,7 @@
 import { FATIGUE, FATIGUE_ENGINE_VERSION } from "@/core/config/training-config";
 import { diffDays } from "@/core/dates";
 import type { Confidence } from "@/core/enums";
+import { deloadStatus, type DeloadStatus } from "@/core/training/deload";
 
 /**
  * Motor de fatiga y deload reactivo (Fase 3.3). Puro y determinista.
@@ -86,6 +87,12 @@ export interface FatigueInput {
   exercises: FatigueExerciseInput[];
   /** Semanas de acumulación continua sin descarga (derivado, sin migración). */
   weeksSinceDeload: number | null;
+  /**
+   * En qué punto de una descarga estás (`deload.ts`). Lo calcula
+   * `analysis.ts` con TODO el historial; si no llega, se deriva de `sessions`
+   * con las sesiones por semana por defecto.
+   */
+  deload?: DeloadStatus;
 }
 
 export interface DeloadPlan {
@@ -118,6 +125,8 @@ export interface FatigueAssessment {
   confidence: Confidence;
   explanation: string;
   engineVersion: string;
+  /** Descarga en curso, recién terminada o ninguna. Gobierna titular y veto. */
+  deload: DeloadStatus;
   numbers: {
     sessionsInWindow: number;
     exercisesTracked: number;
@@ -180,6 +189,17 @@ export function assessFatigue(
     (e) => e.daysSinceLast <= config.WINDOW_DAYS,
   );
   const recent = sessions.slice(-config.RECENT_SESSIONS);
+  const deload =
+    input.deload ??
+    deloadStatus(
+      input.sessions.map((s) => ({
+        localDate: s.localDate,
+        deload: s.deload === true,
+      })),
+      input.todayLocalDate,
+      config.DELOAD_DETECTION.DEFAULT_SESSIONS_PER_WEEK,
+      config,
+    );
 
   // Días que abarcan de verdad las sesiones vistas (de la primera a hoy). NO es
   // lo mismo que la ventana, y confundirlos era el problema: la ventana es
@@ -243,6 +263,7 @@ export function assessFatigue(
       confidence: "LOW",
       explanation: `Con ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} no puedo valorar tu fatiga: miro las de los últimos ${config.WINDOW_DAYS} días y necesito al menos ${config.MIN_SESSIONS}. Sigue entrenando y te lo digo.`,
       engineVersion: FATIGUE_ENGINE_VERSION,
+      deload,
       numbers: base,
     };
   }
@@ -460,30 +481,44 @@ export function assessFatigue(
   // "Sigue con el plan" no se dice si hay dolor articular accionable: el
   // titular no miraba el dolor y quedaba justo encima de un aviso rojo que
   // manda retirar el ejercicio y consultar con un profesional.
-  const sigueConElPlan =
+  const avisoDolor =
     jointPainLevel === "ACTION"
       ? " Pero atento al aviso de dolor de abajo."
-      : " Sigue con el plan.";
-  // ¿Está el usuario HACIENDO ya la descarga? Si su última sesión se registró
-  // como descarga, seguir diciéndole "te recomiendo una semana de descarga" es
-  // insistir en algo que ya está haciendo. No es falso, pero no ayuda.
-  // Acotado a la semana: mirar solo "la última sesión fue descarga" hacía que
-  // el titular siguiera diciendo "sigue así el resto de la semana" el domingo
-  // siguiente, con la descarga ya terminada — y eso invita a alargarla.
-  const ultima = sessions.at(-1);
-  const enDescarga =
-    ultima?.deload === true &&
-    diffDays(ultima.localDate, input.todayLocalDate) < 7;
+      : "";
+  const sigueConElPlan = avisoDolor || " Sigue con el plan.";
+
+  // La descarga tiene principio y fin (`deload.ts`), y el titular lo cuenta.
+  // Antes solo miraba si la ÚLTIMA sesión era de descarga, y fallaba en las dos
+  // puntas: con la semana ya completa seguía diciendo "sigue así el resto de la
+  // semana" —que invita a alargarla— y, al volver, saltaba sin transición a
+  // "te recomiendo una semana de descarga", con las mismas caídas que la
+  // habían motivado.
+  //
+  //  · EN CURSO: manda el hecho, no el veredicto. A mitad de semana el score
+  //    puede bajar —la propia descarga reinicia el contador de acumulación— y
+  //    eso no la termina: "no basta para recomendarte una descarga" a quien va
+  //    por la segunda sesión de la que le recomendaste se lee como "déjala".
+  //  · TERMINADA: con las caídas de antes ya gastadas el motor no puede estar
+  //    recomendando otra (no queda evidencia objetiva hasta que vuelvas a
+  //    entrenar), así que toca decir qué hacer ahora.
+  const tanda = deload.current;
+  const nTanda = tanda?.sessions ?? 0;
   const headline =
-    decision === "DELOAD_RECOMMENDED"
-      ? enDescarga
-        ? `Estás haciendo la descarga: sigue así el resto de la semana. ${tally}.`
-        : `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
-      : decision === "DELOAD_WATCH"
-        ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
-        : signals.length > 0
-          ? `${tally}, nada que indique fatiga acumulada.${sigueConElPlan}`
-          : `Sin señales de fatiga en tus últimas ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"}${spanDays > 0 ? ` (${spanDays} ${spanDays === 1 ? "día" : "días"})` : ""}.${sigueConElPlan}`;
+    deload.phase === "IN_PROGRESS" && tanda
+      ? `Estás haciendo la descarga: llevas ${nTanda} de ${deload.sessionsPerWeek} sesiones. Sigue así el resto de la semana.${avisoDolor}`
+      : deload.phase === "FINISHED" &&
+          tanda &&
+          decision !== "DELOAD_RECOMMENDED"
+        ? `Descarga terminada (${nTanda} ${nTanda === 1 ? "sesión" : "sesiones"}): en la próxima sesión vuelve a tu volumen normal. Lo que había caído antes ya no cuenta: cada ejercicio se vuelve a juzgar con lo que hagas a partir de ahora.${
+            decision === "DELOAD_WATCH" ? ` Aun así, ${tally}: lo vigilo.` : ""
+          }${avisoDolor}`
+        : decision === "DELOAD_RECOMMENDED"
+          ? `Te recomiendo una semana de descarga: ${tally}. No la aplico, la decides tú.`
+          : decision === "DELOAD_WATCH"
+            ? `${tally}: no basta para recomendarte una descarga, pero lo vigilo.`
+            : signals.length > 0
+              ? `${tally}, nada que indique fatiga acumulada.${sigueConElPlan}`
+              : `Sin señales de fatiga en tus últimas ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"}${spanDays > 0 ? ` (${spanDays} ${spanDays === 1 ? "día" : "días"})` : ""}.${sigueConElPlan}`;
 
   // Explicación LARGA con todos los números: la consume Coach AI y el fallback
   // determinista, no la tarjeta (que ya lista las señales una a una).
@@ -504,6 +539,7 @@ export function assessFatigue(
     confidence,
     explanation,
     engineVersion: FATIGUE_ENGINE_VERSION,
+    deload,
     numbers: base,
   };
 }

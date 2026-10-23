@@ -482,7 +482,7 @@ async function isExecutedDeload(
         where: { profileId, isActive: true, deletedAt: null },
         select: { daysPerWeek: true },
       })
-    )?.daysPerWeek ?? 3;
+    )?.daysPerWeek ?? FATIGUE.DELOAD_DETECTION.DEFAULT_SESSIONS_PER_WEEK;
   if (mismaTanda > 0 && mismaTanda < porSemana) return true;
 
   // 4b · Si el motor ya no la recomienda, esto no es una descarga.

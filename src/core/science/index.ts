@@ -425,7 +425,17 @@ export const PHILOSOPHY: PhilosophySection[] = [
         summary:
           "Cuando recortas series estando recomendada una descarga, esas sesiones se marcan como tales: no cuentan como sesiones acortadas y reinician el contador de semanas acumuladas. Obedecer al motor nunca puede penalizarte.",
         detail:
-          "Hacen falta las dos cosas: que la descarga estuviera recomendada ese día y que de verdad hayas recortado (menos del 70 % de las series que prescribe tu plantilla). Así un día flojo suelto no puede disfrazarse de descarga. No se borra ni un dato: las series, cargas, repeticiones y RIR de esa semana siguen en tu historial y el motor de progresión los sigue usando. En el historial esas sesiones llevan la etiqueta «Descarga».",
+          "Hacen falta varias cosas: que la descarga estuviera recomendada ese día, que hayas pasado por la sesión entera (series en al menos la mitad de los ejercicios) y que de verdad hayas recortado (como mucho el 75 % de las series que ese día haces normalmente). Así ni un día flojo suelto ni una sesión abandonada pueden disfrazarse de descarga. No se borra ni un dato: las series, cargas, repeticiones y RIR de esa semana siguen en tu historial y en tu e1RM, y en la pantalla de sesión salen como «última vez». Lo que no hacen es calcular tus objetivos: hiciste menos series a propósito, así que no dicen nada nuevo de lo que puedes mover. En el historial esas sesiones llevan la etiqueta «Descarga».",
+        evidence: "HEURISTIC",
+        citations: [],
+      },
+      {
+        id: "fin-descarga",
+        title: "La descarga termina, y lo de antes deja de contar",
+        summary:
+          "Dura una semana o tantas sesiones como días entrenas. Al terminarla, las caídas que la motivaron dejan de contar: cada ejercicio se vuelve a juzgar con lo que hagas después.",
+        detail:
+          "Mientras la haces, la app te lo recuerda y no te sube la carga. Al terminarla te dice que vuelvas a tu volumen normal. La evidencia que justificó la descarga ya se ha gastado en ella: si siguiera contando, el motor te pediría otra descarga el primer día de vuelta con los mismos datos. Así que cada ejercicio se juzga solo con lo que haces después, y mientras no vuelvas a entrenarlo no cuenta ni a favor ni en contra. Si sigue cayendo después de descargar, el motor lo ve con datos nuevos y con las reglas de siempre: una sola sesión mala tampoco basta. Una sola sesión recortada no es una descarga y no borra nada. La duración y estos umbrales son decisiones de producto, no fisiología medida.",
         evidence: "HEURISTIC",
         citations: [],
       },
@@ -538,7 +548,7 @@ export const REASON_CODE_EXPLANATIONS: Record<ProgressionReasonCode, string> = {
     "Han pasado semanas desde esa sesión: se vuelve con el mismo peso para reconfirmar antes de subir. El tiempo no baja la carga.",
   HOLD_DEFAULT: "Mantener la carga y consolidar.",
   RECOVERY_VETO:
-    "Había una subida lista, pero hay dolor articular o una descarga recomendada. La salud y la recuperación mandan sobre la progresión: la subida queda en pausa, no se pierde.",
+    "Había una subida lista, pero hay dolor articular o una descarga recomendada o en curso. La salud y la recuperación mandan sobre la progresión: la subida queda en pausa, no se pierde.",
 };
 
 /**
@@ -584,9 +594,9 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
   el motor lo COMENTA (señal RANGE_TOO_WIDE) con el ancho útil calculado, y nada más:
   no reescribe la prescripción. Con saltos grandes (mancuernas ligeras) el rango ancho
   es necesario y la señal calla.
-- Con dolor articular repetido o una descarga recomendada, las SUBIDAS DE CARGA
-  quedan suspendidas (la salud y la recuperación tienen precedencia). Progresar
-  en repeticiones sigue permitido, y la carga nunca baja por este motivo.
+- Con dolor articular repetido o una descarga recomendada o en curso, las SUBIDAS
+  DE CARGA quedan suspendidas (la salud y la recuperación tienen precedencia).
+  Progresar en repeticiones sigue permitido, y la carga nunca baja por este motivo.
 
 REGLAS DEL MOTOR DE FATIGA (deterministas):
 - Recomendar descarga exige ≥5 puntos Y ≥2 puntos de señales OBJETIVAS.
@@ -598,8 +608,13 @@ REGLAS DEL MOTOR DE FATIGA (deterministas):
   y el RIR objetivo. Una sola palanca, no dos.
 - Nada se aplica automáticamente: es una recomendación.
 - Si el usuario HACE la descarga (recorta series mientras estaba recomendada),
-  esas sesiones se marcan como descarga: no cuentan como sesiones acortadas y
-  reinician el contador de semanas acumuladas. Obedecer nunca penaliza.
+  esas sesiones se marcan como descarga: no cuentan como sesiones acortadas,
+  reinician el contador de semanas acumuladas y no se usan para calcular
+  objetivos de carga. Obedecer nunca penaliza.
+- La descarga dura una semana o tantas sesiones como días entrena el usuario.
+  Al terminarla, las caídas de ANTES dejan de contar para la fatiga: cada
+  ejercicio se juzga solo con lo que hace después. Recién terminada, lo que
+  toca es volver al volumen normal, no alargarla.
 - NO hay periodización automática. El "bloque" tiene una referencia inicial de
   semanas, pero nada ocurre al alcanzarla: no se cierra, no cambia el programa
   y no se genera otro. Los ejercicios, los días y las series solo cambian si

@@ -446,7 +446,7 @@ describe("invariantes", () => {
     for (const [label, r] of grid) {
       expect(r.explanation.length, label).toBeGreaterThan(20);
       expect(["LOW", "MEDIUM", "HIGH"], label).toContain(r.confidence);
-      expect(r.engineVersion, label).toBe("1.0.0");
+      expect(r.engineVersion, label).toBe("1.1.0");
     }
   });
 });
@@ -717,5 +717,114 @@ describe("N · el titular de descarga no sobrevive a su semana", () => {
     if (r.decision === "DELOAD_RECOMMENDED") {
       expect(r.headline).not.toMatch(/Estás haciendo la descarga/i);
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+describe("O · la descarga tiene principio y fin (v1.1.0)", () => {
+  /**
+   * El titular decidía "estás haciendo la descarga" mirando solo si la ÚLTIMA
+   * sesión era de descarga: con la semana completa seguía diciendo "sigue así
+   * el resto de la semana" y, al volver, saltaba a "te recomiendo una semana
+   * de descarga". Ahora la fase sale de la tanda entera (`deload.ts`).
+   */
+  const EJ = [
+    exercise("Press", { regressed: true }),
+    exercise("Sentadilla", { regressed: true }),
+    exercise("Remo"),
+  ];
+  const DURO = [
+    session(12, { fatigue: 5, perceivedPerformance: 2 }),
+    session(9, { fatigue: 5, perceivedPerformance: 2 }),
+    session(7, { fatigue: 5, perceivedPerformance: 2 }),
+  ];
+  const recorte = (
+    daysAgo: number,
+    feedback: Partial<Omit<FatigueSessionInput, "localDate">> = {},
+  ) => session(daysAgo, { completionRate: 0.5, deload: true, ...feedback });
+
+  it("en curso: dice cuántas sesiones llevas de las de tu semana", () => {
+    const r = run([...DURO, recorte(2)], EJ);
+    expect(r.deload.phase).toBe("IN_PROGRESS");
+    expect(r.deload.current?.sessions).toBe(1);
+    expect(r.decision).toBe("DELOAD_RECOMMENDED");
+    expect(r.headline).toBe(
+      "Estás haciendo la descarga: llevas 1 de 3 sesiones. Sigue así el resto de la semana.",
+    );
+  });
+
+  it("en curso aunque el veredicto baje: no le dice 'no basta' a mitad de semana", () => {
+    // A mitad de descarga el score puede bajar —la propia descarga reinicia el
+    // contador de acumulación—. Decirle "no basta para recomendarte una
+    // descarga" a quien va por la segunda sesión se lee como "déjala".
+    const r = run(
+      [
+        session(12),
+        session(9),
+        recorte(4, { fatigue: 5, perceivedPerformance: 2 }),
+        recorte(2, { fatigue: 5, perceivedPerformance: 2 }),
+      ],
+      [exercise("Press"), exercise("Sentadilla")],
+    );
+    expect(r.decision).toBe("DELOAD_WATCH");
+    expect(r.deload.phase).toBe("IN_PROGRESS");
+    expect(r.headline).toMatch(/Estás haciendo la descarga: llevas 2 de 3/);
+    expect(r.headline).not.toMatch(/no basta/);
+  });
+
+  it("terminada: toca volver a tu volumen normal", () => {
+    const r = run(
+      [session(12), session(9), recorte(6), recorte(4), recorte(2)],
+      [exercise("Press"), exercise("Sentadilla")],
+    );
+    expect(r.deload.phase).toBe("FINISHED");
+    expect(r.deload.lastCompleted?.sessions).toBe(3);
+    expect(r.decision).toBe("NO_DELOAD");
+    expect(r.headline).toBe(
+      "Descarga terminada (3 sesiones): en la próxima sesión vuelve a tu volumen normal. Lo que había caído antes ya no cuenta: cada ejercicio se vuelve a juzgar con lo que hagas a partir de ahora.",
+    );
+    expect(r.headline).not.toMatch(/Estás haciendo la descarga|sigue así/i);
+  });
+
+  it("terminada con chips malos: lo vigila, sin pedir otra", () => {
+    const malas = { fatigue: 5, perceivedPerformance: 2 };
+    const r = run(
+      [
+        session(12),
+        session(9),
+        recorte(6, malas),
+        recorte(4, malas),
+        recorte(2, malas),
+      ],
+      [exercise("Press"), exercise("Sentadilla")],
+    );
+    expect(r.decision).toBe("DELOAD_WATCH");
+    expect(r.objectiveScore).toBe(0);
+    expect(r.headline).toMatch(/^Descarga terminada \(3 sesiones\)/);
+    expect(r.headline).toMatch(
+      /Aun así, 2 señales, ninguna de rendimiento medido: lo vigilo\.$/,
+    );
+  });
+
+  it("y al volver a entrenar normal, el titular vuelve a ser el de siempre", () => {
+    const r = run(
+      [session(12), recorte(6), recorte(4), recorte(2), session(0)],
+      [exercise("Press"), exercise("Sentadilla")],
+    );
+    expect(r.deload.phase).toBe("NONE");
+    expect(r.deload.lastCompleted?.endLocalDate).toBe(addDays(TODAY, -2));
+    expect(r.headline).toMatch(
+      /^Sin señales de fatiga en tus últimas 5 sesiones/,
+    );
+  });
+
+  it("con dolor accionable, el aviso también sale durante la descarga", () => {
+    const r = run(
+      [...DURO, recorte(4, { jointPain: 5 }), recorte(2, { jointPain: 5 })],
+      EJ,
+    );
+    expect(r.jointPain.level).toBe("ACTION");
+    expect(r.deload.phase).toBe("IN_PROGRESS");
+    expect(r.headline).toMatch(/Pero atento al aviso de dolor de abajo\.$/);
   });
 });

@@ -465,7 +465,8 @@ export function SessionRunner({
           </div>
           {ex.lastTime ? (
             <p className="tnum text-muted-foreground mt-1 text-xs">
-              Última vez ({ex.lastTime.localDate}):{" "}
+              Última vez ({ex.lastTime.localDate}
+              {ex.lastTime.deload ? " · descarga" : ""}):{" "}
               {ex.lastTime.sets
                 .map(
                   (s) =>

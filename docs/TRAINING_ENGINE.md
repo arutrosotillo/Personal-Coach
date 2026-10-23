@@ -208,9 +208,10 @@ Sin `todayLocalDate` el motor se comporta como antes (`numbers.daysSinceLast = -
 
 ## 1e. Fatiga y deload reactivo (Fase 3.3)
 
-`src/core/training/fatigue.ts` (+ `analysis.ts`, que combina progresión y fatiga). Puro,
-determinista y **solo recomienda**: no toca el programa, ni las series, ni la carga, ni el
-mesociclo.
+`src/core/training/fatigue.ts` (+ `analysis.ts`, que combina progresión y fatiga, y `deload.ts`,
+que sitúa la descarga). Puro, determinista y **solo recomienda**: no toca el programa, ni las
+series, ni la carga, ni el mesociclo. Versión actual: `FATIGUE_ENGINE_VERSION = 1.1.0`. Umbrales en
+`FATIGUE` (`training-config.ts`); si este documento y ese fichero discrepan, manda el fichero.
 
 **Dos reglas que gobiernan el motor:**
 
@@ -218,16 +219,22 @@ mesociclo.
 2. **Lo subjetivo no basta.** Recomendar descarga exige ≥`MIN_OBJECTIVE_SCORE` puntos de señales
    OBJETIVAS. Tres chips malos seguidos jamás mandan a descargar por sí solos.
 
-| Señal                       | Tipo       | Peso | Dispara con                                                 |
-| --------------------------- | ---------- | ---- | ----------------------------------------------------------- |
-| `PERFORMANCE_DECLINE`       | objetiva   | 3    | regresión en ≥`max(2, 25 %)` de los ejercicios seguidos     |
-| `WIDESPREAD_PLATEAU`        | objetiva   | 2    | ≥50 % de los ejercicios (y ≥2) con `PLATEAU_SIGNAL`         |
-| `SINGLE_LIFT_DECLINE`       | objetiva   | 1    | exactamente 1 ejercicio en regresión (crédito parcial)      |
-| `SESSION_COMPLETION_DROP`   | conductual | 2    | ≥2 de las últimas 4 sesiones con <70 % de series            |
-| `HIGH_FATIGUE_SUSTAINED`    | subjetiva  | 2    | fatiga ≥4/5 en ≥2 de las últimas 4                          |
-| `LOW_PERCEIVED_PERFORMANCE` | subjetiva  | 1    | rendimiento percibido ≤2/5 en ≥2                            |
-| `LOW_MOTIVATION_SUSTAINED`  | subjetiva  | 1    | motivación ≤2/5 en ≥3 (señal de adherencia)                 |
-| `LONG_ACCUMULATION`         | calendario | 1    | ≥8 semanas seguidas sin parar (red suave, nunca suficiente) |
+| Señal                        | Tipo       | Peso | Dispara con                                                                      |
+| ---------------------------- | ---------- | ---- | -------------------------------------------------------------------------------- |
+| `SEVERE_PERFORMANCE_DECLINE` | objetiva   | 5    | regresión en ≥50 % **y** ≥3 de los ejercicios seguidos (sustituye a la de abajo) |
+| `PERFORMANCE_DECLINE`        | objetiva   | 3    | regresión en ≥`max(2, 25 %)` de los ejercicios seguidos                          |
+| `WIDESPREAD_PLATEAU`         | objetiva   | 2    | ≥50 % de los ejercicios (y ≥2) con `PLATEAU_SIGNAL`                              |
+| `SINGLE_LIFT_DECLINE`        | objetiva   | 1    | exactamente 1 ejercicio en regresión (crédito parcial)                           |
+| `SESSION_COMPLETION_DROP`    | conductual | 2    | ≥2 de las últimas 4 sesiones con <70 % de series (las de descarga no cuentan)    |
+| `HIGH_FATIGUE_SUSTAINED`     | subjetiva  | 2    | fatiga ≥4/5 en ≥2 de las últimas 4                                               |
+| `LOW_PERCEIVED_PERFORMANCE`  | subjetiva  | 1    | rendimiento percibido ≤2/5 en ≥2                                                 |
+| `LOW_MOTIVATION_SUSTAINED`   | subjetiva  | 1    | motivación ≤2/5 en ≥3 (señal de adherencia)                                      |
+| `LONG_ACCUMULATION`          | calendario | 1    | ≥8 semanas seguidas sin parar (red suave, nunca suficiente)                      |
+
+El peso de la caída escala con la fracción afectada: cuando cae la mitad o más de los ejercicios (y al
+menos 3), la señal vale 5 por sí sola y basta para recomendar la descarga aunque el usuario no
+rellene un solo chip — los chips son opcionales; el rendimiento medido, no. «Ejercicios seguidos»
+son los entrenados en los últimos 21 días.
 
 **`SESSION_COMPLETION_DROP` es CONDUCTUAL, no objetiva**: correlaciona con la fatiga, pero también
 con la agenda y con una máquina ocupada. Suma al `score` y **no** cuenta para `objectiveScore`, así
@@ -237,6 +244,14 @@ que por sí sola no puede habilitar una recomendación de descarga con el rendim
 exposiciones consecutivas bajo el rango (`REPEATED_UNDERPERFORMANCE`, `STUCK_BELOW_RANGE`), o que el
 **peso de trabajo actual esté por debajo del máximo de la ventana** sin que el motor esté ya pidiendo
 avanzar. Un mal día suelto (`ONE_OFF_UNDERPERFORMANCE`) **no** es una regresión: no mueve la carga.
+Si la última exposición es una que el propio motor declara no accionable (`ONE_OFF_UNDERPERFORMANCE`,
+`ATYPICAL_LOAD_DROP`, `SESSION_INCOMPLETE`, `SET_DROP_OFF`), se vuelve a correr el motor sin ella: si
+sin ese día ya pedía avanzar, el ejercicio se estaba recuperando y no cuenta como caída.
+
+Tras una **descarga completa**, `regressed` y `plateaued` se juzgan **solo con las exposiciones
+posteriores** a ella (ver «Descarga: principio y fin» más abajo). La carga que se propone en la
+pantalla de sesión (`suggestion`) sigue saliendo del historial entero: el motor de progresión no sabe
+nada de descargas.
 
 **Decisión**: `score ≥5` **y** `objectiveScore ≥2` → `DELOAD_RECOMMENDED` · `score ≥3` →
 `DELOAD_WATCH` · resto → `NO_DELOAD` · <3 sesiones en 21 días → `INSUFFICIENT_DATA`.
@@ -245,8 +260,11 @@ avanzar. Un mal día suelto (`ONE_OFF_UNDERPERFORMANCE`) **no** es una regresió
 propio aviso (`NONE` → `WATCH` → `ACTION`) y tiene precedencia sobre cualquier ajuste de carga
 (COACH_PHILOSOPHY §2).
 
-**Precedencia (COACH_PHILOSOPHY §2)**: con `jointPain: ACTION` o `DELOAD_RECOMMENDED`, las subidas
-de carga quedan **suspendidas** en las dos pantallas (`applyRecoveryVeto`, `src/core/training/veto.ts`).
+**Precedencia (COACH_PHILOSOPHY §2)**: con `jointPain: ACTION`, `DELOAD_RECOMMENDED` o una descarga
+**en curso**, las subidas de carga quedan **suspendidas** en las dos pantallas (`applyRecoveryVeto`,
+`src/core/training/veto.ts`). La descarga en curso veta aunque el veredicto ya no la pida: el plan es
+la misma carga, y a mitad de semana el score puede bajar —la propia descarga reinicia el contador de
+acumulación— sin que la descarga haya terminado. Al terminarla, el veto se levanta con ella.
 Convierte `INCREASE_LOAD` en `HOLD` · `RECOVERY_VETO` sobre el peso de referencia, conserva la subida
 en una señal, **nunca baja la carga** y no toca `ADD_REP`. Se aplica DESPUÉS del veredicto de fatiga y
 no lo realimenta: si lo hiciera, el propio veto contaría como evidencia de fatiga.
@@ -275,23 +293,73 @@ no se cierra al llegar a las 6 semanas, no genera el siguiente y no hay periodiz
 semanas» y no de una cuenta atrás. `currentWeek` no se lee en ningún sitio.
 
 Las semanas de acumulación se **derivan** de las fechas reales de las sesiones, sin migración y sin
-inventar estructura. El ancla es la más reciente
-de tres fechas: última sesión `DELOAD`, primera sesión del programa activo, y **primera sesión tras
-un hueco de ≥`ACCUMULATION_RESET_GAP_DAYS` (10 d)**.
+inventar estructura. El ancla es la más reciente de tres fechas: la última sesión `DELOAD` (si forma
+parte de una **tanda** de ≥`MIN_SESSIONS_TO_RESET` = 2 sesiones marcadas en `WINDOW_DAYS` = 10 días:
+una sola no borra diez semanas), la **primera sesión registrada** del perfil (no la del programa
+activo: generar un programa nuevo es un acto administrativo, no una semana suave) y **la primera
+sesión tras un hueco de ≥`ACCUMULATION_RESET_GAP_DAYS` (10 d)**. El hueco es necesario para quien
+simplemente para: sin él, quien se toma tres meses libres leería «llevas 85 semanas seguidas
+acumulando». Un parón real **es** la semana suave que la señal busca; un parón que sigue abierto hoy
+también cuenta (el contador vale 0).
 
-Desde el micro-hardening posterior a la QA, `weekKind: "DELOAD"` **sí se escribe**: al finalizar una
-sesión se marca así cuando el motor recomendaba descarga en esa fecha Y las series registradas
-quedan por debajo del `COMPLETION_LOW` de lo que prescribe la plantilla (se compara con la
-plantilla, no con las series previstas de la sesión, porque «− Quitar serie» baja estas últimas). Si
-ya hay una sesión DELOAD en la misma semana ISO, el resto de la semana también cuenta. Esas
-sesiones **no cuentan como acortadas** en `SESSION_COMPLETION_DROP` y **anclan el contador**: hacer
-la descarga que el motor pide deja de penalizar y reinicia `LONG_ACCUMULATION`. [HEURÍSTICA] el
-umbral del 70 % reutiliza `COMPLETION_LOW`.
+**Cuándo una sesión es una descarga ejecutada** (`isExecutedDeload`, `workout-session.service.ts`).
+`weekKind: "DELOAD"` se escribe al FINALIZAR la sesión, una sola vez (un reintento con el mismo token
+no vuelve a decidir). Hacen falta las cuatro cosas, y cada una tapa una forma distinta de colarse:
 
-El tercer caso (el hueco de días) sigue siendo necesario para quien simplemente para: Diría «llevas 85 semanas seguidas acumulando» a quien paró tres
-meses y seguiría diciéndolo la semana después de hacer la descarga que el propio coach recomendó —
-además de restar 1 punto efectivo al umbral de forma permanente. Un parón real **es** la semana suave
-que la señal busca.
+1. que el motor **recomendara descarga** en esa fecha (se consulta antes de marcarla completada, así
+   que no se cuenta a sí misma);
+2. que hayas **pasado por la sesión entera**: series en al menos la mitad de los ejercicios
+   (`MIN_EXERCISE_FRACTION` = 0,5). Una serie de dieciocho es abandonar, no descargar;
+3. que de verdad hayas **recortado**: series registradas ≤`MAX_FRACTION` (75 %) de lo que ese día es
+   normalmente para ti — el MAYOR de: el snapshot de la sesión, las `baseSets` de la plantilla actual
+   y las últimas 4 sesiones normales de esa misma plantilla. Hacen falta las tres referencias: «− Quitar
+   serie» baja la primera y recortar en `/program` antes de entrenar baja la segunda. El 75 % se
+   deriva de la prescripción (`ceil(n/2)/n` vale 0,67 con 3 series y 1,0 con ejercicios de 1 serie),
+   no de `COMPLETION_LOW`;
+4. que no vengas de **otra descarga reciente**: alargarla mientras sigue recomendada vale
+   (`EXTENSION_DAYS` = 14), empezar otra antes de `COOLDOWN_DAYS` = 28, no — eso ya no es descargar,
+   es entrenar siempre a media sesión.
+
+Excepción a la regla 1: si en los últimos 10 días ya hay sesiones `DELOAD` pero menos que los días
+que entrenas por semana, una sesión recortada es **parte de la misma tanda** aunque el veredicto ya
+haya bajado (baja precisamente porque estás recortando). [HEURÍSTICA] todos estos umbrales.
+
+Esas sesiones **no cuentan como acortadas** en `SESSION_COMPLETION_DROP`, **anclan el contador** de
+acumulación y **no entran como exposición** en ninguna de las dos pantallas — ni en la tarjeta de
+recuperación (`training-context.repo`) ni en los objetivos de la pantalla de sesión y de `/train`
+(`workout.repo`). Hiciste menos series a propósito, así que no dicen nada nuevo sobre tu capacidad a
+esa carga: si entraran, media sesión dispararía `SESSION_INCOMPLETE` y las repeticiones partidas por
+la mitad fabricarían mesetas que sostienen la SIGUIENTE descarga. La pantalla de sesión las sigue
+enseñando en «Última vez», marcadas como descarga, porque ese historial es real; y si una variante
+solo existe en descargas (la sustituiste esa semana), la descarga se usa como referencia: la carga
+fue la de siempre y es mejor que ninguna. Los datos no se pierden: historial y e1RM las leen.
+
+**Descarga: principio y fin** (`deload.ts`, fatiga v1.1.0). La fase se deriva de las sesiones ya
+marcadas, sin migración. Una **tanda** son sesiones `DELOAD` seguidas en el orden real de tus
+sesiones; la corta una sesión normal en medio o un hueco de `WINDOW_DAYS` entre dos descargas.
+
+| Fase          | Cuándo                                                                                                                    | Titular                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `IN_PROGRESS` | última tanda sin sesión normal detrás, con menos sesiones que días por semana y < `DELOAD_PLAN.DAYS` (7) desde la primera | «Estás haciendo la descarga: llevas N de M sesiones…»          |
+| `FINISHED`    | la tanda ya no está en curso, es **completa** y aún no has vuelto a entrenar normal                                       | «Descarga terminada (N sesiones): vuelve a tu volumen normal…» |
+| `NONE`        | ninguna de las dos (también después de volver)                                                                            | el de siempre                                                  |
+
+Una tanda es **completa** con ≥`MIN_SESSIONS_TO_RESET` sesiones (o tantas como días entrenas, si son
+menos): una sola sesión recortada no es una descarga y no borra nada. M son los `daysPerWeek` del
+programa activo (`DEFAULT_SESSIONS_PER_WEEK` = 3 si no hay).
+
+Al completarse una descarga, **las caídas de antes dejan de contar**: la evidencia que la justificó
+ya se ha gastado en ella, y usarla otra vez es contarla dos veces. Cada ejercicio se juzga para la
+fatiga solo con las exposiciones posteriores a la última sesión de la tanda; mientras no vuelvas a
+entrenarlo, no cuenta ni a favor ni en contra. Así el primer día de vuelta no hay veto y se puede
+progresar, y si un ejercicio sigue cayendo después de descargar, el motor lo detecta con datos
+nuevos — con las reglas de siempre, así que hace falta más de una sesión. El corte sigue vigente
+después de volver y aunque la descarga salga de la ventana: por eso `getTrainingContext` devuelve
+el historial de sesiones entero (`timeline`), no solo el de la ventana.
+
+Antes de v1.1.0 la app sabía cuándo EMPEZABA una descarga pero no cuándo TERMINABA: el titular
+decidía «estás haciendo la descarga» mirando solo la última sesión, y al volver el motor veía las
+mismas caídas de antes, recomendaba otra descarga y vetaba las subidas el primer día de vuelta.
 
 **Ámbito de lectura**: `getTrainingContext` lee el **perfil entero, incluidos los programas
 archivados** — igual que `workout.repo`, para que las dos pantallas vean los mismos hechos. Acotar
