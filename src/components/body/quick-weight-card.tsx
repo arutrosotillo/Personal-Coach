@@ -26,10 +26,17 @@ export function QuickWeightCard({
   todayLocalDate,
   initialWeightKg,
   daysSinceLastWeight,
+  referenceKg,
 }: {
   todayLocalDate: string;
   /** Peso ya registrado hoy, si lo hay. */
   initialWeightKg: number | null;
+  /**
+   * Peso de referencia: la media suavizada con la que la app compara tu
+   * objetivo (la misma de `/progress`). `null` sin pesajes suficientes. Llega
+   * del servidor y se refresca solo al guardar (la acción revalida "Hoy").
+   */
+  referenceKg: number | null;
   /**
    * Días desde el último pesaje, o `null` si no hay ninguno. Solo cambia el
    * texto de ayuda: nunca se usa para regañar ni para pintar una racha rota.
@@ -66,28 +73,54 @@ export function QuickWeightCard({
     });
   }
 
+  const reference =
+    referenceKg === null ? null : (
+      <div>
+        <p className="text-muted-foreground text-sm">Peso de referencia</p>
+        <p className="tnum mt-0.5 text-2xl font-semibold">
+          {formatNumber(referenceKg)}
+          <span className="text-muted-foreground ml-1 text-base font-normal">
+            kg · media
+          </span>
+        </p>
+      </div>
+    );
+  const referenceHelp =
+    referenceKg === null ? null : (
+      <p className="text-muted-foreground text-xs">
+        La media suavizada de tus pesajes: es el peso que usa la app para tu
+        objetivo. El de un día suelto se mueve por agua y sal.
+      </p>
+    );
+
   // Ya hay peso hoy y no se está editando: se enseña y se puede corregir.
   if (!editing && saved !== null) {
     return (
       <Card>
-        <CardContent className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-muted-foreground text-sm">Tu peso de hoy</p>
-            <p className="tnum mt-0.5 text-2xl font-semibold">
-              {formatNumber(saved)}{" "}
-              <span className="text-muted-foreground text-base font-normal">
-                kg
-              </span>
-            </p>
+        <CardContent className="space-y-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex gap-6">
+              <div>
+                <p className="text-muted-foreground text-sm">Tu peso de hoy</p>
+                <p className="tnum mt-0.5 text-2xl font-semibold">
+                  {formatNumber(saved)}{" "}
+                  <span className="text-muted-foreground text-base font-normal">
+                    kg
+                  </span>
+                </p>
+              </div>
+              {reference}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-11"
+              onClick={() => setEditing(true)}
+            >
+              Corregir
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            className="min-h-11"
-            onClick={() => setEditing(true)}
-          >
-            Corregir
-          </Button>
+          {referenceHelp}
         </CardContent>
       </Card>
     );
@@ -146,6 +179,7 @@ export function QuickWeightCard({
             </Button>
           ) : null}
         </div>
+        {reference ? <div className="mt-3">{reference}</div> : null}
         <p
           id="quick-weight-help"
           className="text-muted-foreground mt-2 text-xs"

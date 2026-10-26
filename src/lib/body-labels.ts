@@ -129,3 +129,68 @@ export function formatConfidenceInterval(
 export function formatWindow(days: number): string {
   return `últimos ${days} días`;
 }
+
+/**
+ * Por debajo de esta distancia (kg) se dice "justo en tu objetivo": la cifra
+ * se enseña con un decimal y 0,04 kg no es una distancia que exista.
+ */
+const TARGET_TOLERANCE_KG = 0.05;
+
+export interface TargetWeightStatus {
+  /** Lo que se lee como etiqueta del dato. */
+  label: string;
+  /** El dato, ya con su dirección en palabras. */
+  value: string;
+  /** El peso de referencia ya está en el objetivo o lo ha pasado. */
+  reached: boolean;
+}
+
+/**
+ * Dónde estás respecto a tu peso objetivo, CON DIRECCIÓN.
+ *
+ * `kgToTargetWeight` es objetivo − peso de referencia (positivo = hay que
+ * subir). Antes se pintaba su valor absoluto bajo "Te quedan", así que al
+ * pasar el objetivo en una definición seguía diciendo "te quedan 0,3 kg"
+ * cuando en realidad sobraban 0,3 por debajo. Pasar el objetivo no es un
+ * error ni una alarma: se dice tal cual y la persona decide.
+ *
+ * En fases de peso estable (mantenimiento, recomposición) no hay "llegar":
+ * solo se dice a qué distancia estás y hacia dónde.
+ */
+export function targetWeightStatus(
+  expectedDirection: "DOWN" | "UP" | "FLAT",
+  kgToTargetWeight: number,
+): TargetWeightStatus {
+  const distance = Math.abs(kgToTargetWeight);
+  const kgTxt = `${formatNumber(distance)} kg`;
+  const atTarget = distance < TARGET_TOLERANCE_KG;
+
+  if (expectedDirection === "FLAT") {
+    return {
+      label: "Respecto a tu objetivo",
+      value: atTarget
+        ? "En tu peso objetivo"
+        : `${kgTxt} ${kgToTargetWeight > 0 ? "por debajo" : "por encima"}`,
+      reached: false,
+    };
+  }
+
+  // DOWN: hay que bajar mientras el objetivo quede por debajo (kgTo < 0).
+  // UP: hay que subir mientras quede por encima (kgTo > 0).
+  const remaining =
+    expectedDirection === "DOWN" ? -kgToTargetWeight : kgToTargetWeight;
+  if (remaining >= TARGET_TOLERANCE_KG) {
+    return {
+      label: expectedDirection === "DOWN" ? "Te quedan" : "Te faltan",
+      value: kgTxt,
+      reached: false,
+    };
+  }
+  return {
+    label: "Objetivo alcanzado",
+    value: atTarget
+      ? "Justo en tu objetivo"
+      : `${kgTxt} ${expectedDirection === "DOWN" ? "por debajo" : "por encima"}`,
+    reached: true,
+  };
+}

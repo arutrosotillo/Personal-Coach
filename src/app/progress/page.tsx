@@ -5,6 +5,7 @@ import { CompositionCard, CycleCard } from "@/components/cycles/cycle-card";
 import { assessPerformance } from "@/core/insights";
 import { CheckInCard } from "@/components/body/check-in-card";
 import { InsightCard } from "@/components/body/insight-card";
+import { TargetWeightActions } from "@/components/body/target-weight-actions";
 import { MeasurementHistory } from "@/components/body/measurement-history";
 import { WeightChart } from "@/components/body/weight-chart";
 import { AppShell } from "@/components/layout/app-shell";
@@ -17,6 +18,7 @@ import {
   formatSigned,
   formatWindow,
   showsSlope,
+  targetWeightStatus,
   WAIST_STATUS_TITLE,
   WEIGHT_REASON_HINT,
   WEIGHT_STATUS_TITLE,
@@ -25,6 +27,7 @@ import { getCurrentProfile } from "@/server/auth/current-user";
 import {
   getBodyProgress,
   getGoalForEdit,
+  MIN_WEIGHINGS_FOR_REFERENCE,
 } from "@/server/services/body.service";
 import { getCycleOverview } from "@/server/services/cycle.service";
 import { getTrainingAnalysis } from "@/server/services/fatigue.service";
@@ -91,6 +94,16 @@ export default async function ProgressPage() {
     performanceTrend,
   });
   const { weight, waist, bodyFat, goal, todayLocalDate } = analysis;
+  // El peso con el que la app compara el objetivo: la media suavizada de la
+  // fase. Con menos de 3 pesajes no hay media que enseñar.
+  const referenceKg =
+    weight.series.length >= MIN_WEIGHINGS_FOR_REFERENCE
+      ? weight.latestEmaKg
+      : null;
+  const targetStatus =
+    goal && goal.kgToTargetWeight !== null
+      ? targetWeightStatus(goal.expectedDirection, goal.kgToTargetWeight)
+      : null;
   const hoy = history.find((m) => m.localDate === todayLocalDate);
   const hasTodayRow = hoy !== undefined;
 
@@ -128,24 +141,47 @@ export default async function ProgressPage() {
                 Aún no has registrado ningún peso.
               </p>
             ) : (
-              <div>
-                <p className="tnum text-4xl font-semibold">
-                  {formatNumber(weight.latestKg)}
-                  <span className="text-muted-foreground ml-1 text-lg font-normal">
-                    kg
-                  </span>
-                </p>
-                <p className="text-muted-foreground tnum mt-1 text-xs">
-                  Último pesaje ·{" "}
-                  {formatShortDate(weight.latestLocalDate!, todayLocalDate)}
-                  {weight.series.length > 1 && weight.totalChangeKg !== null ? (
-                    <>
-                      {" · "}
-                      {formatSigned(weight.totalChangeKg, 1)} kg desde el primer
-                      registro
-                    </>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-muted-foreground text-xs">
+                      Último pesaje ·{" "}
+                      {formatShortDate(weight.latestLocalDate!, todayLocalDate)}
+                    </p>
+                    <p className="tnum text-4xl font-semibold">
+                      {formatNumber(weight.latestKg)}
+                      <span className="text-muted-foreground ml-1 text-lg font-normal">
+                        kg
+                      </span>
+                    </p>
+                  </div>
+                  {referenceKg !== null ? (
+                    <div>
+                      <p className="text-muted-foreground text-xs">
+                        Peso de referencia
+                      </p>
+                      <p className="tnum text-4xl font-semibold">
+                        {formatNumber(referenceKg)}
+                        <span className="text-muted-foreground ml-1 text-lg font-normal">
+                          kg
+                        </span>
+                      </p>
+                    </div>
                   ) : null}
-                </p>
+                </div>
+                {referenceKg !== null ? (
+                  <p className="text-muted-foreground text-xs">
+                    El peso de referencia es la media suavizada de tus pesajes:
+                    es el que usa la app para tu objetivo. Un pesaje suelto
+                    puede moverse un kilo de un día a otro por agua y sal.
+                  </p>
+                ) : null}
+                {weight.series.length > 1 && weight.totalChangeKg !== null ? (
+                  <p className="text-muted-foreground tnum text-xs">
+                    {formatSigned(weight.totalChangeKg, 1)} kg desde el primer
+                    registro
+                  </p>
+                ) : null}
               </div>
             )}
 
@@ -258,17 +294,20 @@ export default async function ProgressPage() {
                     </div>
                     <div>
                       <dt className="text-muted-foreground text-xs">
-                        Te quedan
+                        {targetStatus?.label ?? "Te quedan"}
                       </dt>
                       <dd className="tnum font-medium">
-                        {goal.kgToTargetWeight === null
-                          ? "—"
-                          : `${formatNumber(Math.abs(goal.kgToTargetWeight))} kg`}
+                        {targetStatus?.value ?? "—"}
                       </dd>
                     </div>
                   </>
                 ) : null}
               </dl>
+              <TargetWeightActions
+                goal={editableGoal}
+                reached={targetStatus?.reached ?? false}
+                referenceKg={referenceKg}
+              />
             </CardContent>
           </Card>
         ) : null}

@@ -8,6 +8,7 @@ import {
   formatSigned,
   formatWindow,
   showsSlope,
+  targetWeightStatus,
   WAIST_STATUS_TITLE,
   WEIGHT_STATUS_TITLE,
 } from "@/lib/body-labels";
@@ -136,5 +137,52 @@ describe("formatShortDate", () => {
 
   it("lo incluye cuando es otro, para que un historial largo no engañe", () => {
     expect(formatShortDate("2025-12-28", "2026-09-02")).toBe("28 dic 2025");
+  });
+});
+
+describe("targetWeightStatus: la distancia al objetivo, con dirección", () => {
+  it("definición por encima del objetivo: te quedan X kg", () => {
+    // objetivo 77, referencia 77,4 → kgToTarget = −0,4
+    expect(targetWeightStatus("DOWN", -0.4)).toEqual({
+      label: "Te quedan",
+      value: "0,4 kg",
+      reached: false,
+    });
+  });
+
+  it("definición pasada del objetivo: NO dice 'te quedan', dice que está por debajo", () => {
+    // El fallo: con el valor absoluto, 77 − 76,7 = +0,3 se leía "te quedan 0,3 kg".
+    const s = targetWeightStatus("DOWN", 0.3);
+    expect(s.label).toBe("Objetivo alcanzado");
+    expect(s.value).toBe("0,3 kg por debajo");
+    expect(s.reached).toBe(true);
+  });
+
+  it("justo en el objetivo (menos de 50 g) se dice en palabras", () => {
+    expect(targetWeightStatus("DOWN", -0.04)).toMatchObject({
+      value: "Justo en tu objetivo",
+      reached: true,
+    });
+  });
+
+  it("ganancia: te faltan X kg, y por encima ya lo has alcanzado", () => {
+    expect(targetWeightStatus("UP", 1.2)).toMatchObject({
+      label: "Te faltan",
+      value: "1,2 kg",
+      reached: false,
+    });
+    expect(targetWeightStatus("UP", -0.5)).toMatchObject({
+      label: "Objetivo alcanzado",
+      value: "0,5 kg por encima",
+      reached: true,
+    });
+  });
+
+  it("peso estable: solo distancia y dirección, nunca 'alcanzado'", () => {
+    expect(targetWeightStatus("FLAT", 0.6)).toMatchObject({
+      value: "0,6 kg por debajo",
+      reached: false,
+    });
+    expect(targetWeightStatus("FLAT", -0.6).value).toBe("0,6 kg por encima");
   });
 });

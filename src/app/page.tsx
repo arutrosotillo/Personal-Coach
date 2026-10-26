@@ -11,6 +11,7 @@ import { cycleName, rateText } from "@/lib/cycle-labels";
 import { getCurrentProfileOverview } from "@/server/auth/current-user";
 import {
   getMeasurementForDate,
+  getReferenceWeight,
   todayForProfile,
 } from "@/server/services/body.service";
 import { findIntake } from "@/server/repositories/intake.repo";
@@ -68,13 +69,19 @@ export default async function DashboardPage() {
   // sepa si está creando o corrigiendo, y para ajustar su texto de ayuda.
   const todayLocalDate = todayForProfile();
   const yesterdayLocalDate = addDays(todayLocalDate, -1);
-  const [todayMeasurement, latestMeasurement, intakeToday, intakeYesterday] =
-    await Promise.all([
-      getMeasurementForDate(overview.profile.id, todayLocalDate),
-      getLatestMeasurement(overview.profile.id),
-      findIntake(overview.profile.id, todayLocalDate),
-      findIntake(overview.profile.id, yesterdayLocalDate),
-    ]);
+  const [
+    todayMeasurement,
+    latestMeasurement,
+    intakeToday,
+    intakeYesterday,
+    reference,
+  ] = await Promise.all([
+    getMeasurementForDate(overview.profile.id, todayLocalDate),
+    getLatestMeasurement(overview.profile.id),
+    findIntake(overview.profile.id, todayLocalDate),
+    findIntake(overview.profile.id, yesterdayLocalDate),
+    getReferenceWeight(overview.profile.id),
+  ]);
   const daysIn = goal
     ? Math.max(diffDays(goal.startDate, todayLocalDate), 0)
     : 0;
@@ -91,6 +98,7 @@ export default async function DashboardPage() {
           todayLocalDate={todayLocalDate}
           initialWeightKg={todayMeasurement?.weightKg ?? null}
           daysSinceLastWeight={daysSinceLastWeight}
+          referenceKg={reference.referenceKg}
         />
 
         {/* En qué ciclo estás. El detalle (resumen, mantenimiento,

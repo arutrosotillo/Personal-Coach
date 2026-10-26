@@ -315,6 +315,51 @@ export async function getMeasurementForDate(
   return findMeasurementByDate(profileId, localDate);
 }
 
+/** Con menos pesajes que esto no hay una "media" que enseñar: sería el pesaje. */
+export const MIN_WEIGHINGS_FOR_REFERENCE = 3;
+
+export interface ReferenceWeight {
+  /**
+   * El peso con el que la app compara tu objetivo: la media suavizada de la
+   * fase actual (`analysis.weight.latestEmaKg`, la misma de `/progress`).
+   * `null` con menos de `MIN_WEIGHINGS_FOR_REFERENCE` pesajes en la fase.
+   */
+  referenceKg: number | null;
+  weighings: number;
+}
+
+/**
+ * Peso de referencia para la pantalla "Hoy". Mismo cálculo que el análisis de
+ * `/progress` (fase actual, mismo horizonte), sin el resto del análisis: la
+ * persona tiene que ver el MISMO número en las dos pantallas.
+ */
+export async function getReferenceWeight(
+  profileId: string,
+  now: Date = new Date(),
+): Promise<ReferenceWeight> {
+  const todayLocalDate = today(now);
+  const [records, goalRow] = await Promise.all([
+    listMeasurements(
+      profileId,
+      addDays(todayLocalDate, -HISTORY_WINDOW_DAYS),
+      todayLocalDate,
+    ),
+    getActiveGoal(profileId),
+  ]);
+  const { weight } = analyzeBody({
+    measurements: toEnginePoints(records),
+    todayLocalDate,
+    goal: null,
+    analysisStartLocalDate: goalRow?.startDate ?? null,
+  });
+  const weighings = weight.series.length;
+  return {
+    referenceKg:
+      weighings >= MIN_WEIGHINGS_FOR_REFERENCE ? weight.latestEmaKg : null,
+    weighings,
+  };
+}
+
 /** El día de hoy en la zona del perfil, para que la UI no calcule fechas. */
 export function todayForProfile(now: Date = new Date()): string {
   return today(now);
