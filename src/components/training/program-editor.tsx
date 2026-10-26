@@ -63,11 +63,16 @@ export function ProgramEditor({
   const [error, setError] = useState<string | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>) {
+  function run(
+    action: () => Promise<{ ok: boolean; error?: string; notice?: string }>,
+  ) {
     setError(null);
     startTransition(async () => {
       const res = await action();
       if (!res.ok) setError(res.error ?? "No se pudo guardar.");
+      // Un cambio guardado que conviene saber (p. ej. el RIR subido por
+      // seguridad al cambiar de variante): no es un error, pero no se calla.
+      else if (res.notice) toast.info(res.notice, { duration: 8000 });
     });
   }
 

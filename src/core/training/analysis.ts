@@ -1,3 +1,5 @@
+import { EQUIPMENT_CHANGE, FATIGUE } from "@/core/config/training-config";
+import { diffDays } from "@/core/dates";
 import {
   assessFatigue,
   type FatigueAssessment,
@@ -55,9 +57,26 @@ export interface ContextVariant {
     plannedSets: number;
     loadStepKg: number;
   };
-  /** De la más antigua a la más reciente. */
+  /**
+   * De la más antigua a la más reciente. Con un cambio de equipamiento, SOLO
+   * las del tramo vigente: las de la máquina anterior van en
+   * `equipmentChange.previousExposures`.
+   */
   exposures: ContextExposure[];
   daysSinceLast: number;
+  /** La variante se entrena con otro equipamiento desde una fecha. */
+  equipmentChange?: ContextEquipmentChange | null;
+}
+
+export interface ContextEquipmentChange {
+  /** Primer día con el equipamiento nuevo (`exposures` empieza aquí). */
+  sinceLocalDate: string;
+  /**
+   * Exposiciones del tramo ANTERIOR (la otra máquina), de la más antigua a la
+   * más reciente. Nunca se comparan con las nuevas: solo sirven para que el
+   * cambio no borre la señal de fatiga que ya había.
+   */
+  previousExposures: ContextExposure[];
 }
 
 export interface TrainingContext {
@@ -78,6 +97,31 @@ export interface VariantAnalysis {
   suggestion: ProgressionSuggestion;
   regressed: boolean;
   plateaued: boolean;
+  /** Estado del cambio de equipamiento; `null`/ausente si no hay ninguno vigente. */
+  equipmentChange?: VariantEquipmentState | null;
+}
+
+export interface VariantEquipmentState {
+  sinceLocalDate: string;
+  /** Exposiciones con el equipamiento nuevo. */
+  comparableExposures: number;
+  /**
+   * Todavía sin las `EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES` exposiciones con
+   * el equipamiento nuevo: el tramo no se puede juzgar solo.
+   */
+  calibrating: boolean;
+  /**
+   * Veredicto de lo último medido con el equipamiento ANTERIOR, juzgado con la
+   * misma regla que cualquier variante. `null` si no hay tramo anterior.
+   */
+  previous: {
+    exposures: number;
+    daysSinceLast: number;
+    regressed: boolean;
+    plateaued: boolean;
+    /** El motor pedía avanzar (más carga o más repeticiones) en ese tramo. */
+    advancing: boolean;
+  } | null;
 }
 
 export interface TrainingAnalysis {
@@ -209,13 +253,126 @@ function hasRegressed(
   return true;
 }
 
+/**
+ * Estado del cambio de equipamiento de una variante. El tramo anterior se
+ * juzga como si la variante se hubiera dejado ese día —igual que un ejercicio
+ * que ya no entrenas—: con la misma escalera del motor, sin regla nueva.
+ */
+function equipmentState(
+  v: ContextVariant,
+  change: ContextEquipmentChange,
+  todayLocalDate: string,
+): VariantEquipmentState {
+  const prev = change.previousExposures;
+  let previous: VariantEquipmentState["previous"] = null;
+  const lastPrev = prev[prev.length - 1];
+  if (lastPrev) {
+    const asPrevious: ContextVariant = { ...v, exposures: prev };
+    const suggestion = suggestProgression({
+      prescription: v.prescription,
+      history: prev,
+      todayLocalDate,
+    });
+    previous = {
+      exposures: prev.length,
+      daysSinceLast: Math.max(0, diffDays(lastPrev.localDate, todayLocalDate)),
+      regressed: hasRegressed(asPrevious, suggestion, todayLocalDate),
+      plateaued: suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
+      advancing:
+        suggestion.action === "INCREASE_LOAD" ||
+        suggestion.action === "ADD_REP",
+    };
+  }
+  return {
+    sinceLocalDate: change.sinceLocalDate,
+    comparableExposures: v.exposures.length,
+    calibrating: v.exposures.length < EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES,
+    previous,
+  };
+}
+
+/**
+ * Qué aporta una variante al motor de fatiga.
+ *
+ * Sin cambio de equipamiento, o con el tramo nuevo ya juzgable, es lo de
+ * siempre. Mientras CALIBRA, dos reglas, y las dos existen para que cambiar de
+ * gimnasio no borre ni diluya la fatiga que ya había:
+ *
+ *  · El ejercicio sigue siendo UNO. Lo último que se midió con la máquina
+ *    anterior sigue contando mientras sea reciente (la ventana de fatiga), como
+ *    cuenta cualquier ejercicio que dejas de hacer. Si allí estaba estancado o
+ *    cayendo, eso no desaparece por cambiar de gimnasio.
+ *  · Sin nada comparable vigente, queda FUERA del recuento. Contarlo como "ni
+ *    estancado ni cayendo" lo convertía en un ejercicio sano más del
+ *    denominador: con media rutina recién cambiada, una meseta en 5 de 10
+ *    ejercicios dejaba de llegar a la mitad sin que nada hubiera mejorado. No
+ *    tener datos no es estar estable.
+ *
+ * Lo que el tramo nuevo diga MIENTRAS calibra no cuenta todavía. Con una o dos
+ * sesiones en una máquina que no conoces, "dos veces por debajo del rango al
+ * mismo peso" es elegir mal la carga de partida, no rendir menos: el motor de
+ * progresión te dice que bajes en esa máquina (y eso sí se enseña), pero la
+ * fatiga no lo lee como caída. A partir de la tercera sesión el tramo nuevo
+ * se juzga como cualquier otro, con todas sus señales.
+ */
+function toFatigueExercise(v: VariantAnalysis): FatigueExerciseInput {
+  const base: FatigueExerciseInput = {
+    variantId: v.variantId,
+    name: `${v.exerciseName} (${v.variantName})`,
+    regressed: v.regressed,
+    plateaued: v.plateaued,
+    daysSinceLast: v.daysSinceLast,
+  };
+  const eq = v.equipmentChange;
+  if (!eq || !eq.calibrating) return base;
+
+  const previous =
+    eq.previous !== null && eq.previous.daysSinceLast <= FATIGUE.WINDOW_DAYS
+      ? eq.previous
+      : null;
+  if (!previous) {
+    return {
+      ...base,
+      regressed: false,
+      plateaued: false,
+      comparable: false,
+      adapting: true,
+    };
+  }
+  return {
+    ...base,
+    name:
+      previous.regressed || previous.plateaued
+        ? `${base.name}, con la máquina anterior`
+        : base.name,
+    regressed: previous.regressed,
+    plateaued: previous.plateaued,
+    // Vive mientras viva lo que se arrastra: lo último de la máquina anterior.
+    daysSinceLast: previous.daysSinceLast,
+    comparable: true,
+    adapting: true,
+  };
+}
+
 export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
   const variants: VariantAnalysis[] = context.variants.map((v) => {
+    const change = v.equipmentChange ?? null;
     const suggestion = suggestProgression({
       prescription: v.prescription,
       history: v.exposures,
       todayLocalDate: context.todayLocalDate,
+      equipmentChange: change
+        ? { sinceLocalDate: change.sinceLocalDate }
+        : null,
     });
+    const equipment = change
+      ? equipmentState(v, change, context.todayLocalDate)
+      : null;
+    // Con una máquina nueva todavía calibrando, el tramo no dice nada del
+    // RENDIMIENTO: bajar la carga ahí es elegir la de partida. La sugerencia
+    // ("baja en esta máquina") se conserva; la etiqueta de regresión o meseta,
+    // que leen la fatiga, el rendimiento global y Coach AI, no.
+    const judgeable = !equipment?.calibrating;
     return {
       variantId: v.variantId,
       exerciseName: v.exerciseName,
@@ -225,18 +382,16 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
       suggestion,
       // Una regresión "de verdad": el motor bajó la carga, o lleva varias
       // exposiciones sin alcanzar el rango. Un mal día suelto no cuenta.
-      regressed: hasRegressed(v, suggestion, context.todayLocalDate),
-      plateaued: suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
+      regressed:
+        judgeable && hasRegressed(v, suggestion, context.todayLocalDate),
+      plateaued:
+        judgeable &&
+        suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
+      equipmentChange: equipment,
     };
   });
 
-  const exercises: FatigueExerciseInput[] = variants.map((v) => ({
-    variantId: v.variantId,
-    name: `${v.exerciseName} (${v.variantName})`,
-    regressed: v.regressed,
-    plateaued: v.plateaued,
-    daysSinceLast: v.daysSinceLast,
-  }));
+  const exercises: FatigueExerciseInput[] = variants.map(toFatigueExercise);
 
   const fatigue = assessFatigue({
     todayLocalDate: context.todayLocalDate,

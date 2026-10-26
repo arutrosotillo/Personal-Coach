@@ -86,3 +86,21 @@ export function resolveStability(
   }
   return "SUPPORTED";
 }
+
+/**
+ * RIR objetivo al CAMBIAR de variante (adaptar la rutina a otro gimnasio, o
+ * sustituir un ejercicio en la sesión).
+ *
+ * Se conserva el de quien entrena: lo puso a propósito, y adaptar la rutina
+ * no es reescribirla. La única excepción es de seguridad y va en una sola
+ * dirección: si la variante nueva pide MÁS reserva que la que había (pasar de
+ * una máquina guiada a una barra libre, donde fallar no se resuelve soltando),
+ * se sube a ese mínimo. Bajarla nunca: un RIR más conservador que el default
+ * es una decisión legítima que solo deshace quien entrena.
+ */
+export function targetRirOnVariantChange(
+  currentTargetRir: number,
+  newVariantDefault: number,
+): number {
+  return Math.max(currentTargetRir, newVariantDefault);
+}

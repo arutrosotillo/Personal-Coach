@@ -276,6 +276,16 @@ export const PHILOSOPHY: PhilosophySection[] = [
         evidence: "REASONABLE",
         citations: ["enes2024"],
       },
+      {
+        id: "cambio-equipamiento",
+        title: "Otra máquina, otra referencia de cargas",
+        summary:
+          "Si cambias de gimnasio y la máquina de un ejercicio es otra, sus kilos no se comparan con los de antes: la referencia empieza en tu primera sesión con ella. Bajar de carga ahí no cuenta como perder fuerza.",
+        detail:
+          "Solo cambian los ejercicios que marques: las mancuernas o la barra pesan lo mismo en cualquier gimnasio y siguen comparándose. El historial anterior no se borra, se ve aparte. Mientras el ejercicio no tiene 3 sesiones con el equipamiento nuevo, la fatiga sigue usando lo último que se midió con el anterior (si es de las últimas 3 semanas) y, si no hay nada vigente, lo cuenta como «sin datos comparables», no como «estable». Tres sesiones es la misma cifra que necesita el motor para ver una meseta.",
+        evidence: "HEURISTIC",
+        citations: [],
+      },
     ],
   },
   {
@@ -496,6 +506,8 @@ export const PHILOSOPHY: PhilosophySection[] = [
 export const REASON_CODE_EXPLANATIONS: Record<ProgressionReasonCode, string> = {
   NO_HISTORY:
     "Primera vez con este ejercicio: el motor no inventa un peso, lo eliges tú.",
+  EQUIPMENT_CHANGE:
+    "El ejercicio es el mismo, pero la máquina es otra: sus cargas no se comparan con las de antes. La referencia empieza en la primera sesión con el equipamiento nuevo, y una carga menor ahí no cuenta como pérdida de fuerza.",
   SESSION_INCOMPLETE:
     "La última sesión registró menos de la mitad de las series previstas: con media sesión no se ajusta nada.",
   ATYPICAL_LOAD_DROP:
@@ -587,6 +599,12 @@ REGLAS DEL MOTOR DE PROGRESIÓN (v2, deterministas):
 - Con dolor articular repetido o una descarga recomendada, las SUBIDAS DE CARGA
   quedan suspendidas (la salud y la recuperación tienen precedencia). Progresar
   en repeticiones sigue permitido, y la carga nunca baja por este motivo.
+- CAMBIO DE EQUIPAMIENTO: si un ejercicio lleva \`equipmentChange\`, desde esa fecha
+  se hace en OTRA máquina. Sus cargas de antes no se comparan con las nuevas (ni
+  aparecen en los datos): la referencia empieza con el equipamiento nuevo, y una
+  carga menor ahí NO es pérdida de fuerza ni regresión. Mientras está
+  \`calibrating\`, el ejercicio todavía no tiene sesiones suficientes con la máquina
+  nueva para juzgarse.
 
 REGLAS DEL MOTOR DE FATIGA (deterministas):
 - Recomendar descarga exige ≥5 puntos Y ≥2 puntos de señales OBJETIVAS.
@@ -594,6 +612,10 @@ REGLAS DEL MOTOR DE FATIGA (deterministas):
   nunca bastan, y toda señal exige repetición.
 - El dolor articular no puntúa: escala su propio aviso y tiene precedencia.
 - Acortar sesiones repetidamente suma puntos pero NO cuenta como señal objetiva.
+- Tras un cambio de equipamiento, el ejercicio sigue contando con lo último que se
+  midió con la máquina anterior mientras sea reciente; si no hay nada comparable
+  vigente, queda FUERA del recuento ("sin datos comparables"), nunca como estable.
+  Un cambio de gimnasio no borra ni diluye las señales de fatiga que ya había.
 - La descarga sugerida recorta VOLUMEN (mitad de las series) y mantiene la carga
   y el RIR objetivo. Una sola palanca, no dos.
 - Nada se aplica automáticamente: es una recomendación.

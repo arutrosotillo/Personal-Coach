@@ -37,14 +37,10 @@ export async function getExerciseHistoryAction(
 > {
   try {
     const profileId = await requireProfileId();
-    const since = addDays(
-      toLocalDate(new Date(), DEFAULT_TIMEZONE),
-      -HISTORY_WINDOW_DAYS,
-    );
     const summary = await getExerciseHistorySummary(
       profileId,
       variantId,
-      since,
+      addDays(toLocalDate(new Date(), DEFAULT_TIMEZONE), -HISTORY_WINDOW_DAYS),
     );
     return { ok: true, summary };
   } catch (error) {

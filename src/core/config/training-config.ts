@@ -487,11 +487,37 @@ export const FATIGUE = {
   },
 } as const;
 
+/**
+ * Cambio de equipamiento (cambio de gimnasio). Una variante marcada empieza
+ * un TRAMO nuevo de cargas comparables: sus kilos de antes no se comparan con
+ * los de la máquina nueva (`src/core/training/equipment.ts`).
+ */
+export const EQUIPMENT_CHANGE = {
+  /**
+   * Exposiciones con el equipamiento nuevo que hacen falta para que la
+   * variante vuelva a juzgarse sola. Es el mismo número que
+   * `PROGRESSION.PLATEAU_EXPOSURES` y que `INSIGHT_CONFIG.minExposuresPerVariant`:
+   * con menos, el motor no distingue progreso de estancamiento en ese tramo.
+   * Mientras tanto la variante está "calibrando". [HEURÍSTICA]
+   */
+  CALIBRATION_EXPOSURES: 3,
+  /**
+   * Material cuya carga depende de la máquina concreta: el formulario los
+   * propone marcados. Mancuernas, barras y peso corporal pesan lo mismo en
+   * cualquier gimnasio y se proponen sin marcar. Solo es el punto de partida:
+   * la persona decide ejercicio a ejercicio.
+   */
+  MACHINE_DEPENDENT_EQUIPMENT: ["MACHINE", "SMITH_MACHINE", "CABLE"],
+  /** Fechas admitidas al registrar un cambio, respecto a hoy. */
+  MAX_DAYS_BACK: 120,
+  MAX_DAYS_AHEAD: 60,
+} as const;
+
 /** Versión del motor de fatiga. */
-export const FATIGUE_ENGINE_VERSION = "1.0.0";
+export const FATIGUE_ENGINE_VERSION = "1.1.0";
 
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
-export const PROGRESSION_ENGINE_VERSION = "2.1.0";
+export const PROGRESSION_ENGINE_VERSION = "2.2.0";
 
 /** Patrones de movimiento considerados "compuestos" (multiarticulares). */
 export const COMPOUND_PATTERNS: ReadonlySet<string> = new Set([

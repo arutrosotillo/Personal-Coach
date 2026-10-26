@@ -162,10 +162,24 @@ export function CycleSummaryView({
             Rendimiento (mejor e1RM de las primeras y las últimas{" "}
             {Math.round(performance.windowDays / 7)} semanas)
           </p>
-          <p className="tnum">
-            {performance.improved} mejoran · {performance.stable} se mantienen ·{" "}
-            {performance.declined} bajan
-          </p>
+          {performance.comparedVariants > 0 ? (
+            <p className="tnum">
+              {performance.improved} mejoran · {performance.stable} se mantienen
+              · {performance.declined} bajan
+            </p>
+          ) : null}
+          {/* Lo que cambió de máquina a mitad de ciclo no se compara: 100 kg en
+              una prensa y 65 en otra no son una bajada. Se dice cuántos, para
+              que "0 bajan" no se lea como "nada bajó" sin más. */}
+          {(performance.excludedByEquipmentChange ?? 0) > 0 ? (
+            <p className="text-muted-foreground tnum text-xs">
+              {performance.excludedByEquipmentChange}{" "}
+              {performance.excludedByEquipmentChange === 1
+                ? "ejercicio no se compara: cambió"
+                : "ejercicios no se comparan: cambiaron"}{" "}
+              de máquina durante el ciclo.
+            </p>
+          ) : null}
           <ul className="text-muted-foreground tnum space-y-0.5 text-xs">
             {performance.highlights.map((h) => (
               <li key={`${h.exerciseName}-${h.variantName}`}>

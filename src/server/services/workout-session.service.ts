@@ -11,6 +11,10 @@ import type {
   SyncOpData,
 } from "@/core/schemas/workout";
 import { estimateOneRepMax } from "@/core/training/e1rm";
+import {
+  defaultTargetRir,
+  targetRirOnVariantChange,
+} from "@/core/training/prescription-defaults";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
 import { visibleExerciseWhere } from "@/server/repositories/exercise-library.repo";
@@ -301,9 +305,14 @@ export async function setPlannedSets(
 }
 
 /**
- * Sustituye manualmente el ejercicio (variante) de un WorkoutExercise. Toma
- * el rango de reps y descanso de la nueva variante y borra las series ya
- * registradas (pertenecían a la variante anterior).
+ * Sustituye manualmente el ejercicio (variante) de un WorkoutExercise y borra
+ * las series ya registradas (pertenecían a la variante anterior).
+ *
+ * La prescripción de la sesión se CONSERVA —series, rango, descanso y RIR—,
+ * igual que al cambiar la variante en `/program`: antes tomaba el rango del
+ * catálogo y dejaba el RIR de la variante anterior, dos criterios distintos en
+ * la misma operación. El RIR solo sube si la variante nueva pide más reserva
+ * por seguridad (`targetRirOnVariantChange`).
  */
 export async function substituteExercise(
   profileId: string,
@@ -331,15 +340,22 @@ export async function substituteExercise(
         deletedAt: null,
         exercise: { deletedAt: null, ...visibleExerciseWhere(profileId) },
       },
+      include: { exercise: true },
     });
     await tx.setLog.deleteMany({ where: { workoutExerciseId: we.id } });
     await tx.workoutExercise.update({
       where: { id: we.id },
       data: {
         exerciseVariantId: variant.id,
-        repRangeMin: variant.repRangeMin,
-        repRangeMax: variant.repRangeMax,
-        restSeconds: variant.defaultRestSeconds,
+        targetRir: targetRirOnVariantChange(
+          we.targetRir,
+          defaultTargetRir(
+            variant.exercise.movementPattern,
+            variant.exercise.systemicFatigue,
+            variant.stability,
+            variant.equipment,
+          ),
+        ),
       },
     });
   });

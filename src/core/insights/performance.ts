@@ -43,7 +43,12 @@ export type PerformanceExclusion =
   /** Descarga o dolor: el motor suspendió su juicio y aquí también. */
   | "RECOVERY_VETO"
   /** Sin RIR no se puede confirmar el esfuerzo: no se sabe, no se inventa. */
-  | "RIR_MISSING";
+  | "RIR_MISSING"
+  /**
+   * Equipamiento nuevo sin sesiones suficientes con él, y nada reciente de la
+   * máquina anterior: sus kilos de antes no se comparan con los de ahora.
+   */
+  | "NEW_EQUIPMENT";
 
 export type VariantState = "IMPROVING" | "STABLE" | "DECLINING" | "NOT_JUDGED";
 
@@ -55,6 +60,11 @@ export interface VariantPerformance {
   excludedBecause: PerformanceExclusion | null;
   exposures: number;
   daysSinceLast: number;
+  /**
+   * El estado sale de lo último medido con el equipamiento ANTERIOR: la
+   * variante calibra una máquina nueva y eso es lo último comparable.
+   */
+  fromPreviousEquipment?: boolean;
 }
 
 export type PerformanceReasonCode =
@@ -108,6 +118,35 @@ function classifyVariant(
     exposures: v.suggestion.numbers.exposures,
     daysSinceLast: v.daysSinceLast,
   };
+
+  // Equipamiento nuevo todavía calibrando: el tramo nuevo no se puede juzgar,
+  // y los kilos de antes no se comparan con los de ahora. Lo último
+  // comparable es lo que se midió con la máquina anterior: mientras sea
+  // reciente, manda eso —igual que en el motor de fatiga—, para que cambiar
+  // de gimnasio no convierta una caída en "sin datos" de un día para otro.
+  const eq = v.equipmentChange;
+  if (eq?.calibrating) {
+    const prev = eq.previous;
+    if (
+      prev === null ||
+      prev.daysSinceLast > config.staleVariantDays ||
+      prev.exposures < config.minExposuresPerVariant
+    ) {
+      return { ...base, state: "NOT_JUDGED", excludedBecause: "NEW_EQUIPMENT" };
+    }
+    return {
+      ...base,
+      exposures: prev.exposures,
+      daysSinceLast: prev.daysSinceLast,
+      state: prev.regressed
+        ? "DECLINING"
+        : prev.advancing
+          ? "IMPROVING"
+          : "STABLE",
+      excludedBecause: null,
+      fromPreviousEquipment: true,
+    };
+  }
 
   const excluded = NO_JUDGEMENT[v.suggestion.reasonCode];
   if (excluded) {

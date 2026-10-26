@@ -63,6 +63,15 @@ export function RecoveryCard({ fatigue }: { fatigue: FatigueAssessment }) {
 
         <p className="text-muted-foreground text-sm">{fatigue.headline}</p>
 
+        {/* Va aparte del titular: "sin señales" y "sin datos comparables" son
+            cosas distintas, y tras un cambio de gimnasio hay que poder leer las
+            dos sin confundirlas. */}
+        {fatigue.adaptation.message ? (
+          <p className="text-muted-foreground mt-2 text-xs">
+            {fatigue.adaptation.message}
+          </p>
+        ) : null}
+
         {fatigue.signals.length > 0 ? (
           <ul className="mt-3 space-y-1">
             {fatigue.signals.map((s) => (

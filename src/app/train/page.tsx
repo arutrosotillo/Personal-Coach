@@ -142,7 +142,9 @@ export default async function TrainPage() {
                     t?.suggestedWeightKg !== null &&
                     t?.suggestedWeightKg !== undefined
                       ? `${t.suggestedWeightKg} kg`
-                      : "carga a elegir";
+                      : t?.reasonCode === "EQUIPMENT_CHANGE"
+                        ? "máquina nueva: carga a elegir"
+                        : "carga a elegir";
                   const reps =
                     t?.setTargets && t.setTargets.length > 0
                       ? t.setTargets.join("/")

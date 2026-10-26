@@ -3,7 +3,7 @@ import {
   PROGRESSION_ENGINE_VERSION,
   RECENCY,
 } from "@/core/config/training-config";
-import { diffDays } from "@/core/dates";
+import { diffDays, formatLocalDate } from "@/core/dates";
 import type { Confidence } from "@/core/enums";
 
 /**
@@ -17,6 +17,7 @@ import type { Confidence } from "@/core/enums";
  *
  * Escalera de decisión (la primera regla que aplica gana):
  *   0. NO_HISTORY               → START
+ *      (EQUIPMENT_CHANGE si lo que falta es historial con la máquina nueva)
  *   1. SESSION_INCOMPLETE       → HOLD
  *   2. REPEATED_UNDERPERFORMANCE→ DECREASE_LOAD
  *   3. rango cerrado:
@@ -40,6 +41,8 @@ export type ProgressionAction =
 
 export type ProgressionReasonCode =
   | "NO_HISTORY"
+  /** Sin exposiciones con el equipamiento nuevo: hay que fijar la referencia. */
+  | "EQUIPMENT_CHANGE"
   | "SESSION_INCOMPLETE"
   | "REPEATED_UNDERPERFORMANCE"
   | "CLOSED_RANGE_AT_FAILURE"
@@ -110,6 +113,13 @@ export interface ProgressionInput {
    * rompe rachas separadas por huecos largos y suspende las subidas.
    */
   todayLocalDate?: string;
+  /**
+   * La variante se entrena con OTRO equipamiento desde esta fecha. `history`
+   * ya llega recortada a ese tramo (ver `src/core/training/equipment.ts`):
+   * esto solo sirve para que, sin exposiciones todavía, el motor no diga
+   * "primera vez con este ejercicio" a quien lleva meses haciéndolo.
+   */
+  equipmentChange?: { sinceLocalDate: string } | null;
 }
 
 export interface ProgressionSuggestion {
@@ -414,6 +424,24 @@ export function suggestProgression(
     .slice(-config.HISTORY_WINDOW);
 
   // ── 0. NO_HISTORY ───────────────────────────────────────────────────────
+  // Con un cambio de equipamiento, "sin historial" significa "sin historial
+  // COMPARABLE": las cargas de antes existen, pero son de otra máquina. No se
+  // citan a propósito —cualquier cifra de allí invitaría a compararlas— y no
+  // hay penalización ni aviso: la referencia empieza en lo que hagas hoy.
+  if (window.length === 0 && input.equipmentChange) {
+    return {
+      action: "START",
+      reasonCode: "EQUIPMENT_CHANGE",
+      suggestedWeightKg: null,
+      suggestedReps: repRangeMin,
+      setTargets: null,
+      confidence: "LOW",
+      explanation: `Equipamiento nuevo desde el ${formatLocalDate(input.equipmentChange.sinceLocalDate)}: tus cargas de antes son de otra máquina y no las comparo con esta. Elige una carga con la que cierres ${repRangeMin} repeticiones dejando ~${targetRir} en reserva; a partir de hoy, la referencia es esa. Bajar de kilos aquí no es perder fuerza.`,
+      signals: [],
+      engineVersion: PROGRESSION_ENGINE_VERSION,
+      numbers: empty,
+    };
+  }
   if (window.length === 0) {
     return {
       action: "START",

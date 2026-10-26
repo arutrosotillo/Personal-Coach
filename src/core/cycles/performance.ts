@@ -1,5 +1,9 @@
 import { CYCLE_CONFIG } from "@/core/config/cycle-config";
 import { addDays, diffDays } from "@/core/dates";
+import {
+  loadSegmentOn,
+  type EquipmentChangePoint,
+} from "@/core/training/equipment";
 
 /**
  * Evolución del rendimiento a lo largo de un ciclo, para su resumen. Puro.
@@ -10,7 +14,11 @@ import { addDays, diffDays } from "@/core/dates";
  * empezó a mitad, no dice nada del ciclo.
  *
  * La identidad es la VARIANTE (CLAUDE.md): nunca se comparan cargas entre
- * variantes distintas del mismo ejercicio.
+ * variantes distintas del mismo ejercicio. Y dentro de una variante, nunca
+ * entre dos equipamientos: si cambió de máquina a mitad de ciclo, solo cuenta
+ * el tramo con la máquina nueva, y casi siempre eso deja fuera la ventana del
+ * principio. Esas variantes se cuentan aparte (`excludedByEquipmentChange`):
+ * leer 100 → 65 kg como "baja un 35 %" sería tomar la máquina por la persona.
  */
 
 type CycleConfig = typeof CYCLE_CONFIG;
@@ -42,6 +50,12 @@ export interface CyclePerformanceSummary {
   medianChangePct: number;
   /** Los mayores cambios, primero los que más suben. */
   highlights: PerformanceHighlight[];
+  /**
+   * Variantes entrenadas al principio y al final que NO se comparan porque
+   * cambiaron de equipamiento entre medias. Opcional: los resúmenes
+   * congelados antes de existir no lo traen (equivale a 0).
+   */
+  excludedByEquipmentChange?: number;
 }
 
 function bestByVariant(
@@ -65,22 +79,31 @@ export function summarizePerformance(
   startLocalDate: string,
   endLocalDate: string,
   config: CycleConfig = CYCLE_CONFIG,
+  equipmentChanges: readonly EquipmentChangePoint[] = [],
 ): CyclePerformanceSummary | null {
   const cfg = config.performance;
   const days = diffDays(startLocalDate, endLocalDate) + 1;
   const windowDays = Math.min(cfg.windowDays, Math.floor(days / 2));
   if (windowDays < cfg.minWindowDays) return null;
 
-  const early = bestByVariant(
-    points,
-    startLocalDate,
-    addDays(startLocalDate, windowDays - 1),
-  );
-  const late = bestByVariant(
-    points,
-    addDays(endLocalDate, -(windowDays - 1)),
-    endLocalDate,
-  );
+  const earlyEnd = addDays(startLocalDate, windowDays - 1);
+  const lateStart = addDays(endLocalDate, -(windowDays - 1));
+  // Solo el tramo de equipamiento vigente al final del ciclo se compara.
+  const comparable = points.filter((p) => {
+    const since = loadSegmentOn(
+      equipmentChanges,
+      p.variantId,
+      endLocalDate,
+    ).since;
+    return since === null || p.localDate >= since;
+  });
+  const early = bestByVariant(comparable, startLocalDate, earlyEnd);
+  const late = bestByVariant(comparable, lateStart, endLocalDate);
+  const rawEarly = bestByVariant(points, startLocalDate, earlyEnd);
+  const rawLate = bestByVariant(points, lateStart, endLocalDate);
+  const excludedByEquipmentChange = [...rawEarly.keys()].filter(
+    (id) => rawLate.has(id) && !(early.has(id) && late.has(id)),
+  ).length;
 
   const changes: PerformanceHighlight[] = [];
   for (const [variantId, first] of early) {
@@ -94,7 +117,21 @@ export function summarizePerformance(
       changePct: ((last.e1rmKg - first.e1rmKg) / first.e1rmKg) * 100,
     });
   }
-  if (changes.length === 0) return null;
+  if (changes.length === 0) {
+    // Sin nada que comparar, el resumen solo existe para decir POR QUÉ: si
+    // fue un cambio de equipamiento, eso es información; si no, no hay nada.
+    if (excludedByEquipmentChange === 0) return null;
+    return {
+      windowDays,
+      comparedVariants: 0,
+      improved: 0,
+      stable: 0,
+      declined: 0,
+      medianChangePct: 0,
+      highlights: [],
+      excludedByEquipmentChange,
+    };
+  }
 
   const sorted = [...changes].sort((a, b) => a.changePct - b.changePct);
   const mid = Math.floor(sorted.length / 2);
@@ -115,5 +152,6 @@ export function summarizePerformance(
       .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
       .slice(0, cfg.highlights)
       .sort((a, b) => b.changePct - a.changePct),
+    excludedByEquipmentChange,
   };
 }

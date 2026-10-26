@@ -6,7 +6,10 @@ import {
   toLocalDate,
   weekIndexSince,
 } from "@/core/dates";
+import { EQUIPMENT_CHANGE } from "@/core/config/training-config";
+import { loadSegmentOn, splitBySegment } from "@/core/training/equipment";
 import { prisma } from "@/server/db";
+import { listEquipmentChangePoints } from "@/server/repositories/equipment-change.repo";
 
 export interface VariantExposureRow {
   setNumber: number;
@@ -38,6 +41,25 @@ export interface LastComparable {
 }
 
 /**
+ * La variante se hace con OTRO equipamiento desde `sinceLocalDate` (cambio de
+ * gimnasio). `lastTime` y el motor solo ven ese tramo; la última vez con la
+ * máquina anterior viaja aquí, para ENSEÑARLA aparte, nunca para comparar.
+ */
+export interface ExerciseEquipmentChange {
+  sinceLocalDate: string;
+  /** Exposiciones con el equipamiento nuevo (sin contar la sesión en curso). */
+  comparableExposures: number;
+  /** Aún sin `EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES` exposiciones con él. */
+  calibrating: boolean;
+  previous: VariantExposure | null;
+}
+
+interface VariantRecent {
+  lastTime: LastComparable | null;
+  equipmentChange: ExerciseEquipmentChange | null;
+}
+
+/**
  * Para cada variante, los sets de TRABAJO (WORKING, completados) de sus últimas
  * sesiones COMPLETED anteriores a `excludeSessionId`. Una sola query + agrupación
  * en memoria (evita el N+1 de pedir el historial por ejercicio). Ignora WARMUP
@@ -48,9 +70,12 @@ async function recentWorkingSetsForVariants(
   profileId: string,
   variantIds: string[],
   excludeSessionId: string,
-): Promise<Map<string, LastComparable>> {
-  const result = new Map<string, LastComparable>();
+  /** Día de la sesión: decide qué cambio de equipamiento está en vigor. */
+  onLocalDate: string,
+): Promise<Map<string, VariantRecent>> {
+  const result = new Map<string, VariantRecent>();
   if (variantIds.length === 0) return result;
+  const changePoints = await listEquipmentChangePoints(profileId, variantIds);
 
   // Todos los sets WORKING de sesiones COMPLETED del perfil (salvo la actual)
   // para estas variantes, del día más reciente al más antiguo. Se ordena por
@@ -130,14 +155,48 @@ async function recentWorkingSetsForVariants(
       chosen.sets.sort((a, b) => a.setNumber - b.setNumber);
       ordered.push({ localDate: chosen.localDate, sets: chosen.sets });
     }
-    const last = ordered[0];
-    if (!last) continue;
-    // De la más antigua a la más reciente, acotado a la ventana del motor.
-    const exposures = ordered.slice(0, PROGRESSION.HISTORY_WINDOW).reverse();
+    // Solo el tramo de equipamiento vigente se compara (ver
+    // `src/core/training/equipment.ts`). `ordered` va de la más reciente a la
+    // más antigua, y el reparto conserva ese orden.
+    const segment = loadSegmentOn(changePoints, variantId, onLocalDate);
+    const { comparable, previous } = splitBySegment(ordered, segment);
+    const last = comparable[0];
     result.set(variantId, {
-      localDate: last.localDate,
-      sets: last.sets,
-      exposures,
+      lastTime: last
+        ? {
+            localDate: last.localDate,
+            sets: last.sets,
+            // De la más antigua a la más reciente, acotado a la ventana del motor.
+            exposures: comparable
+              .slice(0, PROGRESSION.HISTORY_WINDOW)
+              .reverse(),
+          }
+        : null,
+      equipmentChange: segment.since
+        ? {
+            sinceLocalDate: segment.since,
+            comparableExposures: comparable.length,
+            calibrating:
+              comparable.length < EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES,
+            previous: previous[0] ?? null,
+          }
+        : null,
+    });
+  }
+  // Una variante con un cambio vigente y SIN historial todavía también tiene
+  // que saberlo: si no, el motor diría "primera vez con este ejercicio".
+  for (const variantId of variantIds) {
+    if (result.has(variantId)) continue;
+    const segment = loadSegmentOn(changePoints, variantId, onLocalDate);
+    if (segment.since === null) continue;
+    result.set(variantId, {
+      lastTime: null,
+      equipmentChange: {
+        sinceLocalDate: segment.since,
+        comparableExposures: 0,
+        calibrating: true,
+        previous: null,
+      },
     });
   }
   return result;
@@ -176,6 +235,7 @@ export interface ExecutionExercise {
     rir: number | null;
   }>;
   lastTime: LastComparable | null;
+  equipmentChange: ExerciseEquipmentChange | null;
 }
 
 /** Vista de la sesión SIN los datos que solo necesita el servidor. */
@@ -247,6 +307,7 @@ export async function getExecutionSession(
     profileId,
     session.exercises.map((we) => we.exerciseVariantId),
     session.id,
+    session.localDate,
   );
 
   const exercises: ExecutionExercise[] = session.exercises.map((we) => ({
@@ -271,7 +332,9 @@ export async function getExecutionSession(
       reps: s.reps,
       rir: s.rir,
     })),
-    lastTime: lastByVariant.get(we.exerciseVariantId) ?? null,
+    lastTime: lastByVariant.get(we.exerciseVariantId)?.lastTime ?? null,
+    equipmentChange:
+      lastByVariant.get(we.exerciseVariantId)?.equipmentChange ?? null,
   }));
 
   return {
@@ -334,6 +397,7 @@ export async function previewTemplateSession(
     profileId,
     template.exercises.map((te) => te.exerciseVariantId),
     "",
+    onLocalDate,
   );
 
   return {
@@ -359,7 +423,9 @@ export async function previewTemplateSession(
       restSeconds: te.restSeconds,
       loadStepKg: te.exerciseVariant.loadStepKg,
       setLogs: [],
-      lastTime: lastByVariant.get(te.exerciseVariantId) ?? null,
+      lastTime: lastByVariant.get(te.exerciseVariantId)?.lastTime ?? null,
+      equipmentChange:
+        lastByVariant.get(te.exerciseVariantId)?.equipmentChange ?? null,
     })),
   };
 }

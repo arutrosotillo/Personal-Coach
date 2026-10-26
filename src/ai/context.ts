@@ -62,6 +62,17 @@ export interface CoachExerciseContext {
   signals: string[];
   plateaued: boolean;
   regressed: boolean;
+  /**
+   * Cambio de equipamiento vigente (cambio de gimnasio). Las series de arriba
+   * son SOLO del equipamiento nuevo: las de la máquina anterior no viajan a
+   * propósito, para que no haya cifras que comparar —y el guardrail bloquea
+   * cualquier carga que no esté aquí—. `null`/ausente = sin cambio.
+   */
+  equipmentChange?: {
+    since: string;
+    comparableExposures: number;
+    calibrating: boolean;
+  } | null;
 }
 
 /**
@@ -193,6 +204,8 @@ export interface CoachContext {
     jointPain: string | null;
     plan: string | null;
     explanation: string;
+    /** Ejercicios con equipamiento nuevo, y cuántos no aportan nada comparable. */
+    adaptation?: string | null;
   };
   /** Márgenes de error reales, para que el modelo no lea ruido como señal. */
   limits: {
@@ -332,6 +345,13 @@ export function buildCoachContext(
         signals: v.suggestion.signals.map((s) => s.message),
         plateaued: v.plateaued,
         regressed: v.regressed,
+        equipmentChange: v.equipmentChange
+          ? {
+              since: v.equipmentChange.sinceLocalDate,
+              comparableExposures: v.equipmentChange.comparableExposures,
+              calibrating: v.equipmentChange.calibrating,
+            }
+          : null,
       };
     });
 
@@ -379,6 +399,7 @@ export function buildCoachContext(
       jointPain: fatigue.jointPain.message,
       plan: fatigue.plan?.summary ?? null,
       explanation: fatigue.explanation,
+      adaptation: fatigue.adaptation.message,
     },
     limits: {
       e1rmErrorPct: 5,

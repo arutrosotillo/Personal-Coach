@@ -62,6 +62,7 @@ import {
   type GoalRecord,
   type NutritionTargetFull,
 } from "@/server/repositories/cycle.repo";
+import { listEquipmentChangePoints } from "@/server/repositories/equipment-change.repo";
 import {
   listIntake,
   type IntakeRecord,
@@ -545,11 +546,10 @@ async function buildSummary(
   const type = parseType(goal.type);
   const status = GoalStatus.safeParse(goal.status);
   if (!strategy.success || type === null || !status.success) return null;
-  const perf = await listPerformancePoints(
-    profileId,
-    goal.startDate,
-    endLocalDate,
-  );
+  const [perf, equipmentChanges] = await Promise.all([
+    listPerformancePoints(profileId, goal.startDate, endLocalDate),
+    listEquipmentChangePoints(profileId),
+  ]);
   return summarizeCycle({
     goal: {
       strategy: strategy.data,
@@ -564,7 +564,13 @@ async function buildSummary(
     measurements: snap.points,
     targets: snap.targets,
     intake: snap.intake,
-    performance: summarizePerformance(perf, goal.startDate, endLocalDate),
+    performance: summarizePerformance(
+      perf,
+      goal.startDate,
+      endLocalDate,
+      undefined,
+      equipmentChanges,
+    ),
     maintenance,
   });
 }

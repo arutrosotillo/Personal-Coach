@@ -5,7 +5,9 @@ import type {
   ContextVariant,
   TrainingContext,
 } from "@/core/training/analysis";
+import { loadSegmentOn, splitBySegment } from "@/core/training/equipment";
 import { prisma } from "@/server/db";
+import { listEquipmentChangePoints } from "@/server/repositories/equipment-change.repo";
 
 /**
  * Lectura longitudinal del entrenamiento (Fase 3.3). Una sola fuente para el
@@ -193,21 +195,35 @@ export async function getTrainingContext(
     }
   }
 
-  const variants = [...byVariant.values()]
+  // ── Tramos de equipamiento ─────────────────────────────────────────────
+  // Una variante que cambió de máquina solo compara las exposiciones de su
+  // tramo vigente; las del anterior viajan aparte, para que la fatiga que ya
+  // había no desaparezca con el cambio (ver `toFatigueExercise`).
+  const changePoints = await listEquipmentChangePoints(profileId);
+
+  const variants: ContextVariant[] = [];
+  for (const v of byVariant.values()) {
+    const last = v.exposures[v.exposures.length - 1];
     // Un ejercicio que no has tocado en la ventana no es parte de "cómo va tu
     // entrenamiento ahora"; sus exposiciones antiguas solo sirven para dar
     // contexto a los que SÍ has entrenado.
-    .filter(
-      (v) => v.exposures[v.exposures.length - 1].localDate >= sinceLocalDate,
-    )
-    .map((v) => ({
+    if (!last || last.localDate < sinceLocalDate) continue;
+    const segment = loadSegmentOn(changePoints, v.variantId, todayLocalDate);
+    const { comparable, previous } = splitBySegment(v.exposures, segment);
+    const reference = comparable[comparable.length - 1] ?? last;
+    variants.push({
       ...v,
-      exposures: v.exposures.slice(-PROGRESSION.HISTORY_WINDOW),
-      daysSinceLast: diffDays(
-        v.exposures[v.exposures.length - 1].localDate,
-        todayLocalDate,
-      ),
-    }));
+      exposures: comparable.slice(-PROGRESSION.HISTORY_WINDOW),
+      daysSinceLast: diffDays(reference.localDate, todayLocalDate),
+      equipmentChange:
+        segment.since === null
+          ? null
+          : {
+              sinceLocalDate: segment.since,
+              previousExposures: previous.slice(-PROGRESSION.HISTORY_WINDOW),
+            },
+    });
+  }
 
   const weeksSinceDeload = await accumulationWeeks(profileId, todayLocalDate);
 

@@ -785,7 +785,7 @@ describe("11 · invariantes (rejilla determinista)", () => {
       expect(a).toEqual(b);
       expect(a.explanation.length).toBeGreaterThan(20);
       expect(["LOW", "MEDIUM", "HIGH"]).toContain(a.confidence);
-      expect(a.engineVersion).toBe("2.1.0");
+      expect(a.engineVersion).toBe("2.2.0");
     }
   });
 });

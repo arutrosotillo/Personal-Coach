@@ -27,7 +27,8 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 - `ProgressPhoto` — pose, path relativo, soft-delete (F4 para la UI; tabla desde F1 por estabilidad).
 - `DailyCheckIn` — `@@unique(profileId, localDate)`; todo opcional (kcal, proteína, pasos, hambre, energía, sueño, entrenó, notas). Su columna `weightKg` está **obsoleta**.
 - `WeeklyCheckIn` — `@@unique(profileId, isoYear, isoWeek)`; snapshots calculados al cerrar + sensaciones preguntadas.
-- `PersonalEvent` — tipo (12 valores), rango de fechas opcional, nota. **Sin implementar: la tabla existe desde F1 y está vacía; ningún motor ni pantalla la escribe o la lee todavía.** Su consumo por los motores (D0, R4b) y por las gráficas está especificado para F4–F5.
+- `PersonalEvent` — tipo (12 valores), rango de fechas opcional, nota, `requestId` (idempotencia del alta, único). **Solo se escribe y se lee el tipo `GYM_CHANGE`** (cambio de gimnasio, con sus `EquipmentChange`; ver la decisión de abajo). El resto de tipos sigue sin consumirse: D0, R4b y las gráficas están especificados para F4–F5.
+- `EquipmentChange` — (perfil, variante, `localDate`, evento), `@@unique(profileId, exerciseVariantId, localDate)`. Desde ese día la variante se entrena con otro equipamiento y sus cargas abren un tramo comparable nuevo.
 
 **Catálogo de entrenamiento**
 
@@ -121,6 +122,17 @@ Detalle completo en `docs/CYCLES.md`. Lo esencial para el modelo:
 - **`EnergyEstimate`**: estimación de mantenimiento congelada al cerrar (`CYCLE_CLOSE`) o abrir (`CYCLE_START`) un ciclo y al responder a un ajuste (`ADJUSTMENT`). `memoryTdeeKcal/memorySeKcal` es la parte que sale de datos, sin fórmula: lo que hereda el ciclo siguiente.
 - **Registro de ingesta = `DailyCheckIn.kcal` / `proteinG`**, que existían vacías: total comido del día, upsert por (perfil, fecha), sin superficie IDOR. `DailyCheckIn.weightKg` sigue obsoleta.
 - Valores nuevos de enums sin migración: `TargetSource.CYCLE_START`, `RecommendationType.CYCLE_TARGETS`, `CycleOutcome`, `InterimNutrition`, `EnergyEstimateKind`.
+
+## Decisión: cambio de gimnasio = `PersonalEvent` + `EquipmentChange` por variante (2026-10)
+
+Detalle de comportamiento en `TRAINING_ENGINE.md` §1f. Lo esencial para el modelo:
+
+- **`GYM_CHANGE` solo no basta.** El evento da la fecha, pero no qué ejercicios cambian, y no todos cambian: las mancuernas del gimnasio nuevo pesan lo mismo. Cada variante afectada tiene su fila en `EquipmentChange`.
+- **La identidad sigue siendo la variante.** No se crea una variante nueva por máquina (eso obligaría a ejercicios ficticios y partiría el historial y las notas): la variante conserva todo y los cambios la parten en **tramos** comparables. No hay entidad «gimnasio»: un tramo empieza en un cambio y acaba en el siguiente, así que cambiar de gimnasio otra vez es otra fila más.
+- **Por persona**, con cascada al borrar el perfil o el evento. Deshacer un cambio borra el evento y sus filas; ninguna serie, sesión ni prescripción depende de ellas.
+- `localDate` se repite en cada fila a propósito: es la clave que leen los motores, sin unir con el evento.
+- Migración `20261027120000_equipment_changes`, 100 % aditiva.
+- **Limitación conocida**: volver más tarde al gimnasio anterior es un cambio nuevo; el tramo antiguo de esa máquina no se reconecta solo.
 
 ## Decisión: tablas de Coach AI pospuestas a Fase 6
 

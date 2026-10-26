@@ -306,6 +306,55 @@ acotan a la ventana, porque ahí lo que se mide es el periodo reciente.
 **Meseta**: `PLATEAU_SIGNAL` sigue siendo solo evidencia. F3.3 la contextualiza (varias mesetas a la
 vez suman a la fatiga) pero **jamás** deriva en añadir o quitar series.
 
+## 1f. Cambio de equipamiento (cambio de gimnasio, 2026-10)
+
+Problema: al cambiar de gimnasio se sigue haciendo el **mismo ejercicio** —la misma variante, el
+mismo historial— en **otra máquina**, y 100 kg en una prensa no son 100 kg en otra. Comparar esas
+cargas producía, con los datos reales, tres errores: «carga atípica, sigo con 100 kg» (máquina más
+ligera), una **descarga recomendada** por «caída grave del rendimiento» en dos semanas (máquina más
+dura), y, si se modelaba como ejercicios nuevos, la fatiga que ya había quedaba **diluida** en un
+denominador lleno de ejercicios «sanos» sin historial.
+
+**Modelo** (`PersonalEvent` `GYM_CHANGE` + `EquipmentChange`, ver DATA_MODEL): el cambio tiene fecha
+y, por cada variante que pasa a otro equipamiento, un punto que abre un **tramo de cargas
+comparables**. Un tramo dura hasta el siguiente cambio de esa variante. Dentro de un tramo las
+cargas se comparan; entre tramos, nunca. `GYM_CHANGE` solo no basta: el evento dice cuándo, pero no
+qué ejercicios cambian, y no todas las cargas dejan de ser comparables (mancuernas, barras y peso
+corporal pesan lo mismo en cualquier gimnasio). No se modelan «gimnasios»: volver a cambiar es otro
+punto, y el historial entero sigue intacto. Lógica pura en `src/core/training/equipment.ts`
+(`loadSegmentOn`, `splitBySegment`); un cambio con fecha futura aún no está en vigor.
+
+**Qué ve cada motor:**
+
+- **Progresión**: solo el tramo vigente. Sin exposiciones en él → `START` · `EQUIPMENT_CHANGE`
+  («equipamiento nuevo desde…, elige la carga; bajar de kilos aquí no es perder fuerza»), sin citar
+  la carga de la otra máquina. Con exposiciones, la escalera de siempre: `ATYPICAL_LOAD_DROP` no puede
+  dispararse entre máquinas, y un `DECREASE_LOAD` dentro de la máquina nueva sí se enseña (es
+  comparable y útil).
+- **Calibración**: hasta `EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES` (3) exposiciones con la máquina
+  nueva —el mismo número que necesita una meseta— la variante «calibra».
+- **Fatiga**, mientras calibra: el ejercicio sigue siendo **uno**. Cuenta con el veredicto de lo
+  último medido con la máquina anterior mientras sea reciente (≤ `FATIGUE.WINDOW_DAYS`), igual que
+  un ejercicio que se deja de hacer: una meseta previa no desaparece por mudarse y el denominador no
+  cambia. Sin nada reciente, queda **fuera del recuento** (`comparable: false`): «sin datos
+  comparables» no es «estable». Lo que diga el tramo nuevo con 1–2 sesiones (elegir mal la carga de
+  partida) no cuenta como caída. `FatigueAssessment.adaptation` lo dice aparte del titular, y con
+  ejercicios fuera del recuento la confianza no puede ser ALTA. Sesiones, valoraciones, dolor y
+  semanas de acumulación son del perfil y no cambian con el cambio de gimnasio (un parón ≥10 días por
+  la mudanza sigue reiniciando la acumulación, como cualquier parón).
+- **Rendimiento global** (`assessPerformance`): misma regla — arrastra lo último de la máquina
+  anterior si es reciente (`fromPreviousEquipment`) o excluye con `NEW_EQUIPMENT`.
+- **Historial del ejercicio**: mejor serie, e1RM~ y tendencia solo del tramo vigente; lo anterior se
+  muestra aparte («con la máquina anterior, no se compara»).
+- **Resumen de ciclo**: solo se compara el tramo vigente al final del ciclo; lo que cambió de máquina
+  a mitad de ciclo se cuenta en `excludedByEquipmentChange` en vez de leerse como una bajada.
+- **Coach AI**: el contexto marca `equipmentChange` y **no lleva** las cargas de la máquina anterior;
+  el guardrail de cifras bloquea cualquier carga que no esté en los datos.
+
+**Prescripción**: cambiar de variante (en `/program` o sustituyendo en la sesión) conserva series,
+rango, descanso y RIR. Única excepción, de seguridad: el RIR sube al mínimo de la variante nueva si
+es mayor (`targetRirOnVariantChange`), y la pantalla lo avisa.
+
 > ## ⚠️ Las secciones 2 a 6 están SUPERSEDED
 >
 > Describen el diseño ORIGINAL de F3, que no es lo que se construyó. Se

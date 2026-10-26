@@ -76,6 +76,7 @@ model UserProfile {
   customExercises  Exercise[]
   exerciseNotes    ExerciseNote[]
   energyEstimates  EnergyEstimate[]
+  equipmentChanges EquipmentChange[]
 }
 
 model Goal {
@@ -310,6 +311,8 @@ model EnergyEstimate {
   @@index([goalId])
 }
 
+/// Hechos de la vida que explican los datos. Hoy solo se escribe `GYM_CHANGE`
+/// (con sus `EquipmentChange`); el resto de tipos sigue sin consumirse.
 model PersonalEvent {
   id        String      @id @default(cuid())
   profileId String
@@ -318,9 +321,47 @@ model PersonalEvent {
   endDate   String? // rangos (enfermedad, viaje)
   type      String // enum PersonalEventType (12 valores, src/core/enums.ts)
   note      String? // texto libre: dato NO confiable para la IA
+  /// Clave de idempotencia de la petición que lo creó: repetir el envío
+  /// (doble toque, reintento) devuelve este evento en vez de crear otro.
+  requestId String?     @unique
   createdAt DateTime    @default(now())
 
+  equipmentChanges EquipmentChange[]
+
   @@index([profileId, localDate])
+}
+
+/// Desde `localDate`, esta variante se entrena con OTRO equipamiento: la
+/// máquina del gimnasio nuevo no carga como la del anterior, así que sus kilos
+/// no se comparan con los de antes.
+///
+/// Cada fila abre un TRAMO de cargas comparables: las exposiciones desde
+/// `localDate` hasta el siguiente cambio de la misma variante se comparan
+/// entre sí, y nunca con las de otro tramo. Por eso no hace falta modelar
+/// "gimnasios": un tramo empieza con un cambio y acaba con el siguiente, y
+/// cambiar de gimnasio otra vez es otra fila más. El historial no se toca.
+///
+/// Cuelga de la VARIANTE, como todo lo demás de la identidad de un ejercicio
+/// (historial, e1RM, progresión, notas), y es POR PERSONA: es tu máquina la
+/// que cambia, no el catálogo. Solo se marcan los ejercicios que cambian; las
+/// mancuernas o la barra del gimnasio nuevo siguen siendo comparables.
+model EquipmentChange {
+  id                String          @id @default(cuid())
+  profileId         String
+  profile           UserProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  exerciseVariantId String
+  exerciseVariant   ExerciseVariant @relation(fields: [exerciseVariantId], references: [id])
+  /// El cambio de gimnasio que lo originó. Deshacerlo borra estas filas, y
+  /// nada más: las series registradas no dependen de ellas.
+  personalEventId   String
+  personalEvent     PersonalEvent   @relation(fields: [personalEventId], references: [id], onDelete: Cascade)
+  /// Primer día (localDate, inclusive) con el equipamiento nuevo. Repite el
+  /// del evento a propósito: es la clave por la que leen los motores.
+  localDate         String
+  createdAt         DateTime        @default(now())
+
+  @@unique([profileId, exerciseVariantId, localDate])
+  @@index([personalEventId])
 }
 
 // ============ CATÁLOGO ============
@@ -442,6 +483,7 @@ model ExerciseVariant {
   workoutExercises  WorkoutExercise[]
   setLogs           SetLog[]
   notes             ExerciseNote[]
+  equipmentChanges  EquipmentChange[]
 
   @@unique([exerciseId, name])
   @@index([equipment])

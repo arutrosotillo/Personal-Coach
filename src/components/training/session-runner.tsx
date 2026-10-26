@@ -12,6 +12,8 @@ import {
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
+import { EQUIPMENT_CHANGE } from "@/core/config/training-config";
+import { formatLocalDate } from "@/core/dates";
 import { EXERCISE_NOTE_MAX_LENGTH } from "@/core/schemas/exercise-note";
 import { RestTimer } from "@/components/training/rest-timer";
 import { SyncStatus } from "@/components/training/sync-status";
@@ -473,11 +475,14 @@ export function SessionRunner({
                 )
                 .join(" · ")}
             </p>
-          ) : (
+          ) : ex.equipmentChange ? null : (
             <p className="text-muted-foreground mt-1 text-xs">
               Primera vez con este ejercicio: introduce la carga que uses.
             </p>
           )}
+          {ex.equipmentChange ? (
+            <EquipmentChangeNote change={ex.equipmentChange} />
+          ) : null}
           {/* Tu nota de ESTA variante, donde de verdad se lee: justo antes de
               la serie. Se edita aquí mismo sin salir de la sesión, y se guarda
               como las series —al instante en el móvil, al servidor cuando haya
@@ -656,7 +661,9 @@ function SuggestionBadge({
         : suggestion.action === "ADD_REP"
           ? `Prueba ${suggestion.suggestedReps} reps`
           : suggestion.action === "START"
-            ? "Primera vez"
+            ? suggestion.reasonCode === "EQUIPMENT_CHANGE"
+              ? "Máquina nueva"
+              : "Primera vez"
             : "Mantén";
 
   return (
@@ -803,12 +810,23 @@ function ExerciseHistorySheet({
             <p className="text-destructive">
               No se pudo cargar el historial. Inténtalo de nuevo.
             </p>
-          ) : !summary || summary.sessionCount === 0 ? (
+          ) : !summary ||
+            (summary.sessionCount === 0 && !summary.equipmentChange) ? (
             <p className="text-muted-foreground">
               Aún no hay historial de este ejercicio en las últimas semanas.
             </p>
+          ) : summary.sessionCount === 0 ? (
+            <p className="text-muted-foreground">
+              Aún no hay sesiones con la máquina nueva.
+            </p>
           ) : (
             <>
+              {summary.equipmentChange ? (
+                <p className="text-muted-foreground text-xs">
+                  Con la máquina nueva, desde el{" "}
+                  {formatLocalDate(summary.equipmentChange.sinceLocalDate)}:
+                </p>
+              ) : null}
               <Row label="Sesiones (8 sem)">
                 <span className="tnum">{summary.sessionCount}</span>
               </Row>
@@ -835,6 +853,33 @@ function ExerciseHistorySheet({
               </Row>
             </>
           )}
+          {/* El historial anterior al cambio de máquina se sigue viendo, en su
+              propio bloque y sin tendencia que lo cruce con el nuevo: 100 kg en
+              una prensa y 65 en otra no son una bajada. */}
+          {summary?.equipmentChange &&
+          summary.equipmentChange.previous.sessionCount > 0 ? (
+            <div className="border-border space-y-1 rounded-lg border p-3">
+              <p className="text-muted-foreground text-xs">
+                Con la máquina anterior (no se compara con la nueva)
+              </p>
+              <Row label="Sesiones">
+                <span className="tnum">
+                  {summary.equipmentChange.previous.sessionCount}
+                </span>
+              </Row>
+              {summary.equipmentChange.previous.bestSet ? (
+                <Row label="Mejor set">
+                  <span className="tnum">
+                    {summary.equipmentChange.previous.bestSet.weightKg}×
+                    {summary.equipmentChange.previous.bestSet.reps}{" "}
+                    <span className="text-muted-foreground">
+                      ({summary.equipmentChange.previous.bestSet.localDate})
+                    </span>
+                  </span>
+                </Row>
+              ) : null}
+            </div>
+          ) : null}
 
           {/* Coach AI, bajo demanda: una consulta por tap, nunca automática.
               Sin clave configurada no se pinta nada: dos botones que solo
@@ -854,6 +899,48 @@ function ExerciseHistorySheet({
         </div>
       </DrawerContent>
     </Drawer>
+  );
+}
+
+/**
+ * Aviso de cambio de equipamiento en la cabecera del ejercicio. La última vez
+ * con la máquina anterior se ENSEÑA —es tu historial— pero etiquetada como no
+ * comparable, y no alimenta ni el "repetir" ni la sugerencia.
+ */
+function EquipmentChangeNote({
+  change,
+}: {
+  change: NonNullable<
+    ClientExecutionSession["exercises"][number]["equipmentChange"]
+  >;
+}) {
+  const faltan = Math.max(
+    0,
+    EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES - change.comparableExposures,
+  );
+  return (
+    <div className="text-muted-foreground mt-1 space-y-0.5 text-xs">
+      <p>
+        <span className="text-foreground">Máquina nueva</span> desde el{" "}
+        {formatLocalDate(change.sinceLocalDate)}
+        {change.calibrating
+          ? change.comparableExposures === 0
+            ? ": elige la carga que te deje en el rango; esa será tu referencia."
+            : `: ${faltan} ${faltan === 1 ? "sesión más" : "sesiones más"} para tener referencia propia.`
+          : "."}
+      </p>
+      {change.comparableExposures === 0 && change.previous ? (
+        <p className="tnum">
+          Con la máquina anterior ({change.previous.localDate}, no se compara):{" "}
+          {change.previous.sets
+            .map(
+              (s) =>
+                `${s.weightKg}×${s.reps}${s.rir != null ? `@${s.rir}` : ""}`,
+            )
+            .join(" · ")}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

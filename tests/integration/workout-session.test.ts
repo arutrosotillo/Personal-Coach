@@ -218,7 +218,7 @@ describe("logSet (idempotencia)", () => {
 });
 
 describe("substituteExercise", () => {
-  it("cambia la variante, borra las series previas y toma el rango de la nueva", async () => {
+  it("cambia la variante, borra las series previas y CONSERVA la prescripción de la sesión", async () => {
     await cleanupSessions();
     const template = await firstTemplate();
     const { sessionId } = await session.startOrResumeSession(
@@ -247,7 +247,14 @@ describe("substituteExercise", () => {
       where: { id: we.id },
     });
     expect(updated.exerciseVariantId).toBe(other.id);
-    expect(updated.repRangeMin).toBe(other.repRangeMin);
+    // Rango, descanso y series son de la persona: sustituir no los reescribe
+    // (antes tomaba el rango del catálogo de la variante nueva).
+    expect(updated.repRangeMin).toBe(we.repRangeMin);
+    expect(updated.repRangeMax).toBe(we.repRangeMax);
+    expect(updated.restSeconds).toBe(we.restSeconds);
+    expect(updated.plannedSets).toBe(we.plannedSets);
+    // El RIR solo puede SUBIR (mínimo de seguridad de la variante nueva).
+    expect(updated.targetRir).toBeGreaterThanOrEqual(we.targetRir);
     // Las series de la variante anterior se descartan.
     expect(
       await prisma.setLog.count({ where: { workoutExerciseId: we.id } }),

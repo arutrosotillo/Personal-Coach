@@ -446,7 +446,7 @@ describe("invariantes", () => {
     for (const [label, r] of grid) {
       expect(r.explanation.length, label).toBeGreaterThan(20);
       expect(["LOW", "MEDIUM", "HIGH"], label).toContain(r.confidence);
-      expect(r.engineVersion, label).toBe("1.0.0");
+      expect(r.engineVersion, label).toBe("1.1.0");
     }
   });
 });

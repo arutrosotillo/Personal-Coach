@@ -29,6 +29,8 @@ import {
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  /** Aviso informativo de un cambio que sí se ha guardado. */
+  notice?: string;
 }
 
 function fail(context: string, error: unknown): ActionResult {
@@ -92,9 +94,19 @@ export async function changeTemplateVariantAction(
 ): Promise<ActionResult> {
   try {
     const profileId = await requireProfileId();
-    await changeTemplateVariant(profileId, templateExerciseId, newVariantId);
+    const r = await changeTemplateVariant(
+      profileId,
+      templateExerciseId,
+      newVariantId,
+    );
     revalidatePath("/program");
-    return { ok: true };
+    return {
+      ok: true,
+      notice:
+        r.targetRir > r.previousTargetRir
+          ? `Tus series, rango y descanso se mantienen. El RIR objetivo sube de ${r.previousTargetRir} a ${r.targetRir}: es el mínimo que prescribo para ${r.variantName}.`
+          : undefined,
+    };
   } catch (error) {
     return fail("changeTemplateVariantAction", error);
   }

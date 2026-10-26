@@ -52,6 +52,7 @@ const ANALISIS = {
     plan: null,
     explanation: "Todo en orden.",
     engineVersion: "1.0.0",
+    adaptation: { exercises: 0, withoutComparableData: 0, message: null },
     numbers: { windowDays: 28 },
   },
 } as unknown as TrainingAnalysis;

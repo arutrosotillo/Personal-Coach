@@ -4,7 +4,10 @@ import {
   generateInitialProgram,
 } from "@/core/program/generate-initial-program";
 import { onboardingSchema } from "@/core/schemas/onboarding";
-import { defaultTargetRir } from "@/core/training/prescription-defaults";
+import {
+  defaultTargetRir,
+  targetRirOnVariantChange,
+} from "@/core/training/prescription-defaults";
 import type { TemplateExerciseEdit } from "@/core/schemas/template-edit";
 import { GoalType } from "@/core/enums";
 import { prisma } from "@/server/db";
@@ -85,27 +88,42 @@ export async function editTemplateExercise(
   });
 }
 
-/** Cambia la variante (o sustituye por otro ejercicio) tomando su rango/descanso. */
+/**
+ * Cambia la variante (o sustituye por otro ejercicio) CONSERVANDO la
+ * prescripción: series, rango, descanso y RIR son de quien entrena, y adaptar
+ * la rutina —por ejemplo, al material de otro gimnasio— no es reescribirla. Se
+ * pidió así expresamente: cambian cuando quien entrena los cambia.
+ *
+ * Antes el rango, el descanso y el RIR viajaban con la variante (los del
+ * catálogo), así que cada cambio deshacía en silencio un 5–10 @1 puesto a mano.
+ * Queda una excepción, de seguridad: el RIR sube al mínimo de la variante nueva
+ * si ese mínimo es mayor (`targetRirOnVariantChange`), y se devuelve para que la
+ * pantalla lo diga.
+ */
 export async function changeTemplateVariant(
   profileId: string,
   templateExerciseId: string,
   newVariantId: string,
-) {
-  await assertTemplateExerciseOwned(profileId, templateExerciseId);
+): Promise<{
+  previousTargetRir: number;
+  targetRir: number;
+  variantName: string;
+}> {
+  const te = await assertTemplateExerciseOwned(profileId, templateExerciseId);
   const variant = await variantWithExercise(newVariantId);
+  const targetRir = targetRirOnVariantChange(
+    te.targetRir,
+    targetRirFor(variant),
+  );
   await prisma.templateExercise.update({
     where: { id: templateExerciseId },
-    data: {
-      exerciseVariantId: variant.id,
-      repRangeMin: variant.repRangeMin,
-      repRangeMax: variant.repRangeMax,
-      // El RIR viaja con la variante igual que el rango y el descanso. Sin
-      // esto, cambiar "Sentadilla trasera — Barra" (2) por "Prensa de piernas"
-      // conservaba el 2 del movimiento anterior.
-      targetRir: targetRirFor(variant),
-      restSeconds: variant.defaultRestSeconds,
-    },
+    data: { exerciseVariantId: variant.id, targetRir },
   });
+  return {
+    previousTargetRir: te.targetRir,
+    targetRir,
+    variantName: `${variant.exercise.name} — ${variant.name}`,
+  };
 }
 
 /** Sube o baja un ejercicio en el orden de la plantilla (intercambia ordinales). */

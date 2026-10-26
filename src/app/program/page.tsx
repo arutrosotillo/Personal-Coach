@@ -2,10 +2,12 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { ProgramEditor } from "@/components/training/program-editor";
+import { GymChangesCard } from "@/components/training/gym-changes-card";
 import { ProgramRationaleCard } from "@/components/training/program-rationale-card";
 import { WeeklyVolumeCard } from "@/components/training/weekly-volume-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { listGymChanges } from "@/server/repositories/equipment-change.repo";
 import { getProgramRationale } from "@/server/repositories/program.repo";
 import { getCurrentProfileOverview } from "@/server/auth/current-user";
 import { listSubstitutionOptions } from "@/server/repositories/substitution.repo";
@@ -22,7 +24,7 @@ export default async function ProgramPage() {
   const mesocycle = program?.mesocycles[0];
   // `overview &&` no es redundante para TypeScript: que `program` exista implica
   // que `overview` existe, pero el narrowing no viaja a través de `overview?.`.
-  const [rationale, substitutionOptions, canRestore, weeklyVolume] =
+  const [rationale, substitutionOptions, canRestore, weeklyVolume, gymChanges] =
     overview && program
       ? await Promise.all([
           getProgramRationale(program.id),
@@ -33,8 +35,9 @@ export default async function ProgramPage() {
             overview.profile.id,
             toLocalDate(new Date(), overview.profile.timezone ?? DEFAULT_TIMEZONE),
           ),
+          listGymChanges(overview.profile.id),
         ])
-      : [null, [], false, null];
+      : [null, [], false, null, []];
 
   if (!overview || !program || !mesocycle) {
     return (
@@ -109,6 +112,8 @@ export default async function ProgramPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <GymChangesCard changes={gymChanges} />
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Button

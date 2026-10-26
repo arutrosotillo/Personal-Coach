@@ -1,4 +1,8 @@
-import { FATIGUE, FATIGUE_ENGINE_VERSION } from "@/core/config/training-config";
+import {
+  EQUIPMENT_CHANGE,
+  FATIGUE,
+  FATIGUE_ENGINE_VERSION,
+} from "@/core/config/training-config";
 import { diffDays } from "@/core/dates";
 import type { Confidence } from "@/core/enums";
 
@@ -78,6 +82,15 @@ export interface FatigueExerciseInput {
   plateaued: boolean;
   /** Días desde la última exposición (para no contar ejercicios abandonados). */
   daysSinceLast: number;
+  /**
+   * `false` = no hay NADA comparable que decir de este ejercicio ahora mismo
+   * (equipamiento nuevo sin sesiones suficientes y sin nada reciente de la
+   * máquina anterior). Queda fuera del recuento: no tener datos no es estar
+   * estable. Por defecto, `true`.
+   */
+  comparable?: boolean;
+  /** Ejercicio con equipamiento nuevo todavía calibrando (informativo). */
+  adapting?: boolean;
 }
 
 export interface FatigueInput {
@@ -94,6 +107,19 @@ export interface DeloadPlan {
   minSetsPerExercise: number;
   loadChange: "KEEP" | "REDUCE_10_PCT";
   summary: string;
+}
+
+/**
+ * Ejercicios con equipamiento nuevo todavía calibrando. Va APARTE del veredicto
+ * a propósito: "sin señales de fatiga" y "sin datos comparables" son cosas
+ * distintas, y la tarjeta tiene que poder decir las dos.
+ */
+export interface FatigueAdaptation {
+  /** Ejercicios vivos en adaptación. */
+  exercises: number;
+  /** De ellos, los que no aportan nada comparable y quedan fuera del recuento. */
+  withoutComparableData: number;
+  message: string | null;
 }
 
 export interface FatigueAssessment {
@@ -118,8 +144,10 @@ export interface FatigueAssessment {
   confidence: Confidence;
   explanation: string;
   engineVersion: string;
+  adaptation: FatigueAdaptation;
   numbers: {
     sessionsInWindow: number;
+    /** Ejercicios que cuentan en el recuento (vivos y con algo comparable). */
     exercisesTracked: number;
     /** Cuánto mira el motor hacia atrás. Fijo; no es un dato del usuario. */
     windowDays: number;
@@ -175,10 +203,13 @@ export function assessFatigue(
     config.WINDOW_DAYS,
   );
   // Solo ejercicios vivos: uno que no se toca desde hace un mes no dice nada
-  // sobre la fatiga de esta semana.
-  const exercises = input.exercises.filter(
+  // sobre la fatiga de esta semana. Y de esos, solo los que tienen algo
+  // COMPARABLE que decir (ver `FatigueExerciseInput.comparable`).
+  const alive = input.exercises.filter(
     (e) => e.daysSinceLast <= config.WINDOW_DAYS,
   );
+  const exercises = alive.filter((e) => e.comparable !== false);
+  const adaptation = describeAdaptation(alive);
   const recent = sessions.slice(-config.RECENT_SESSIONS);
 
   // Días que abarcan de verdad las sesiones vistas (de la primera a hoy). NO es
@@ -243,6 +274,7 @@ export function assessFatigue(
       confidence: "LOW",
       explanation: `Con ${sessions.length} ${sessions.length === 1 ? "sesión" : "sesiones"} no puedo valorar tu fatiga: miro las de los últimos ${config.WINDOW_DAYS} días y necesito al menos ${config.MIN_SESSIONS}. Sigue entrenando y te lo digo.`,
       engineVersion: FATIGUE_ENGINE_VERSION,
+      adaptation,
       numbers: base,
     };
   }
@@ -421,7 +453,7 @@ export function assessFatigue(
       : sessions.length >= config.MIN_SESSIONS
         ? "MEDIUM"
         : "LOW";
-  const confidence: Confidence =
+  const verdictConfidence: Confidence =
     decision === "NO_DELOAD"
       ? dataConfidence
       : objectiveScore >= 3
@@ -429,6 +461,12 @@ export function assessFatigue(
         : objectiveScore >= 2
           ? lowerOf(dataConfidence, "MEDIUM")
           : "LOW";
+  // Con ejercicios fuera del recuento por falta de datos comparables, el
+  // veredicto mira menos de lo habitual: nunca puede salir con confianza alta.
+  const confidence: Confidence =
+    adaptation.withoutComparableData > 0
+      ? lowerOf(verdictConfidence, "MEDIUM")
+      : verdictConfidence;
 
   const plan: DeloadPlan | null =
     decision === "DELOAD_RECOMMENDED"
@@ -487,10 +525,11 @@ export function assessFatigue(
 
   // Explicación LARGA con todos los números: la consume Coach AI y el fallback
   // determinista, no la tarjeta (que ya lista las señales una a una).
-  const explanation =
-    signals.length > 0
-      ? `${signals.map((s) => s.message).join(" ")} ${headline}`
-      : headline;
+  const explanation = [
+    ...signals.map((s) => s.message),
+    headline,
+    ...(adaptation.message ? [adaptation.message] : []),
+  ].join(" ");
 
   return {
     level,
@@ -504,6 +543,39 @@ export function assessFatigue(
     confidence,
     explanation,
     engineVersion: FATIGUE_ENGINE_VERSION,
+    adaptation,
     numbers: base,
+  };
+}
+
+/**
+ * Lo que la tarjeta tiene que decir de los ejercicios con equipamiento nuevo.
+ * Cuenta solo ejercicios vivos, igual que el resto del motor.
+ */
+function describeAdaptation(
+  alive: readonly FatigueExerciseInput[],
+): FatigueAdaptation {
+  const adapting = alive.filter((e) => e.adapting === true);
+  const without = adapting.filter((e) => e.comparable === false).length;
+  const carried = adapting.length - without;
+  if (adapting.length === 0) {
+    return { exercises: 0, withoutComparableData: 0, message: null };
+  }
+  const n = EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES;
+  const partes: string[] = [];
+  if (carried > 0) {
+    partes.push(
+      `${carried} ${carried === 1 ? "sigue contando" : "siguen contando"} con lo último que mediste en la máquina anterior`,
+    );
+  }
+  if (without > 0) {
+    partes.push(
+      `${without} ${without === 1 ? "queda" : "quedan"} fuera del recuento hasta tener ${n} sesiones con la nueva: sin datos comparables no es lo mismo que estable`,
+    );
+  }
+  return {
+    exercises: adapting.length,
+    withoutComparableData: without,
+    message: `Equipamiento nuevo en ${adapting.length} ${adapting.length === 1 ? "ejercicio" : "ejercicios"}: ${partes.join(", y ")}.`,
   };
 }
