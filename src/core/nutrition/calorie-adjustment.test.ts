@@ -275,7 +275,9 @@ describe("evaluateCalorieAdjustment", () => {
     expect(r.proposal!.carbsG).toBe(237);
   });
 
-  it("objetivo de mantenimiento: no aplica", () => {
+  // v2: el mantenimiento ya tiene reglas propias (spec §10, banda ±1 %). Un
+  // peso plano queda dentro de la banda: se dice en positivo y no se toca.
+  it("objetivo de mantenimiento con peso estable: dentro de la banda, no se toca", () => {
     const r = evaluateCalorieAdjustment(
       input(
         series(50, () => 0),
@@ -290,10 +292,30 @@ describe("evaluateCalorieAdjustment", () => {
         },
       ),
     );
-    expect(r.reasonCode).toBe("NOT_APPLICABLE_GOAL");
+    expect(r.policy).toBe("MAINTAIN");
+    expect(r.reasonCode).toBe("IN_BAND");
+    expect(r.action).toBe("HOLD");
+    expect(r.proposal).toBeNull();
+    expect(r.explanation).toContain("banda");
   });
 
-  it("volumen estancado: propone subir (simétrico)", () => {
+  it("sin ciclo activo: no aplica", () => {
+    const r = evaluateCalorieAdjustment(
+      input(
+        series(50, () => 0),
+        addDays(START, 49),
+        { goal: null },
+      ),
+    );
+    expect(r.reasonCode).toBe("NOT_APPLICABLE_GOAL");
+    expect(r.policy).toBe("NONE");
+    expect(r.proposal).toBeNull();
+  });
+
+  // v2: la ganancia usa su propia política (docs/CYCLES.md §4). Perder peso
+  // en plena fase de ganancia es un desvío FUERTE: se confirma a 7 días y el
+  // paso es proporcional al desvío (aquí ~250 kcal → 60 % → tope de 150).
+  it("volumen estancado: propone subir con paso proporcional", () => {
     const r = evaluateCalorieAdjustment(
       input(
         series(70, (i) => (i < 28 ? 0.15 / 7 : -0.05 / 7), { noiseAmp: 0.3 }),
@@ -308,8 +330,14 @@ describe("evaluateCalorieAdjustment", () => {
         },
       ),
     );
-    expect(r.reasonCode).toBe("STALLED_CONFIRMED");
+    expect(r.policy).toBe("GAIN");
+    expect(r.reasonCode).toBe("SLOW_CONFIRMED");
     expect(r.proposal!.direction).toBe("UP");
-    expect(r.proposal!.kcal).toBe(2250);
+    expect(r.proposal!.kcal).toBe(2300);
+    expect(r.proposal!.deltaKcal).toBe(150);
+    // Las dos primeras semanas (agua y glucógeno) no entran en la tendencia.
+    expect(r.trackingStartLocalDate).toBe(addDays(START, 14));
+    expect(r.weekAgo!.pace).toBe("SLOW");
+    expect(r.explanation).toContain("kcal/día");
   });
 });

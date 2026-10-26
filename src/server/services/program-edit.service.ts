@@ -6,7 +6,7 @@ import {
 import { onboardingSchema } from "@/core/schemas/onboarding";
 import { defaultTargetRir } from "@/core/training/prescription-defaults";
 import type { TemplateExerciseEdit } from "@/core/schemas/template-edit";
-import { STRATEGY_TO_GOAL_TYPE } from "@/core/enums";
+import { GoalType } from "@/core/enums";
 import { prisma } from "@/server/db";
 import { loadCatalog } from "@/server/repositories/catalog.repo";
 
@@ -249,6 +249,16 @@ export async function restoreInitialProgram(
   const data = parsedOnboarding.data;
 
   const catalog = await loadCatalog(profileId);
+  // El volumen se calcula con el objetivo VIGENTE, no con el del onboarding:
+  // si desde entonces pasaste de definición a volumen, restaurar el plan no
+  // puede devolverte el volumen rebajado de la definición. Sin ciclo activo,
+  // el listón es el de mantenimiento (igual que el contador de volumen).
+  const activeGoal = await prisma.goal.findFirst({
+    where: { profileId, status: "ACTIVE" },
+    orderBy: { createdAt: "desc" },
+    select: { type: true },
+  });
+  const activeType = GoalType.safeParse(activeGoal?.type);
   const regenerated = generateInitialProgram({
     daysPerWeek: data.daysPerWeek,
     minutesPerSession: data.minutesPerSession,
@@ -256,7 +266,7 @@ export async function restoreInitialProgram(
     contraindications: data.contraindications,
     excludedExerciseNames: data.excludedExerciseNames,
     priorityMuscles: data.balancedProgram ? [] : data.priorityMuscles,
-    goalType: STRATEGY_TO_GOAL_TYPE[data.strategy],
+    goalType: activeType.success ? activeType.data : "MAINTENANCE",
     experienceLevel: experienceFromYears(data.trainingYears),
     catalog,
   });

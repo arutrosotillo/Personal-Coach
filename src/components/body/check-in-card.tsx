@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatNumber, formatShortDate } from "@/lib/body-labels";
 import { parseDecimalInput } from "@/lib/decimal-input";
-import { STRATEGY_DESCRIPTIONS, STRATEGY_LABELS } from "@/lib/labels";
+import { STRATEGY_LABELS } from "@/lib/labels";
 import {
   submitCheckInAction,
   updateGoalAction,
@@ -340,11 +341,12 @@ function CheckInForm({
 }
 
 /**
- * Revisión del objetivo.
+ * Revisión del objetivo DENTRO de la fase actual: ritmo y peso objetivo.
  *
- * La distinción que la interfaz TIENE que dejar clara: corregir el peso
- * objetivo es una cosa y cambiar de fase es otra. Lo segundo reinicia la
- * tendencia, y quien lo hace debe saberlo ANTES de pulsar, no después.
+ * Cambiar de objetivo (de definición a volumen, por ejemplo) ya no se hace
+ * aquí: es cerrar un ciclo y empezar otro, con su resumen, tus datos de hoy y
+ * unas calorías recalculadas que confirmas tú (`/progress/cycle`). Este
+ * formulario solo corrige el listón de la fase en curso y no reinicia nada.
  */
 export function GoalReview({
   goal,
@@ -353,7 +355,6 @@ export function GoalReview({
   goal: CheckInGoal;
   onDone: () => void;
 }) {
-  const [strategy, setStrategy] = useState<GoalStrategy>(goal.strategy);
   const [rate, setRate] = useState(
     String(goal.weeklyRatePct).replace(".", ","),
   );
@@ -364,12 +365,10 @@ export function GoalReview({
   );
   const [pending, startTransition] = useTransition();
 
-  const esFaseNueva = strategy !== goal.strategy;
-
   function save() {
     startTransition(async () => {
       const result = await updateGoalAction({
-        strategy,
+        strategy: goal.strategy,
         weeklyRatePct: parseDecimalInput(rate) ?? 0,
         targetWeightKg: parseDecimalInput(target),
       });
@@ -378,11 +377,9 @@ export function GoalReview({
         return;
       }
       toast.success(
-        result.kind === "NEW_PHASE"
-          ? "Nueva fase empezada hoy. Tu tendencia se calcula desde ahora."
-          : result.kind === "EDIT_IN_PLACE"
-            ? "Objetivo actualizado. Tu tendencia sigue igual."
-            : "No has cambiado nada.",
+        result.kind === "EDIT_IN_PLACE"
+          ? "Objetivo actualizado. Tu tendencia sigue igual."
+          : "No has cambiado nada.",
       );
       onDone();
     });
@@ -391,24 +388,16 @@ export function GoalReview({
   return (
     <div className="space-y-3">
       <div>
-        <Label htmlFor="goal-strategy" className="mb-1 block text-sm">
-          Objetivo
-        </Label>
-        <select
-          id="goal-strategy"
-          value={strategy}
-          disabled={pending}
-          onChange={(e) => setStrategy(e.target.value as GoalStrategy)}
-          className="border-input bg-background min-h-11 w-full rounded-md border px-3 text-sm"
-        >
-          {(Object.keys(STRATEGY_LABELS) as GoalStrategy[]).map((s) => (
-            <option key={s} value={s}>
-              {STRATEGY_LABELS[s]}
-            </option>
-          ))}
-        </select>
+        <p className="text-sm">
+          Fase actual:{" "}
+          <span className="font-medium">{STRATEGY_LABELS[goal.strategy]}</span>
+        </p>
         <p className="text-muted-foreground mt-1 text-xs">
-          {STRATEGY_DESCRIPTIONS[strategy]}
+          ¿Quieres cambiar de objetivo?{" "}
+          <Link href="/progress/cycle" className="underline underline-offset-2">
+            Finaliza tu ciclo y empieza otro
+          </Link>
+          : verás su resumen y unas calorías recalculadas antes de confirmar.
         </p>
       </div>
 
@@ -444,16 +433,6 @@ export function GoalReview({
         </div>
       </div>
 
-      {/* El aviso aparece ANTES de guardar, no como sorpresa después. */}
-      {esFaseNueva ? (
-        <p className="border-primary/40 bg-primary/5 rounded-lg border px-3 py-2 text-xs">
-          Cambiar de objetivo empieza una <strong>fase nueva</strong> hoy. Tus
-          mediciones y tu historial se conservan enteros, pero la tendencia
-          pasará a calcularse solo con lo que registres a partir de ahora:
-          durante un par de semanas dirá que faltan datos, porque es verdad.
-        </p>
-      ) : null}
-
       <div className="flex justify-end gap-2">
         <Button
           type="button"
@@ -472,7 +451,7 @@ export function GoalReview({
           disabled={pending}
           onClick={save}
         >
-          {esFaseNueva ? "Empezar fase nueva" : "Guardar objetivo"}
+          Guardar objetivo
         </Button>
       </div>
     </div>

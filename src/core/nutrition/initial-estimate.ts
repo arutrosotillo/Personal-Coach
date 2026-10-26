@@ -1,5 +1,6 @@
 import { NUTRITION_CONFIG as CFG } from "@/core/config/nutrition-config";
 import type { GoalType, Sex, WorkActivity } from "@/core/enums";
+import { computeMacros, safetyFloorKcal } from "@/core/nutrition/macros";
 
 /**
  * Estimación inicial de gasto y objetivo nutricional (docs/NUTRITION_ENGINE.md §1–3).
@@ -169,10 +170,7 @@ export function estimateInitialTargets(
   }
 
   // ── Suelo de seguridad ──
-  const floorKcal = Math.max(
-    Math.round(bmr * CFG.minKcalBmrFactor),
-    CFG.minKcalAbsolute[input.sex],
-  );
+  const floorKcal = safetyFloorKcal(input.sex, bmr);
   const preFloorKcalTarget = round25(tdee - dailyAdjustmentKcal);
   let kcalTarget = preFloorKcalTarget;
   const clampedToFloor = kcalTarget < floorKcal;
@@ -200,50 +198,21 @@ export function estimateInitialTargets(
     );
   }
 
-  // ── Macros ──
-  // Peso de referencia para proteína: objetivo/estimación magra si el % graso
-  // MEDIDO es alto; si no, el peso actual.
-  const highBf = CFG.highBodyFatPctForProteinRef[input.sex];
-  const proteinReferenceWeightKg =
-    input.bodyFatMeasured &&
-    typeof input.bodyFatPct === "number" &&
-    input.bodyFatPct > highBf
-      ? (input.targetWeightKg ??
-        Math.round(input.weightKg * (1 - input.bodyFatPct / 100) * 1.3))
-      : input.weightKg;
-
-  const proteinGPerKg = CFG.proteinGPerKg[input.goalType];
-  const fatGPerKg = CFG.fatGPerKg[input.goalType];
-  const proteinFloorG = Math.round(1.8 * proteinReferenceWeightKg);
-  const fatFloorG = Math.max(
-    Math.round(CFG.minFatGPerKg * input.weightKg),
-    CFG.minFatGAbsolute,
-  );
-
-  // Cascada para respetar el mínimo de carbohidratos: bajar grasa → proteína.
-  let proteinG = Math.round(proteinGPerKg * proteinReferenceWeightKg);
-  let fatG = Math.max(
-    Math.round(fatGPerKg * input.weightKg),
-    CFG.minFatGAbsolute,
-  );
-  const carbsFrom = () =>
-    Math.round((kcalTarget - proteinG * 4 - fatG * 9) / 4);
-  let carbsG = carbsFrom();
-  if (carbsG < CFG.minCarbsG && fatG > fatFloorG) {
-    fatG = fatFloorG;
-    carbsG = carbsFrom();
-  }
-  if (carbsG < CFG.minCarbsG && proteinG > proteinFloorG) {
-    proteinG = proteinFloorG;
-    carbsG = carbsFrom();
-  }
-  const macrosLimitedByLowKcal = carbsG < CFG.minCarbsG;
+  // ── Macros ── (módulo compartido con el plan de ciclo)
+  const {
+    proteinG,
+    fatG,
+    carbsG,
+    proteinReferenceWeightKg,
+    proteinGPerKg,
+    fatGPerKg,
+    macrosLimitedByLowKcal,
+  } = computeMacros({ ...input, kcalTarget });
   if (macrosLimitedByLowKcal) {
     notes.push(
       "Con estas calorías no caben los mínimos de macronutrientes: el objetivo es muy bajo. Considera un ritmo más suave o pierde grasa más despacio.",
     );
   }
-  carbsG = Math.max(carbsG, 0);
 
   const trace: InitialNutritionEstimateTrace = {
     bmrFormula,

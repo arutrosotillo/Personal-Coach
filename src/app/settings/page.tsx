@@ -83,7 +83,9 @@ export default async function SettingsPage() {
               </Button>
               <p className="text-muted-foreground pt-1 text-xs">
                 Repetirlo no borra tu historial: actualiza el perfil, cierra el
-                objetivo anterior y genera un programa nuevo.
+                objetivo anterior y genera un programa nuevo. Para cambiar solo
+                de objetivo no hace falta: en Progreso, «Finalizar ciclo» te
+                deja empezar otro sin tocar tu programa.
               </p>
             </CardContent>
           </Card>

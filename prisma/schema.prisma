@@ -75,6 +75,7 @@ model UserProfile {
   preferences      UserPreference[]
   customExercises  Exercise[]
   exerciseNotes    ExerciseNote[]
+  energyEstimates  EnergyEstimate[]
 }
 
 model Goal {
@@ -94,8 +95,24 @@ model Goal {
   weeklyRatePct  Float // % del peso corporal / semana (negativo = pérdida)
   targetWeightKg Float?
   notes          String?
+  /// Último día del ciclo (localDate), al cerrarlo. `null` mientras está
+  /// activo, y en los cerrados antes de que existiera (su fin se deduce del
+  /// inicio del siguiente: ver docs/CYCLES.md).
+  endDate        String?
+  /// Instante del cierre (auditoría).
+  closedAt       DateTime?
+  /// Resumen CONGELADO al cerrar (`CycleSummary` de `src/core/cycles`): lo que
+  /// la persona vio al cerrar. Recalcularlo años después con motores nuevos
+  /// daría otros números, y el historial no se reescribe.
+  closingSummary Json?
+  /// Clave de idempotencia de la petición que ABRIÓ este ciclo: repetir el
+  /// envío (doble toque, reintento sin cobertura) devuelve este ciclo en vez
+  /// de crear otro.
+  openRequestId  String?     @unique
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+
+  energyEstimates EnergyEstimate[]
 
   @@index([profileId, status])
 }
@@ -191,6 +208,10 @@ model ProgressPhoto {
 
 /// Check-in diario de NUTRICIÓN Y SENSACIONES (F4): kcal, proteína, pasos,
 /// hambre, energía, sueño. Nada de esto vive en `BodyMeasurement`.
+///
+/// `kcal` y `proteinG` son el REGISTRO DE INGESTA opcional (docs/CYCLES.md
+/// §3): el total COMIDO ese día, no el objetivo. Una fila por persona y día,
+/// escrita con upsert por fecha (sin superficie IDOR, como `BodyMeasurement`).
 model DailyCheckIn {
   id         String      @id @default(cuid())
   profileId  String
@@ -244,6 +265,49 @@ model WeeklyCheckIn {
   createdAt             DateTime    @default(now())
 
   @@unique([profileId, isoYear, isoWeek])
+}
+
+/// Estimación de mantenimiento CONGELADA en un momento significativo (cierre o
+/// inicio de ciclo, respuesta a un ajuste). Es la "memoria metabólica": la
+/// estimación del ciclo anterior entra como punto de partida del siguiente, y
+/// la serie permite comparar cómo ha evolucionado el gasto a lo largo de años.
+///
+/// Leer nunca escribe aquí: la estimación de cada visita se calcula al vuelo
+/// (es reproducible desde los datos crudos). Solo se congela cuando la persona
+/// toma una decisión con ella delante.
+model EnergyEstimate {
+  id               String      @id @default(cuid())
+  profileId        String
+  profile          UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  /// Ciclo al que pertenece (el que se cierra, o el que se abre).
+  goalId           String?
+  goal             Goal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  localDate        String
+  kind             String // enum EnergyEstimateKind: CYCLE_CLOSE | CYCLE_START | ADJUSTMENT
+  tdeeKcal         Int
+  lowKcal          Int
+  highKcal         Int
+  seKcal           Int
+  confidence       String // enum Confidence
+  basis            String // OBSERVED | PRIOR | FORMULA
+  /// Parte observada (balance energético), si la hubo.
+  observedTdeeKcal Int?
+  /// La parte que sale de DATOS (observado + memoria anterior), sin fórmula:
+  /// es lo que hereda el ciclo siguiente. `null` si solo había fórmula.
+  memoryTdeeKcal   Int?
+  memorySeKcal     Int?
+  intakeSource     String? // LOGGED | TARGET_PROXY
+  /// Peso de referencia en ese momento (para escalarla al peso futuro).
+  weightKg         Float?
+  /// El periodo del que sale era un déficit.
+  fromDeficit      Boolean     @default(false)
+  engineVersion    String
+  /// `MaintenanceEstimate` completo, para auditar.
+  detail           Json
+  createdAt        DateTime    @default(now())
+
+  @@index([profileId, localDate])
+  @@index([goalId])
 }
 
 model PersonalEvent {

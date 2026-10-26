@@ -59,7 +59,7 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 **Nutrición**
 
 - `NutritionTarget` — serie temporal de objetivos (`@@unique(profileId, effectiveFrom)`), `source` MANUAL|ALGORITHM|ONBOARDING, enlace opcional (0..1) a la recomendación que lo produjo. El onboarding crea el primero (estimación inicial, F4 lo hace operativo).
-- `NutritionLog`, `MealTemplate` — F4 para la UI; tablas desde F1.
+- `NutritionLog`, `MealTemplate` — F4 para la UI; tablas desde F1. El registro de ingesta diario por totales vive en `DailyCheckIn` (ver la decisión de ciclos más abajo); `NutritionLog` queda para un futuro registro por comidas.
 
 **Trazabilidad**
 
@@ -111,6 +111,16 @@ El error de medida de la cintura depende de cuántas tomas se promediaron: ~5,4 
 - Solo el check-in, que pide las tres tomas, puede declarar `MEAN_OF_THREE`. Editar la cintura a mano desde el historial la deja en `null`.
 - Cuando en la ventana conviven los dos protocolos, **manda el peor**: una serie no puede ser más precisa que su medida más burda.
 - Las tres tomas crudas **no se persisten**. Lo que cambia el comportamiento del motor es el protocolo, no los valores sueltos; la media es el valor representativo y la dispersión ya se valida en la frontera (se rechaza si superan 5 cm de diferencia). Guardarlas permitiría estimar el error de medida propio de cada persona, pero nada lo consume. Añadir esa columna después es aditivo.
+
+## Decisión: ciclos sobre `Goal` y memoria metabólica en `EnergyEstimate` (2026-10)
+
+Detalle completo en `docs/CYCLES.md`. Lo esencial para el modelo:
+
+- **Un ciclo es una fila de `Goal`**, que ya era el historial de fases. Columnas nuevas, todas anulables: `endDate` (fin del ciclo; los cerrados antes de esta versión lo deducen del inicio del siguiente), `closedAt`, `closingSummary` (resumen congelado al cerrar: no se recalcula con motores nuevos) y `openRequestId` (idempotencia de "Empezar ciclo", único).
+- **Índice parcial `Goal_one_active_per_profile`** (`WHERE status = 'ACTIVE'`), en SQL a mano como el de programas: la base impide dos ciclos activos. La migración comprueba antes, sin tocar datos, que no haya duplicados y aborta si los hubiera.
+- **`EnergyEstimate`**: estimación de mantenimiento congelada al cerrar (`CYCLE_CLOSE`) o abrir (`CYCLE_START`) un ciclo y al responder a un ajuste (`ADJUSTMENT`). `memoryTdeeKcal/memorySeKcal` es la parte que sale de datos, sin fórmula: lo que hereda el ciclo siguiente.
+- **Registro de ingesta = `DailyCheckIn.kcal` / `proteinG`**, que existían vacías: total comido del día, upsert por (perfil, fecha), sin superficie IDOR. `DailyCheckIn.weightKg` sigue obsoleta.
+- Valores nuevos de enums sin migración: `TargetSource.CYCLE_START`, `RecommendationType.CYCLE_TARGETS`, `CycleOutcome`, `InterimNutrition`, `EnergyEstimateKind`.
 
 ## Decisión: tablas de Coach AI pospuestas a Fase 6
 

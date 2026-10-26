@@ -118,9 +118,10 @@ export async function completeOnboarding(
       : await tx.userProfile.create({ data: { ...profileFields, userId } });
 
     // Re-ejecución: cerrar objetivo activo y desactivar programas anteriores.
+    // El ciclo cerrado queda con fecha de fin para el historial de ciclos.
     await tx.goal.updateMany({
       where: { profileId: profile.id, status: "ACTIVE" },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", endDate: localDate, closedAt: now },
     });
     await tx.trainingProgram.updateMany({
       where: { profileId: profile.id, isActive: true },

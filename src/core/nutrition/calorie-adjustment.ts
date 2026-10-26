@@ -1,14 +1,44 @@
 import { analyzeBody } from "@/core/body";
-import type {
-  BodyAnalysis,
-  BodyConfidence,
-  BodyGoalInput,
-  BodyMeasurementPoint,
-} from "@/core/body";
+import type { BodyAnalysis } from "@/core/body";
 import { NUTRITION_CONFIG } from "@/core/config/nutrition-config";
 import { addDays, diffDays } from "@/core/dates";
-import type { Sex } from "@/core/enums";
-import { mifflinStJeor } from "@/core/nutrition/initial-estimate";
+import {
+  adherenceExplains,
+  adherenceText,
+  floorFor,
+  kcalFmt,
+  kgFmt,
+  pctFmt,
+  readAdherence,
+  rebalanceMacros,
+  type AdjustmentConfig,
+  type AdjustmentReasonCode,
+  type CalorieAdjustment,
+  type CalorieAdjustmentInput,
+  type KcalDirection,
+  type PaceReading,
+  type ProposedTarget,
+  CALORIE_ADJUSTMENT_VERSION,
+  INSUFFICIENT_REASON,
+} from "@/core/nutrition/adjustment-common";
+import {
+  evaluateGainAdjustment,
+  evaluateMaintenanceAdjustment,
+  evaluateRecompAdjustment,
+} from "@/core/nutrition/adaptive-calories";
+import type { BodyConfidence } from "@/core/body";
+
+export type {
+  AdherenceReading,
+  AdjustmentPolicy,
+  AdjustmentReasonCode,
+  CalorieAdjustment,
+  CalorieAdjustmentInput,
+  KcalDirection,
+  NutritionTargetSnapshot,
+  PaceReading,
+  ProposedTarget,
+} from "@/core/nutrition/adjustment-common";
 
 /**
  * Ajuste calórico por tendencia de peso (docs/NUTRITION_ENGINE.md §5, versión
@@ -18,11 +48,16 @@ import { mifflinStJeor } from "@/core/nutrition/initial-estimate";
  * sirviendo para el ritmo que elegiste?". Y si no, propone UN paso de 100 kcal.
  * Nunca lo aplica: el usuario acepta o no.
  *
- * QUÉ NO SABE, y lo dice: la app todavía no registra lo que comes, así que no
- * puede distinguir "el objetivo es demasiado alto" de "no estás comiendo el
- * objetivo". Las reglas de adherencia (R2), pasos (R7a) y retención (R4b) de la
- * spec necesitan esos datos y no se aplican. Por eso un recorte nunca sale con
- * confianza alta y su explicación pide comprobar la ingesta antes de aceptar.
+ * QUÉ NO SABE, y lo dice: el registro de ingesta es opcional. Sin él no puede
+ * distinguir "el objetivo es demasiado alto" de "no estás comiendo el
+ * objetivo", así que un recorte nunca sale con confianza alta y su explicación
+ * pide comprobar la ingesta antes de aceptar. Con registro suficiente se
+ * aplica R2 (adherencia): no se toca un objetivo que no se está comiendo.
+ * Pasos (R7a) y retención (R4b) siguen sin datos y no se aplican.
+ *
+ * POR ESTRATEGIA (v2, docs/CYCLES.md §4): este archivo conserva las reglas de
+ * la definición (R0–R8) y despacha ganancia, mantenimiento y recomposición a
+ * `adaptive-calories.ts`, pensadas para fases largas con ritmos pequeños.
  *
  * NUNCA POR UN DATO AISLADO: la tendencia sale de la regresión del motor
  * corporal (no de la última pesada), tiene que distinguirse del objetivo con su
@@ -30,129 +65,7 @@ import { mifflinStJeor } from "@/core/nutrition/initial-estimate";
  * semana. Una semana plana no basta.
  */
 
-export const CALORIE_ADJUSTMENT_VERSION = "1.0.0";
-
-type AdjustmentConfig = typeof NUTRITION_CONFIG;
-
-export type KcalDirection = "UP" | "DOWN";
-
-export interface NutritionTargetSnapshot {
-  kcal: number;
-  proteinG: number;
-  fatG: number;
-  carbsG: number;
-  /** localDate desde el que rige. */
-  effectiveFrom: string;
-}
-
-export interface CalorieAdjustmentInput {
-  todayLocalDate: string;
-  sex: Sex;
-  ageYears: number;
-  heightCm: number;
-  /** Objetivo activo. `startDate` abre la fase y acota la tendencia. */
-  goal: (BodyGoalInput & { startDate: string }) | null;
-  measurements: readonly BodyMeasurementPoint[];
-  currentTarget: NutritionTargetSnapshot | null;
-  /** Último CAMBIO del objetivo calórico (no el de onboarding). */
-  lastChange: { localDate: string; direction: KcalDirection } | null;
-  /** Último "ahora no" a esta sugerencia. */
-  lastRejectedLocalDate: string | null;
-}
-
-export type AdjustmentReasonCode =
-  | "NOT_APPLICABLE_GOAL"
-  | "NO_TARGET"
-  | "INITIAL_PHASE"
-  | "INSUFFICIENT_DATA"
-  | "UNCONFIRMED_SLOW"
-  | "UNCONFIRMED_FAST"
-  | "STALLED_FIRST_WEEK"
-  | "STALLED_CONFIRMED"
-  | "EXCESSIVE_FIRST_WEEK"
-  | "EXCESSIVE_CONFIRMED"
-  | "SLIGHTLY_SLOW"
-  | "ON_TRACK"
-  | "SLIGHTLY_FAST"
-  | "COOLDOWN"
-  | "SNOOZED"
-  | "AT_FLOOR";
-
-/** Lectura de la tendencia en un día concreto, en las unidades del objetivo. */
-export interface PaceReading {
-  localDate: string;
-  observedKgPerWeek: number;
-  ciLowKgPerWeek: number;
-  ciHighKgPerWeek: number;
-  targetKgPerWeek: number;
-  /** observado / objetivo: 1 = justo al ritmo; 0 = parado; <0 = al revés. */
-  ratio: number;
-  /** El ratio más FAVORABLE que admite el intervalo de confianza. */
-  fastestPlausibleRatio: number;
-  /** El ratio más DESFAVORABLE que admite el intervalo de confianza. */
-  slowestPlausibleRatio: number;
-  windowDays: number;
-  measurements: number;
-  confidence: BodyConfidence;
-  pace:
-    | "STALLED"
-    | "UNCONFIRMED_SLOW"
-    | "SLOW"
-    | "ON_TRACK"
-    | "FAST"
-    | "UNCONFIRMED_FAST"
-    | "EXCESSIVE";
-}
-
-export interface ProposedTarget {
-  kcal: number;
-  proteinG: number;
-  fatG: number;
-  carbsG: number;
-  deltaKcal: number;
-  direction: KcalDirection;
-  /** El paso se recortó para no bajar del suelo de seguridad. */
-  clampedToFloor: boolean;
-}
-
-export interface CalorieAdjustment {
-  engineVersion: string;
-  ruleId: string;
-  reasonCode: AdjustmentReasonCode;
-  /** `ADJUST` solo cuando hay propuesta que aceptar. */
-  action: "ADJUST" | "HOLD";
-  confidence: BodyConfidence;
-  title: string;
-  explanation: string;
-  proposal: ProposedTarget | null;
-  currentKcal: number | null;
-  floorKcal: number | null;
-  daysOnPhase: number | null;
-  now: PaceReading | null;
-  weekAgo: PaceReading | null;
-  /** Por qué no hay lectura, cuando no la hay (motivo del motor corporal). */
-  insufficientDataReason: string | null;
-  /** Fecha a partir de la cual volverá a poder proponer algo, si aplica. */
-  nextEligibleLocalDate: string | null;
-}
-
-// ── Formato es-ES (la explicación lleva los números usados) ─────────────────
-
-const kcalFmt = (n: number) => Math.round(n).toLocaleString("es-ES");
-/** Con el menos tipográfico (U+2212), como el resto de `/progress`. */
-const kgFmt = (n: number) =>
-  n
-    .toLocaleString("es-ES", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-    .replace("-", "−");
-const pctFmt = (n: number) =>
-  Math.round(n * 100).toLocaleString("es-ES") + " %";
-
-function ceilTo(value: number, step: number): number {
-  return Math.ceil(value / step) * step;
-}
+export { CALORIE_ADJUSTMENT_VERSION } from "@/core/nutrition/adjustment-common";
 
 // ── Lectura de la tendencia ─────────────────────────────────────────────────
 
@@ -228,69 +141,54 @@ function readPace(
   };
 }
 
-const INSUFFICIENT_REASON: Record<string, string> = {
-  NO_MEASUREMENTS: "Aún no hay pesajes en esta fase.",
-  TOO_FEW_MEASUREMENTS: "Faltan pesajes para calcular una tendencia fiable.",
-  SPAN_TOO_SHORT:
-    "Los pesajes cubren todavía muy pocos días para calcular una tendencia.",
-  SPARSE_MEASUREMENTS: "Los pesajes están demasiado espaciados.",
-};
-
-/** El suelo de seguridad, redondeado hacia arriba al paso de 25 kcal. */
-function floorFor(
-  input: CalorieAdjustmentInput,
-  weightKg: number,
-  config: AdjustmentConfig,
-) {
-  const bmr = mifflinStJeor(
-    input.sex,
-    weightKg,
-    input.heightCm,
-    input.ageYears,
-  );
-  const raw = Math.max(
-    Math.round(bmr * config.minKcalBmrFactor),
-    config.minKcalAbsolute[input.sex],
-  );
-  return ceilTo(raw, config.kcalRounding);
-}
-
-/**
- * Macros del nuevo objetivo: la proteína y la grasa NO se tocan (protegen el
- * músculo y la salud hormonal); el cambio sale entero de los carbohidratos
- * (spec §3: carbohidratos = resto). Solo si los carbohidratos bajaran del
- * mínimo se recorta la grasa hasta su suelo.
- */
-function rebalanceMacros(
-  current: NutritionTargetSnapshot,
-  kcal: number,
-  weightKg: number,
-  config: AdjustmentConfig,
-) {
-  const proteinG = current.proteinG;
-  let fatG = current.fatG;
-  const carbsFor = () => Math.round((kcal - proteinG * 4 - fatG * 9) / 4);
-  let carbsG = carbsFor();
-  if (carbsG < config.minCarbsG) {
-    const fatFloor = Math.max(
-      Math.round(config.minFatGPerKg * weightKg),
-      config.minFatGAbsolute,
-    );
-    fatG = Math.min(
-      fatG,
-      Math.max(
-        fatFloor,
-        fatG - Math.ceil(((config.minCarbsG - carbsG) * 4) / 9),
-      ),
-    );
-    carbsG = carbsFor();
-  }
-  return { proteinG, fatG, carbsG: Math.max(carbsG, 0) };
-}
-
 // ── Motor ───────────────────────────────────────────────────────────────────
 
+/**
+ * Punto de entrada: elige la familia de reglas por el TIPO del objetivo.
+ * La definición conserva R0–R8; el resto va a `adaptive-calories.ts`.
+ */
 export function evaluateCalorieAdjustment(
+  input: CalorieAdjustmentInput,
+  config: AdjustmentConfig = NUTRITION_CONFIG,
+): CalorieAdjustment {
+  const goal = input.goal;
+  if (goal === null) {
+    return {
+      engineVersion: CALORIE_ADJUSTMENT_VERSION,
+      policy: "NONE",
+      ruleId: "NA",
+      reasonCode: "NOT_APPLICABLE_GOAL",
+      action: "HOLD",
+      confidence: "LOW",
+      title: "Sin ciclo activo",
+      explanation:
+        "No tienes un ciclo en marcha, así que no hay un ritmo con el que comparar tu peso. Empieza uno cuando quieras y el ajuste volverá a vigilarlo.",
+      proposal: null,
+      currentKcal: input.currentTarget?.kcal ?? null,
+      floorKcal: null,
+      daysOnPhase: null,
+      now: null,
+      weekAgo: null,
+      insufficientDataReason: null,
+      nextEligibleLocalDate: null,
+      trackingStartLocalDate: null,
+      adherence: null,
+    };
+  }
+  switch (goal.type) {
+    case "LEAN_GAIN":
+      return evaluateGainAdjustment(input, config);
+    case "MAINTENANCE":
+      return evaluateMaintenanceAdjustment(input, config);
+    case "RECOMP":
+      return evaluateRecompAdjustment(input, config);
+    case "FAT_LOSS":
+      return evaluateLossAdjustment(input, config);
+  }
+}
+
+/** Definición: reglas R0–R8 de docs/NUTRITION_ENGINE.md §5.1 (+ R2 con registro). */
+export function evaluateLossAdjustment(
   input: CalorieAdjustmentInput,
   config: AdjustmentConfig = NUTRITION_CONFIG,
 ): CalorieAdjustment {
@@ -299,6 +197,9 @@ export function evaluateCalorieAdjustment(
 
   const base = {
     engineVersion: CALORIE_ADJUSTMENT_VERSION,
+    policy: "LOSS" as const,
+    trackingStartLocalDate: null,
+    adherence: null,
     proposal: null,
     currentKcal: input.currentTarget?.kcal ?? null,
     floorKcal: null,
@@ -480,6 +381,30 @@ export function evaluateCalorieAdjustment(
       adjustRule = "R5";
       adjustCode = "EXCESSIVE_CONFIRMED";
       break;
+    default:
+      // Las lecturas de banda son de mantenimiento y recomposición: `readPace`
+      // nunca las produce aquí. Si llegaran, lo prudente es no tocar nada.
+      return holdWith("R6", "ON_TRACK", "Sin cambios", "");
+  }
+
+  // ── R2: adherencia. Solo con registro suficiente: sin datos no se presume
+  // que la persona no come su objetivo, pero con datos no se ignora. ──
+  const adherence = readAdherence(
+    input,
+    addDays(today, -(now.windowDays - 1)),
+    today,
+    config,
+  );
+  if (adherenceExplains(adherence, direction, config)) {
+    return holdWith(
+      "R2",
+      "ADHERENCE_GAP",
+      direction === "DOWN"
+        ? "Antes de bajar: estás comiendo por encima del objetivo"
+        : "Antes de subir: estás comiendo por debajo del objetivo",
+      `${adherenceText(adherence!)} Cambiar el número no cambia lo que comes: acércate primero a tu objetivo actual y lo vuelvo a mirar.`,
+      { adherence },
+    );
   }
 
   // ── Enfriamientos (R3) ──
@@ -561,17 +486,23 @@ export function evaluateCalorieAdjustment(
     ? ` El paso se ha recortado para no bajar de tu mínimo de seguridad (${kcalFmt(floorKcal)} kcal).`
     : "";
   const adherenceTxt =
-    direction === "DOWN" && losing
-      ? ` Antes de aceptar: esto supone que de verdad estás comiendo unas ${kcalFmt(current.kcal)} kcal de media. Si te estás pasando algunos días, bajar el número no cambia nada; ajusta primero lo que comes.`
-      : "";
+    adherence !== null
+      ? ` Tu registro confirma que comes alrededor de tu objetivo (${kcalFmt(adherence.meanIntakeKcal)} kcal de media).`
+      : direction === "DOWN" && losing
+        ? ` Antes de aceptar: esto supone que de verdad estás comiendo unas ${kcalFmt(current.kcal)} kcal de media. Si te estás pasando algunos días, bajar el número no cambia nada; ajusta primero lo que comes.`
+        : "";
 
-  // Confianza: nunca HIGH, porque la ingesta no se mide; MEDIUM solo si las
-  // dos lecturas son al menos de precisión media.
+  // Confianza: sin registro de ingesta nunca HIGH; MEDIUM solo si las dos
+  // lecturas son al menos de precisión media. Con registro que confirma la
+  // adherencia, HIGH si las dos lecturas lo son.
   const rank = { LOW: 0, MEDIUM: 1, HIGH: 2 } as const;
+  const minRank = Math.min(rank[now.confidence], rank[weekAgo!.confidence]);
   const confidence: BodyConfidence =
-    rank[now.confidence] >= 1 && rank[weekAgo!.confidence] >= 1
-      ? "MEDIUM"
-      : "LOW";
+    adherence !== null && minRank === 2
+      ? "HIGH"
+      : minRank >= 1
+        ? "MEDIUM"
+        : "LOW";
 
   return {
     ...base,
@@ -583,5 +514,6 @@ export function evaluateCalorieAdjustment(
     title: `${verb} a ${kcalFmt(newKcal)} kcal`,
     explanation: `${readingTxt} ${why} ${losing ? effect : effectGain}${floorTxt}${adherenceTxt}`,
     proposal,
+    adherence,
   };
 }

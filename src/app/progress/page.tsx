@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { CalorieAdjustmentCard } from "@/components/body/calorie-adjustment-card";
+import { CompositionCard, CycleCard } from "@/components/cycles/cycle-card";
+import { assessPerformance } from "@/core/insights";
 import { CheckInCard } from "@/components/body/check-in-card";
 import { InsightCard } from "@/components/body/insight-card";
 import { MeasurementHistory } from "@/components/body/measurement-history";
@@ -24,6 +26,8 @@ import {
   getBodyProgress,
   getGoalForEdit,
 } from "@/server/services/body.service";
+import { getCycleOverview } from "@/server/services/cycle.service";
+import { getTrainingAnalysis } from "@/server/services/fatigue.service";
 import { getCalorieAdjustment } from "@/server/services/nutrition-adjustment.service";
 
 export const dynamic = "force-dynamic";
@@ -68,15 +72,24 @@ export default async function ProgressPage() {
     );
   }
 
+  // El análisis de entrenamiento se lee UNA vez y lo comparten el cruce
+  // cuerpo × rendimiento, la recomposición y el aviso de composición.
+  const now = new Date();
+  const training = await getTrainingAnalysis(profile.id, now).catch(() => null);
+  const performanceTrend = training ? assessPerformance(training).trend : null;
   const [
     { analysis, history, chartSeries, checkIn, phaseStartLocalDate, insight },
     editableGoal,
     calorieAdjustment,
   ] = await Promise.all([
-    getBodyProgress(profile.id),
+    getBodyProgress(profile.id, now, training),
     getGoalForEdit(profile.id),
-    getCalorieAdjustment(profile.id),
+    getCalorieAdjustment(profile.id, now, performanceTrend),
   ]);
+  const cycle = await getCycleOverview(profile.id, now, {
+    adjustment: calorieAdjustment,
+    performanceTrend,
+  });
   const { weight, waist, bodyFat, goal, todayLocalDate } = analysis;
   const hoy = history.find((m) => m.localDate === todayLocalDate);
   const hasTodayRow = hoy !== undefined;
@@ -100,6 +113,10 @@ export default async function ProgressPage() {
       <h1 className="mb-4 text-2xl font-semibold">Progreso</h1>
 
       <div className="space-y-4">
+        {/* ── En qué ciclo estás, tus calorías y tu mantenimiento ── */}
+        <CycleCard overview={cycle} />
+        <CompositionCard advisory={cycle.composition} />
+
         {/* ── Peso y tendencia ── */}
         <Card>
           <CardHeader>

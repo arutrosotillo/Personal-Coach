@@ -224,47 +224,82 @@ test("check-in: tres tomas incoherentes se rechazan en vez de promediarse", asyn
   await expect(page.getByText(/se diferencian/)).toBeVisible();
 });
 
-test("cambiar de fase avisa ANTES y reinicia la tendencia, sin borrar el historial", async ({
+test("revisar el objetivo corrige ritmo y peso objetivo, pero no cambia de fase", async ({
   page,
 }) => {
   await page.goto("/progress");
+  await page.getByRole("button", { name: /Hacer el check-in/ }).click();
+  await page.getByRole("button", { name: "Revisar objetivo" }).click();
 
-  // Cuántos pesajes hay antes de tocar nada.
+  // Cambiar de objetivo ya no se hace aquí: el formulario lo dice y enlaza al
+  // flujo de ciclo, que enseña el resumen y recalcula las calorías.
+  await expect(page.locator("#goal-strategy")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Finaliza tu ciclo y empieza otro" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Peso objetivo (kg)").fill("77");
+  await page.getByRole("button", { name: "Guardar objetivo" }).click();
+  await expect(page.getByText(/Objetivo actualizado/)).toBeVisible();
+});
+
+test("finalizar el ciclo y empezar un volumen limpio: resumen, propuesta explicada y confirmación, sin borrar nada", async ({
+  page,
+}) => {
+  await page.goto("/progress");
   const filasAntes = await page
     .getByRole("button", { name: /^Editar la medición/ })
     .count();
 
-  await page.getByRole("button", { name: /Hacer el check-in/ }).click();
-  await page.getByRole("button", { name: "Revisar objetivo" }).click();
-
-  // Cambiar solo el peso objetivo NO avisa de fase nueva.
-  await page.getByLabel("Peso objetivo (kg)").fill("77");
-  await expect(page.getByText(/empieza una fase nueva/)).toHaveCount(0);
-
-  // Cambiar la estrategia SÍ, y el aviso aparece antes de pulsar nada.
-  // Por id y no por etiqueta: "Objetivo" también casa con "Peso objetivo".
-  await page.locator("#goal-strategy").selectOption("MAINTENANCE");
-  await expect(page.getByText(/empieza una fase nueva/)).toBeVisible();
+  await page.getByRole("button", { name: "Finalizar ciclo" }).click();
+  // Resumen del ciclo que se cierra, antes de decidir nada.
+  await expect(page.getByText("¿Cómo lo das por terminado?")).toBeVisible();
+  await expect(page.getByText("Peso al empezar")).toBeVisible();
+  // Sin decir cómo termina, no se puede seguir.
   await expect(
-    page.getByRole("button", { name: "Empezar fase nueva" }),
+    page.getByRole("button", { name: "Empezar otro ciclo" }),
+  ).toBeDisabled();
+  await page.getByText("Completado", { exact: true }).click();
+  await page.getByRole("button", { name: "Empezar otro ciclo" }).click();
+
+  // Datos de hoy: se confirman sin repetir el onboarding.
+  await expect(page.getByText("Confirma tus datos de hoy")).toBeVisible();
+  await page.getByRole("button", { name: "Siguiente" }).click();
+
+  // Tras una definición se propone volumen limpio, con ritmos pequeños.
+  await expect(
+    page.getByRole("radio", { name: /Volumen limpio/ }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "+0,1 %", exact: true }).click();
+  await page.getByRole("button", { name: "Ver propuesta" }).click();
+
+  // La propuesta explica de dónde sale y qué pasará, ANTES de confirmar.
+  await expect(page.getByText("Qué pasará al confirmar")).toBeVisible();
+  await expect(
+    page.getByText(/tu mantenimiento estimado/).first(),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      /Tu programa de entrenamiento, tus marcas y todo tu historial siguen igual/,
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar y empezar" }).click();
 
-  await page.getByLabel("Ritmo (% peso/semana)").fill("0");
-  await page.getByLabel("Peso objetivo (kg)").fill("");
-  await page.getByRole("button", { name: "Empezar fase nueva" }).click();
-  await expect(page.getByText(/Nueva fase empezada hoy/)).toBeVisible();
-
-  await page.reload();
-  // La tendencia se reinicia: es la consecuencia correcta, no un fallo.
+  await expect(page).toHaveURL(/\/progress$/);
+  const ciclo = page
+    .locator('[data-slot="card"]')
+    .filter({ hasText: "Semana 1" });
+  await expect(ciclo.getByText("Volumen limpio")).toBeVisible();
+  // La tendencia se acota a la fase nueva; el historial sigue entero.
   await expect(
     page.getByText("Aún faltan mediciones para calcular una tendencia."),
   ).toBeVisible();
-  // La nota de fase NO aparece aquí, y es correcto: solo se enseña cuando el
-  // recorte deja fuera mediciones anteriores, y en este perfil no hay ninguna
-  // antes de hoy. Explicar un recorte que no recorta nada sería ruido.
-  await expect(page.getByText(/Tu fase actual empezó el/)).toHaveCount(0);
-  // Y NO se ha borrado nada del historial.
   await expect(
     page.getByRole("button", { name: /^Editar la medición/ }),
   ).toHaveCount(filasAntes);
+
+  await ciclo.getByRole("button", { name: "Ciclos anteriores" }).click();
+  await expect(page.getByRole("heading", { name: "Tus ciclos" })).toBeVisible();
+  await expect(page.getByText("En curso", { exact: true })).toBeVisible();
+  await expect(page.getByText("Completado", { exact: true })).toBeVisible();
 });

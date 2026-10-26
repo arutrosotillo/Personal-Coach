@@ -201,3 +201,42 @@ export function exponentialMovingAverage(
 
   return out;
 }
+
+/**
+ * Factor con el que hay que ENSANCHAR el intervalo de la pendiente cuando los
+ * residuos no son independientes.
+ *
+ * El intervalo de mínimos cuadrados supone residuos independientes, y el peso
+ * no los tiene: el agua de hoy se parece a la de ayer, y lo que comes cada día
+ * se acumula en el tejido como un paseo aleatorio. Con residuos positivamente
+ * autocorrelacionados el intervalo sale demasiado estrecho y "confirma"
+ * desvíos que son ruido. La corrección estándar por tamaño muestral efectivo
+ * para un AR(1) es `√((1 + ρ) / (1 − ρ))`, con ρ la autocorrelación de orden 1
+ * de los residuos (en el orden de las mediciones).
+ *
+ * Nunca estrecha (ρ ≤ 0 → 1) y se acota a `maxFactor`: con muy pocos puntos ρ
+ * es muy ruidoso y un factor desbocado borraría cualquier señal.
+ */
+export function autocorrelationInflation(
+  observations: readonly Observation[],
+  regression: RegressionResult,
+  maxFactor = 3,
+): { rho: number; factor: number } {
+  const sorted = [...observations].sort((a, b) => a.dayOffset - b.dayOffset);
+  const residuals = sorted.map(
+    (o) =>
+      o.value - (regression.intercept + regression.slopePerDay * o.dayOffset),
+  );
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < residuals.length; i++) {
+    den += residuals[i] * residuals[i];
+    if (i > 0) num += residuals[i] * residuals[i - 1];
+  }
+  const rho = den === 0 ? 0 : num / den;
+  if (rho <= 0) return { rho, factor: 1 };
+  const factor = Math.sqrt(
+    (1 + Math.min(rho, 0.95)) / (1 - Math.min(rho, 0.95)),
+  );
+  return { rho, factor: Math.min(factor, maxFactor) };
+}

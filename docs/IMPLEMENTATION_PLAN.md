@@ -14,6 +14,10 @@ Fases pequeñas y verificables. Regla: la app es completamente utilizable al fin
 - ✅ **F3.3 — Recencia, fatiga y deload reactivo** (advisory, nunca automático).
 - ✅ **Coach AI v1** — adelantada desde F6: capa read-only sobre los motores.
 - ✅ **Sección Ciencia** (`/science`) con bibliografía verificada.
+- ✅ **Ciclos y nutrición adaptativa** (adelanto de F4): finalizar/empezar ciclos
+  con resumen congelado, mantenimiento aprendido por balance energético,
+  registro de ingesta por totales y ajuste adaptativo para ganancia,
+  mantenimiento y recomposición (`docs/CYCLES.md`).
 - ⬜ F3.4 (`ADD_SET`/`REMOVE_SET` a límite de mesociclo), F4 (nutrición y
   seguimiento corporal), F5 (dashboard y recomendaciones), F7 (PWA, export, QA).
 

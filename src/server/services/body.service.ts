@@ -456,7 +456,16 @@ export async function updateGoal(
   const created = await prisma.$transaction(async (tx) => {
     await tx.goal.update({
       where: { id: current.id },
-      data: { status: "SUPERSEDED" },
+      // Fin del ciclo anterior = el día antes de empezar el nuevo (sin
+      // solapes en el historial de ciclos; ver docs/CYCLES.md).
+      data: {
+        status: "SUPERSEDED",
+        endDate:
+          diffDays(current.startDate, addDays(startDate, -1)) < 0
+            ? current.startDate
+            : addDays(startDate, -1),
+        closedAt: now,
+      },
     });
     return tx.goal.create({
       data: {

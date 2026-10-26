@@ -8,36 +8,6 @@ import { prisma } from "@/server/db";
  * `effectiveFrom` de hoy. La vigente es la de `effectiveFrom` más reciente.
  */
 
-export interface NutritionTargetRecord {
-  kcal: number;
-  proteinG: number;
-  fatG: number;
-  carbsG: number;
-  effectiveFrom: string;
-  source: string;
-}
-
-const TARGET_SELECT = {
-  kcal: true,
-  proteinG: true,
-  fatG: true,
-  carbsG: true,
-  effectiveFrom: true,
-  source: true,
-} as const;
-
-/** Los dos últimos objetivos, el vigente primero: con ellos se sabe el último cambio. */
-export async function listLatestTargets(
-  profileId: string,
-): Promise<NutritionTargetRecord[]> {
-  return prisma.nutritionTarget.findMany({
-    where: { profileId },
-    orderBy: { effectiveFrom: "desc" },
-    take: 2,
-    select: TARGET_SELECT,
-  });
-}
-
 /** Día del último "ahora no" a un ajuste calórico, o `null`. */
 export async function findLastRejectedCalorieAdjustment(
   profileId: string,
@@ -51,6 +21,8 @@ export async function findLastRejectedCalorieAdjustment(
 }
 
 export interface CalorieAdjustmentWrite {
+  /** Estimación de mantenimiento con la que se decidió (se congela). */
+  estimate?: Prisma.EnergyEstimateUncheckedCreateInput;
   profileId: string;
   localDate: string;
   now: Date;
@@ -106,6 +78,9 @@ export async function persistCalorieAdjustment(
         resolvedAt: write.now,
       },
     });
+    if (write.estimate) {
+      await tx.energyEstimate.create({ data: write.estimate });
+    }
     if (write.target) {
       // Un objetivo por perfil y día (clave única). Si hoy ya había uno, el
       // ajuste lo sustituye: el enfriamiento impide que esto pase dos veces.

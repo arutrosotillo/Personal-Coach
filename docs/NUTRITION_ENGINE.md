@@ -110,6 +110,14 @@ Adelanta una parte de F4 porque la pregunta "¿me he estancado y debo bajar calo
 - **Macros**: proteína y grasa se mantienen; el cambio sale de los carbohidratos (si bajaran de 100 g, se recorta grasa hasta su suelo).
 - Umbrales en `NUTRITION_CONFIG.calorieAdjustment`.
 
+### 5.2 v2 (2026-10): políticas por estrategia y memoria metabólica
+
+Ver `docs/CYCLES.md` §3–§4. Resumen: `evaluateCalorieAdjustment` despacha por tipo de objetivo. **La definición conserva R0–R8 de §5.1 sin cambios**, más **R2** (adherencia) cuando hay registro de ingesta suficiente. **Ganancia, mantenimiento y recomposición** (§10) usan `src/core/nutrition/adaptive-calories.ts`: tendencia sobre medias semanales con margen honesto, ventanas largas que arrancan tras la estabilización o el último cambio, banda muerta, confirmación a 14 días (7 si el desvío es fuerte), paso proporcional amortiguado de 50–150 kcal y antioscilación (≥ 28 días entre cambios; 1,5× el desvío para invertir dentro de 91 días). El mantenimiento real se estima por balance energético (`energy-balance.ts`) y se congela en `EnergyEstimate` al cerrar/abrir ciclos y al responder a un ajuste.
+
+> ### ⚠︎ Revisión pendiente (abierta 2026-10-26, sin implementar)
+>
+> **La definición (R0–R8, v1) decide con la regresión diaria del motor corporal**, cuyo intervalo de confianza supone residuos independientes. El peso tiene residuos autocorrelacionados (agua, sal, paseo aleatorio de la ingesta diaria) y ritmo semanal, así que ese intervalo sale estrecho. En la simulación longitudinal multiciclo (`src/core/cycles/longitudinal.sim.test.ts`) la v1 propone dos recortes de −100 kcal a los días 35 y 51 de una definición que, en realidad, iba al 62 % del ritmo (dentro de banda). Las políticas nuevas ya usan `weeklyMeanTrend`. **No se ha portado la definición en esta entrega** porque es un motor aceptado y en uso, y con márgenes honestos a 28 días tardaría bastante más en confirmar un estancamiento: es una decisión de producto (rapidez frente a falsos positivos) que merece su propia revisión con sus propios tests.
+
 ## 6. Adherencia (F4)
 
 Por semana: `loggingRate` (días con registro/7) · `desvioKcal` (media |real−objetivo|/objetivo — valor absoluto: pasarse y quedarse corto penalizan igual) · `weighRate` (pesajes/7).
@@ -129,6 +137,8 @@ Sin base de datos de alimentos: totales + `MealTemplate` (1 tap) + copiar día a
 Alertas (activan R0 y modo conservador global): pérdida >1,5 %/sem ×2 sem con adherencia buena · kcal en el suelo y el motor querría recortar · ingesta < suelo absoluto ≥5/7 días · patrón compuesto (ingesta <75 % de objetivo ya deficitario ≥5 días + hambre ≥4/5 + pérdida >1.5× objetivo). Comportamiento: detener recortes, resetear ritmo al conservador, mensaje neutro sin culpa sugiriendo profesional sanitario. Jamás diagnosticar ni usar la palabra "trastorno" dirigida al usuario. Ver COACH_PHILOSOPHY.md §12.
 
 ## 10. Recomposición y mantenimiento
+
+_Implementado en v2 (`adaptive-calories.ts`), ver §5.2 y `docs/CYCLES.md` §4._
 
 **Recomposición**: kcal = TDEE dinámico; éxito mensual = cintura −0,5 cm+ + peso ±1 % + rendimiento estable/subiendo. Si EMA sube >0,25 %/sem ×3 sem sin bajar cintura → −100; si baja >0,35 %/sem y el rendimiento cae → +100. Mensaje clave: la báscula es el dato MENOS importante aquí.
 

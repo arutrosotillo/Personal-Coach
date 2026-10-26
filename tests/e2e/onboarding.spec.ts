@@ -90,18 +90,19 @@ test("onboarding completo crea el plan y persiste tras recargar", async ({
   await expect(page.getByRole("heading", { name: "Hoy" })).toBeVisible({
     timeout: 15_000,
   });
-  await expect(
-    page.getByText("Perder grasa manteniendo músculo"),
-  ).toBeVisible();
+  // El objetivo elegido es el primer CICLO: se nombra como tal, con su ritmo.
+  const ciclo = page
+    .locator('[data-slot="card"]')
+    .filter({ hasText: "Definición" });
+  await expect(ciclo.getByText("Semana 1")).toBeVisible();
+  await expect(ciclo.getByText(/de tu peso por semana/)).toBeVisible();
   await expect(page.getByText(/g proteína/)).toBeVisible();
   await expect(page.getByText(/5 días\/semana/)).toBeVisible();
 
   // Persistencia tras recarga
   await page.reload();
   await expect(page.getByRole("heading", { name: "Hoy" })).toBeVisible();
-  await expect(
-    page.getByText("Perder grasa manteniendo músculo"),
-  ).toBeVisible();
+  await expect(ciclo.getByText("Semana 1")).toBeVisible();
 
   // El programa muestra el bloque "Por qué" y respeta la restricción
   await page.goto("/program");

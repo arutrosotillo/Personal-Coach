@@ -47,6 +47,7 @@ export interface BodyConfig {
   readonly bodyFatMinSpanDays: number;
   readonly bodyFatMinMeasurements: number;
   readonly bodyFatLookbackDays: number;
+  readonly weeklyMeanResidualSdFloorKg: number;
 }
 
 export const BODY_CONFIG: BodyConfig = {
@@ -262,4 +263,18 @@ export const BODY_CONFIG: BodyConfig = {
   bodyFatMinMeasurements: 2,
   /** Horizonte máximo hacia atrás, en días (24 semanas ≈ 6 lecturas mensuales). */
   bodyFatLookbackDays: 168,
+
+  // ── Tendencia sobre medias semanales (motores que deciden) ─────────────────
+  /**
+   * Suelo de la variabilidad de una MEDIA SEMANAL de peso, en kg.
+   *
+   * [RAZONABLE] El peso de un día a otro varía 0,5–0,8 kg por agua, sal,
+   * glucógeno y contenido intestinal, con autocorrelación de un día al
+   * siguiente; la media de una semana conserva ~0,3–0,5 kg de esa variación.
+   * 0,25 kg es un suelo PRUDENTE (por debajo de lo esperable). Hace falta
+   * porque con 3–4 semanas la varianza residual se estima con 1–2 grados de
+   * libertad y puede salir casi nula por azar: sin suelo, cuatro pesajes que
+   * caen alineados "confirmarían" cualquier cosa.
+   */
+  weeklyMeanResidualSdFloorKg: 0.25,
 };

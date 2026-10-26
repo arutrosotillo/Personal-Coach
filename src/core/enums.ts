@@ -72,6 +72,33 @@ export const GoalStatus = z.enum([
 export type GoalStatus = z.infer<typeof GoalStatus>;
 
 /**
+ * Cómo termina un ciclo cuando lo cierra la persona. Es un subconjunto de
+ * `GoalStatus` a propósito: `SUPERSEDED` lo pone el sistema al cambiar de fase
+ * desde el formulario rápido, nunca se elige. Y no existe "completado
+ * automáticamente": llegar al peso objetivo no cierra nada (ver
+ * docs/CYCLES.md).
+ */
+export const CycleOutcome = z.enum(["COMPLETED", "ABANDONED"]);
+export type CycleOutcome = z.infer<typeof CycleOutcome>;
+
+/**
+ * Qué calorías quedan al cerrar un ciclo sin empezar otro. Ninguna opción es
+ * automática: la persona elige en el mismo paso en que cierra.
+ *  · MAINTENANCE — un objetivo nuevo igual al mantenimiento estimado.
+ *  · KEEP        — dejar el objetivo vigente tal cual.
+ */
+export const InterimNutrition = z.enum(["MAINTENANCE", "KEEP"]);
+export type InterimNutrition = z.infer<typeof InterimNutrition>;
+
+/** Momento en que se congeló una estimación de mantenimiento (`EnergyEstimate.kind`). */
+export const EnergyEstimateKind = z.enum([
+  "CYCLE_CLOSE",
+  "CYCLE_START",
+  "ADJUSTMENT",
+]);
+export type EnergyEstimateKind = z.infer<typeof EnergyEstimateKind>;
+
+/**
  * Cómo se obtuvo un `bodyFatPct`. La cifra por sí sola no dice nada: una
  * báscula de bioimpedancia doméstica tiene un error estándar de 3,1–7,5 puntos
  * porcentuales frente a un modelo de 4 compartimentos, así que guardar el
@@ -230,7 +257,17 @@ export type SessionStatus = z.infer<typeof SessionStatus>;
 export const SetType = z.enum(["WARMUP", "WORKING"]);
 export type SetType = z.infer<typeof SetType>;
 
-export const TargetSource = z.enum(["MANUAL", "ALGORITHM", "ONBOARDING"]);
+/**
+ * De dónde sale un `NutritionTarget`. `CYCLE_START` es el objetivo que se
+ * aceptó al empezar un ciclo (o al cerrarlo eligiendo mantenimiento): no es un
+ * ajuste del motor y no cuenta como "último cambio" para sus enfriamientos.
+ */
+export const TargetSource = z.enum([
+  "MANUAL",
+  "ALGORITHM",
+  "ONBOARDING",
+  "CYCLE_START",
+]);
 export type TargetSource = z.infer<typeof TargetSource>;
 
 export const RecommendationType = z.enum([
@@ -244,6 +281,8 @@ export const RecommendationType = z.enum([
   "REMOVE_SET",
   "START_DELOAD",
   "ADJUST_CALORIES",
+  /** Calorías y macros aceptados al empezar o cerrar un ciclo. */
+  "CYCLE_TARGETS",
   "ADD_STEPS",
   "SAFETY_HOLD",
 ]);
