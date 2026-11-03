@@ -291,30 +291,19 @@ export function SessionRunner({
     );
   }
 
-  /** Copia peso/reps/RIR de la "última vez" de esta serie (o de la serie
-   * anterior de hoy) a una fila no completada, en un tap. */
-  function repeatRow(idx: number) {
-    const lastSet = ex.lastTime?.sets[idx];
+  /**
+   * Copia la serie anterior de HOY a una fila no completada, en un tap.
+   *
+   * Antes copiaba la "última vez" de esa serie, que es justo con lo que ya
+   * viene rellena la fila: el botón no cambiaba nada. Lo útil es arrastrar lo
+   * que acabas de hacer, sobre todo si has cambiado el peso en la serie 1.
+   */
+  function repeatPrevious(idx: number) {
     const prev = idx > 0 ? (rows[ex.id] ?? [])[idx - 1] : undefined;
-    // Copia el PLAN (peso y repeticiones), nunca el RIR: el esfuerzo es un
-    // dato de HOY y se registra a mano (o se deja sin registrar).
-    const source = lastSet
-      ? {
-          weight: lastSet.weightKg.toString(),
-          reps: lastSet.reps,
-          rir: null,
-          rirAnswered: false,
-        }
-      : prev
-        ? {
-            weight: prev.weight,
-            reps: prev.reps,
-            rir: null,
-            rirAnswered: false,
-          }
-        : null;
-    if (!source) return;
-    updateRow(ex.id, idx, source);
+    if (!prev) return;
+    // Copia el PLAN (peso y repeticiones), nunca el RIR: el esfuerzo de cada
+    // serie es un dato propio y se registra a mano (o se deja sin registrar).
+    updateRow(ex.id, idx, { weight: prev.weight, reps: prev.reps });
   }
 
   function substitute(variantId: string) {
@@ -510,9 +499,10 @@ export function SessionRunner({
               loadStepKg={ex.loadStepKg}
               targetRir={ex.targetRir}
               lastSet={ex.lastTime?.sets[idx] ?? null}
+              previous={idx > 0 ? exRows[idx - 1] : null}
               onChange={(patch) => editRow(idx, patch)}
               onComplete={() => completeSet(idx)}
-              onRepeat={() => repeatRow(idx)}
+              onRepeat={() => repeatPrevious(idx)}
             />
           ))}
         </ul>
@@ -905,7 +895,7 @@ function ExerciseHistorySheet({
 /**
  * Aviso de cambio de equipamiento en la cabecera del ejercicio. La última vez
  * con la máquina anterior se ENSEÑA —es tu historial— pero etiquetada como no
- * comparable, y no alimenta ni el "repetir" ni la sugerencia.
+ * comparable, y no rellena las series ni alimenta la sugerencia.
  */
 function EquipmentChangeNote({
   change,
@@ -959,6 +949,7 @@ function SetRow({
   loadStepKg,
   targetRir,
   lastSet,
+  previous,
   onChange,
   onComplete,
   onRepeat,
@@ -968,6 +959,8 @@ function SetRow({
   loadStepKg: number;
   targetRir: number;
   lastSet: { weightKg: number; reps: number; rir: number | null } | null;
+  /** La serie anterior de hoy (null en la primera). */
+  previous: RowState | null;
   onChange: (patch: Partial<RowState>) => void;
   onComplete: () => void;
   onRepeat: () => void;
@@ -976,6 +969,12 @@ function SetRow({
   const ghost = lastSet
     ? `${lastSet.weightKg}×${lastSet.reps}${lastSet.rir != null ? `@${lastSet.rir}` : ""}`
     : null;
+  // El botón dice QUÉ va a copiar: si la fila ya tiene esos números, se ve que
+  // no hay nada que cambiar en vez de parecer un botón que no responde.
+  const repeatable =
+    previous && previous.weight.trim() !== ""
+      ? `${previous.weight}×${previous.reps}`
+      : null;
   return (
     <li
       className={cn(
@@ -994,18 +993,14 @@ function SetRow({
             últ {ghost}
           </span>
         ) : null}
-        {!row.done && (ghost || index > 0) ? (
+        {!row.done && repeatable ? (
           <button
             type="button"
             onClick={onRepeat}
-            aria-label={
-              ghost
-                ? `Repetir la última vez de esta serie: ${ghost}`
-                : "Repetir la serie anterior"
-            }
-            className="border-border text-muted-foreground ml-auto min-h-9 rounded-full border px-3 py-1.5 text-xs"
+            aria-label={`Repetir la serie anterior: ${repeatable}`}
+            className="border-border text-muted-foreground tnum ml-auto min-h-9 rounded-full border px-3 py-1.5 text-xs"
           >
-            {ghost ? "repetir" : "repetir anterior"}
+            repetir {repeatable}
           </button>
         ) : null}
       </div>

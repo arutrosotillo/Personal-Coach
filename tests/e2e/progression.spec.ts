@@ -81,6 +81,16 @@ test("progresión: la sesión anterior alimenta el contexto de la siguiente", as
   await apply.click();
   await expect(await weightBox(page)).toHaveValue("50");
 
+  // "Repetir" copia la serie anterior de HOY, no la última vez: con historial
+  // la fila ya viene rellena con la última vez y el botón no cambiaba nada.
+  await (await weightBox(page)).fill("55");
+  await page
+    .getByRole("button", { name: /Repetir la serie anterior: 55×/ })
+    .click();
+  await expect(
+    page.getByRole("textbox", { name: "Peso (kg)", exact: true }).nth(1),
+  ).toHaveValue("55");
+
   // Mini-historial del ejercicio: "Ver historial" abre el resumen.
   await page.getByRole("button", { name: "Ver historial" }).click();
   await expect(page.getByText("Mejor set")).toBeVisible();
