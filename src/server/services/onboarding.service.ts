@@ -13,6 +13,7 @@ import {
 import type { OnboardingData } from "@/core/schemas/onboarding";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/server/db";
+import { archiveActivePrograms } from "@/server/services/program-archive.service";
 import { loadCatalog } from "@/server/repositories/catalog.repo";
 
 /**
@@ -123,10 +124,7 @@ export async function completeOnboarding(
       where: { profileId: profile.id, status: "ACTIVE" },
       data: { status: "ABANDONED", endDate: localDate, closedAt: now },
     });
-    await tx.trainingProgram.updateMany({
-      where: { profileId: profile.id, isActive: true },
-      data: { isActive: false },
-    });
+    await archiveActivePrograms(tx, profile.id);
 
     const goal = await tx.goal.create({
       data: {
@@ -232,7 +230,7 @@ export async function completeOnboarding(
         mesocycles: {
           create: {
             ordinal: 1,
-            status: "PLANNED",
+            status: "ACTIVE",
             weeksPlanned: 6,
             templates: {
               create: program.days.map((day) => ({

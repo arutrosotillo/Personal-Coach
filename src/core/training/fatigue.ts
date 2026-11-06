@@ -91,6 +91,8 @@ export interface FatigueExerciseInput {
   comparable?: boolean;
   /** Ejercicio con equipamiento nuevo todavía calibrando (informativo). */
   adapting?: boolean;
+  /** `adapting` porque el ejercicio es nuevo, no porque cambiara de máquina. */
+  newExercise?: boolean;
 }
 
 export interface FatigueInput {
@@ -110,9 +112,9 @@ export interface DeloadPlan {
 }
 
 /**
- * Ejercicios con equipamiento nuevo todavía calibrando. Va APARTE del veredicto
- * a propósito: "sin señales de fatiga" y "sin datos comparables" son cosas
- * distintas, y la tarjeta tiene que poder decir las dos.
+ * Ejercicios todavía calibrando: con equipamiento nuevo o recién introducidos.
+ * Va APARTE del veredicto a propósito: "sin señales de fatiga" y "sin datos
+ * comparables" son cosas distintas, y la tarjeta tiene que poder decir las dos.
  */
 export interface FatigueAdaptation {
   /** Ejercicios vivos en adaptación. */
@@ -549,33 +551,47 @@ export function assessFatigue(
 }
 
 /**
- * Lo que la tarjeta tiene que decir de los ejercicios con equipamiento nuevo.
+ * Lo que la tarjeta tiene que decir de los ejercicios que están calibrando.
  * Cuenta solo ejercicios vivos, igual que el resto del motor.
  */
 function describeAdaptation(
   alive: readonly FatigueExerciseInput[],
 ): FatigueAdaptation {
   const adapting = alive.filter((e) => e.adapting === true);
-  const without = adapting.filter((e) => e.comparable === false).length;
-  const carried = adapting.length - without;
   if (adapting.length === 0) {
     return { exercises: 0, withoutComparableData: 0, message: null };
   }
   const n = EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES;
-  const partes: string[] = [];
-  if (carried > 0) {
-    partes.push(
-      `${carried} ${carried === 1 ? "sigue contando" : "siguen contando"} con lo último que mediste en la máquina anterior`,
+  const fresh = adapting.filter((e) => e.newExercise === true).length;
+  const moved = adapting.filter((e) => e.newExercise !== true);
+  const without = moved.filter((e) => e.comparable === false).length;
+  const carried = moved.length - without;
+
+  const frases: string[] = [];
+  if (moved.length > 0) {
+    const partes: string[] = [];
+    if (carried > 0) {
+      partes.push(
+        `${carried} ${carried === 1 ? "sigue contando" : "siguen contando"} con lo último que mediste en la máquina anterior`,
+      );
+    }
+    if (without > 0) {
+      partes.push(
+        `${without} ${without === 1 ? "queda" : "quedan"} fuera del recuento hasta tener ${n} sesiones con la nueva: sin datos comparables no es lo mismo que estable`,
+      );
+    }
+    frases.push(
+      `Equipamiento nuevo en ${moved.length} ${moved.length === 1 ? "ejercicio" : "ejercicios"}: ${partes.join(", y ")}.`,
     );
   }
-  if (without > 0) {
-    partes.push(
-      `${without} ${without === 1 ? "queda" : "quedan"} fuera del recuento hasta tener ${n} sesiones con la nueva: sin datos comparables no es lo mismo que estable`,
+  if (fresh > 0) {
+    frases.push(
+      `${fresh} ${fresh === 1 ? "ejercicio nuevo queda" : "ejercicios nuevos quedan"} fuera del recuento hasta tener ${n} sesiones: buscar la carga de partida no es rendir menos, y sin datos comparables no es lo mismo que estable.`,
     );
   }
   return {
     exercises: adapting.length,
-    withoutComparableData: without,
-    message: `Equipamiento nuevo en ${adapting.length} ${adapting.length === 1 ? "ejercicio" : "ejercicios"}: ${partes.join(", y ")}.`,
+    withoutComparableData: without + fresh,
+    message: frases.join(" "),
   };
 }

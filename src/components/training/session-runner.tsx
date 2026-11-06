@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { EQUIPMENT_CHANGE } from "@/core/config/training-config";
 import { formatLocalDate } from "@/core/dates";
 import { EXERCISE_NOTE_MAX_LENGTH } from "@/core/schemas/exercise-note";
+import { formatTargetRir } from "@/core/training/rir-target";
 import { RestTimer } from "@/components/training/rest-timer";
 import { SyncStatus } from "@/components/training/sync-status";
 import { useSessionSync } from "@/components/training/use-session-sync";
@@ -422,7 +423,7 @@ export function SessionRunner({
               <h1 className="text-xl font-semibold">{ex.exerciseName}</h1>
               <p className="text-muted-foreground text-sm">
                 {ex.variantName} · {ex.repRangeMin}–{ex.repRangeMax} reps ·
-                objetivo {ex.targetRir} RIR
+                objetivo {formatTargetRir(ex.targetRir, ex.targetRirMin)} RIR
               </p>
               <div className="mt-1 flex gap-4">
                 {/* El catálogo ya explicaba cómo se hace cada ejercicio, pero
@@ -497,7 +498,7 @@ export function SessionRunner({
               index={idx}
               row={row}
               loadStepKg={ex.loadStepKg}
-              targetRir={ex.targetRir}
+              targetRirLabel={formatTargetRir(ex.targetRir, ex.targetRirMin)}
               lastSet={ex.lastTime?.sets[idx] ?? null}
               previous={idx > 0 ? exRows[idx - 1] : null}
               onChange={(patch) => editRow(idx, patch)}
@@ -947,7 +948,7 @@ function SetRow({
   index,
   row,
   loadStepKg,
-  targetRir,
+  targetRirLabel,
   lastSet,
   previous,
   onChange,
@@ -957,7 +958,8 @@ function SetRow({
   index: number;
   row: RowState;
   loadStepKg: number;
-  targetRir: number;
+  /** El objetivo tal y como se enseña: "2" o "1–2". */
+  targetRirLabel: string;
   lastSet: { weightKg: number; reps: number; rir: number | null } | null;
   /** La serie anterior de hoy (null en la primera). */
   previous: RowState | null;
@@ -1033,7 +1035,7 @@ function SetRow({
         <div
           className="flex flex-wrap gap-1"
           role="group"
-          aria-label={`RIR de la serie ${index + 1} (objetivo ${targetRir})`}
+          aria-label={`RIR de la serie ${index + 1} (objetivo ${targetRirLabel})`}
         >
           {[0, 1, 2, 3, 4].map((r) => (
             <button

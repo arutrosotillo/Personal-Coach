@@ -17,6 +17,11 @@ export interface ArchivedProgram {
   daysPerWeek: number;
   createdAt: Date;
   isGenerated: boolean;
+  /** Sesiones completadas: 0 = el programa no se llegó a entrenar. */
+  sessions: number;
+  /** Primera y última sesión completada; `null` si no hay ninguna. */
+  startLocalDate: string | null;
+  endLocalDate: string | null;
 }
 
 /**
@@ -43,10 +48,34 @@ export async function listArchivedPrograms(
   });
   const generatedIds = new Set(generated.map((r) => r.scopeId));
 
-  return programs.map((p) => ({
-    ...p,
-    isGenerated: generatedIds.has(p.id),
-  }));
+  const mesocycles = await prisma.mesocycle.findMany({
+    where: { programId: { in: programs.map((p) => p.id) } },
+    select: { id: true, programId: true },
+  });
+  const programOf = new Map(mesocycles.map((m) => [m.id, m.programId]));
+  const blocks = await prisma.workoutSession.groupBy({
+    by: ["mesocycleId"],
+    where: {
+      status: "COMPLETED",
+      mesocycleId: { in: mesocycles.map((m) => m.id) },
+    },
+    _count: { _all: true },
+    _min: { localDate: true },
+    _max: { localDate: true },
+  });
+
+  return programs.map((p) => {
+    const own = blocks.filter((b) => programOf.get(b.mesocycleId) === p.id);
+    const starts = own.flatMap((b) => b._min.localDate ?? []).sort();
+    const ends = own.flatMap((b) => b._max.localDate ?? []).sort();
+    return {
+      ...p,
+      isGenerated: generatedIds.has(p.id),
+      sessions: own.reduce((a, b) => a + b._count._all, 0),
+      startLocalDate: starts[0] ?? null,
+      endLocalDate: ends[ends.length - 1] ?? null,
+    };
+  });
 }
 
 /**

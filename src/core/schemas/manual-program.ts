@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidRirRange, RIR_RANGE_ERROR } from "@/core/training/rir-target";
+
 /**
  * Programa MANUAL (Custom Program Builder, Fase 3.1). Valida solo la INTEGRIDAD
  * ESTRUCTURAL — NO aplica los límites fisiológicos del generador (F3.2). Debe ser
@@ -8,18 +10,25 @@ import { z } from "zod";
  * docs/PHASE_3_1_CUSTOM_PROGRAM_PLAN.md §9.
  */
 
-export const manualExerciseSchema = z.object({
-  exerciseVariantId: z.string().min(1),
-  baseSets: z
-    .number()
-    .int()
-    .min(1, "Mínimo 1 serie")
-    .max(10, "Máximo 10 series"),
-  repRangeMin: z.number().int().min(1).max(50),
-  repRangeMax: z.number().int().min(1).max(50),
-  targetRir: z.number().int().min(0).max(5),
-  restSeconds: z.number().int().min(30).max(600),
-});
+export const manualExerciseSchema = z
+  .object({
+    exerciseVariantId: z.string().min(1),
+    baseSets: z
+      .number()
+      .int()
+      .min(1, "Mínimo 1 serie")
+      .max(10, "Máximo 10 series"),
+    repRangeMin: z.number().int().min(1).max(50),
+    repRangeMax: z.number().int().min(1).max(50),
+    targetRir: z.number().int().min(0).max(5),
+    /** Extremo inferior de un objetivo en rango; ver `rir-target.ts`. */
+    targetRirMin: z.number().int().min(0).max(5).nullable().optional(),
+    restSeconds: z.number().int().min(30).max(600),
+  })
+  .refine((e) => isValidRirRange(e.targetRir, e.targetRirMin), {
+    message: RIR_RANGE_ERROR,
+    path: ["targetRirMin"],
+  });
 
 export const manualDaySchema = z.object({
   name: z.string().trim().min(1, "El día necesita un nombre").max(60),
@@ -30,6 +39,7 @@ export const manualDaySchema = z.object({
 
 export const manualProgramSchema = z.object({
   name: z.string().trim().min(1, "El programa necesita un nombre").max(80),
+  description: z.string().trim().max(500).optional(),
   days: z
     .array(manualDaySchema)
     .min(1, "El programa necesita al menos un día")

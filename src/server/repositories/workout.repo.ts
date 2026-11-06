@@ -226,6 +226,8 @@ export interface ExecutionExercise {
   repRangeMin: number;
   repRangeMax: number;
   targetRir: number;
+  /** Extremo inferior si el objetivo es un rango ("RIR 1–2"); si no, `null`. */
+  targetRirMin: number | null;
   restSeconds: number;
   loadStepKg: number;
   setLogs: Array<{
@@ -324,6 +326,7 @@ export async function getExecutionSession(
     repRangeMin: we.repRangeMin,
     repRangeMax: we.repRangeMax,
     targetRir: we.targetRir,
+    targetRirMin: we.targetRirMin,
     restSeconds: we.restSeconds,
     loadStepKg: we.exerciseVariant.loadStepKg,
     setLogs: we.setLogs.map((s) => ({
@@ -420,6 +423,7 @@ export async function previewTemplateSession(
       repRangeMin: te.repRangeMin,
       repRangeMax: te.repRangeMax,
       targetRir: te.targetRir,
+      targetRirMin: te.targetRirMin,
       restSeconds: te.restSeconds,
       loadStepKg: te.exerciseVariant.loadStepKg,
       setLogs: [],

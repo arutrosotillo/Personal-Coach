@@ -363,9 +363,10 @@ describe("la fatiga previa al cambio no se borra ni se diluye", () => {
     expect(meseta.message).toContain("con la máquina anterior");
   });
 
-  it("control: tratar las máquinas como ejercicios NUEVOS diluía la señal", () => {
-    // El fallo que se evita: las nuevas, sanas por no tener historial, entran
-    // en el denominador y 4 de 10 ya no llegan a la mitad.
+  it("cambiar de EJERCICIO tampoco diluye la señal: los nuevos no cuentan como sanos", () => {
+    // Era el fallo conocido de renovar el programa: las nuevas, "sanas" por no
+    // tener historial, entraban en el denominador y 4 de 10 ya no llegaban a la
+    // mitad. Mientras calibran quedan fuera, y lo que se medía sigue contando.
     const a = analyzeTraining(
       ctx([
         ...maquinas.map((id) => variant(id, estancadas)),
@@ -375,7 +376,44 @@ describe("la fatiga previa al cambio no se borra ni se diluye", () => {
         ...libres,
       ]),
     );
-    expect(a.fatigue.decision).not.toBe("DELOAD_RECOMMENDED");
+    expect(a.fatigue.decision).toBe("DELOAD_RECOMMENDED");
+    const meseta = a.fatigue.signals.find(
+      (s) => s.code === "WIDESPREAD_PLATEAU",
+    )!;
+    expect(meseta.numbers).toEqual({ enMeseta: 4, total: 6 });
+    expect(a.fatigue.numbers.exercisesTracked).toBe(6);
+    expect(a.fatigue.adaptation.withoutComparableData).toBe(4);
+    expect(a.fatigue.adaptation.message).toContain("4 ejercicios nuevos");
+  });
+
+  it("buscar la carga de partida en un ejercicio nuevo no es una caída", () => {
+    // Empezó con 60 kg, se pasó y bajó a 50: el motor de progresión lo enseña,
+    // pero la fatiga no lo lee como regresión hasta que hay 3 sesiones.
+    const buscando = variant("nuevo", [
+      exp(addDays(TODAY, -8), 60, [4, 4, 3], 0),
+      exp(addDays(TODAY, -1), 50, [8, 8, 8]),
+    ]);
+    const a = analyzeTraining(ctx([buscando, ...libres]));
+    const nuevo = a.variants.find((v) => v.variantId === "nuevo")!;
+    expect(nuevo.introducing).toBe(true);
+    expect(nuevo.regressed).toBe(false);
+    expect(a.fatigue.numbers.exercisesTracked).toBe(2);
+    expect(a.fatigue.signals.map((s) => s.code)).not.toContain(
+      "SINGLE_LIFT_DECLINE",
+    );
+  });
+
+  it("a partir de la tercera sesión un ejercicio nuevo se juzga como cualquier otro", () => {
+    const cayendo = variant("nuevo", [
+      exp(addDays(TODAY, -15), 60, [5, 5, 4], 0),
+      exp(addDays(TODAY, -8), 60, [5, 4, 4], 0),
+      exp(addDays(TODAY, -1), 60, [4, 4, 4], 0),
+    ]);
+    const a = analyzeTraining(ctx([cayendo, ...libres]));
+    const nuevo = a.variants.find((v) => v.variantId === "nuevo")!;
+    expect(nuevo.introducing).toBe(false);
+    expect(nuevo.regressed).toBe(true);
+    expect(a.fatigue.numbers.exercisesTracked).toBe(3);
   });
 
   it("sin nada comparable vigente: fuera del recuento, nunca 'estable', y confianza no alta", () => {

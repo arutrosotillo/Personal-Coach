@@ -12,6 +12,10 @@ import type { TemplateExerciseEdit } from "@/core/schemas/template-edit";
 import { GoalType } from "@/core/enums";
 import { prisma } from "@/server/db";
 import { loadCatalog } from "@/server/repositories/catalog.repo";
+import {
+  archiveActivePrograms,
+  reopenProgramBlocks,
+} from "@/server/services/program-archive.service";
 
 /**
  * Edición básica del programa (Fase 2A). Modifica las plantillas del programa
@@ -83,6 +87,7 @@ export async function editTemplateExercise(
       repRangeMin,
       repRangeMax,
       targetRir: edit.targetRir,
+      targetRirMin: edit.targetRirMin ?? null,
       restSeconds: edit.restSeconds,
     },
   });
@@ -117,7 +122,12 @@ export async function changeTemplateVariant(
   );
   await prisma.templateExercise.update({
     where: { id: templateExerciseId },
-    data: { exerciseVariantId: variant.id, targetRir },
+    // Si la seguridad sube el RIR, el rango que había deja de describirlo.
+    data: {
+      exerciseVariantId: variant.id,
+      targetRir,
+      targetRirMin: targetRir === te.targetRir ? te.targetRirMin : null,
+    },
   });
   return {
     previousTargetRir: te.targetRir,
@@ -376,14 +386,12 @@ export async function reactivateProgram(profileId: string, programId: string) {
       );
     }
 
-    await tx.trainingProgram.updateMany({
-      where: { profileId, isActive: true },
-      data: { isActive: false },
-    });
+    await archiveActivePrograms(tx, profileId);
     await tx.trainingProgram.update({
       where: { id: target.id },
       data: { isActive: true },
     });
+    await reopenProgramBlocks(tx, target.id);
   });
 }
 

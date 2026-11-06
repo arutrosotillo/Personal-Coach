@@ -268,11 +268,18 @@ Antes el plan añadía además **+2 de RIR**. Se quitó: apilar las dos palancas
 por debajo de la banda respaldada y acerca la semana al cese total, que es justo donde Coleman
 encontró la pérdida de fuerza.
 
-**Mesociclo**: `Mesocycle` es un CONTENEDOR, no una periodización. Se crea una vez
-(`status: "PLANNED"`, `weeksPlanned: 6`, `currentWeek: 0`) y **nadie lo actualiza jamás**: no avanza,
-no se cierra al llegar a las 6 semanas, no genera el siguiente y no hay periodización automática
-(eso es F3.4, aplazada). Por eso la UI habla de «bloque de entrenamiento · referencia inicial N
-semanas» y no de una cuenta atrás. `currentWeek` no se lee en ningún sitio.
+**Mesociclo**: `Mesocycle` es un CONTENEDOR, no una periodización. Se crea una vez (`weeksPlanned: 6`,
+`currentWeek: 0`) y nada lo cierra por calendario: no avanza, no se cierra al llegar a las 6 semanas, no
+genera el siguiente y no hay periodización automática (eso es F3.4, aplazada). Por eso la UI habla de
+«bloque de entrenamiento · referencia inicial N semanas» y no de una cuenta atrás. `currentWeek` no se
+lee en ningún sitio.
+
+**Lo único que mueve su estado es la persona al cambiar de programa** (`program-archive.service`):
+archivar lo deja en `COMPLETED` con `startDate`/`endDate` (primera y última sesión completada; un bloque
+sin sesiones vuelve a `PLANNED`) y reactivar lo reabre (`ACTIVE`, sin fin). No se borra ni se reescribe
+nada entrenado, y **ningún motor lee ese estado**: la fatiga y la acumulación salen de las sesiones del
+perfil entero, así que cambiar de programa no las reinicia. Un programa nuevo es una transición, no un
+reinicio fisiológico.
 
 Las semanas de acumulación se **derivan** de las fechas reales de las sesiones, sin migración y sin
 inventar estructura. El ancla es la más reciente
@@ -342,6 +349,14 @@ punto, y el historial entero sigue intacto. Lógica pura en `src/core/training/e
   ejercicios fuera del recuento la confianza no puede ser ALTA. Sesiones, valoraciones, dolor y
   semanas de acumulación son del perfil y no cambian con el cambio de gimnasio (un parón ≥10 días por
   la mudanza sigue reiniciando la acumulación, como cualquier parón).
+- **Ejercicios recién introducidos** (fatiga 1.2.0): la misma lógica sin máquina anterior. Con menos de
+  `CALIBRATION_EXPOSURES` exposiciones y ningún tramo previo, la variante queda **fuera del recuento**
+  (`introducing`, `comparable: false`): buscar la carga de partida no es rendir menos, y no tener datos
+  no es estar estable. Antes solo se protegía el cambio de máquina, así que renovar el programa llenaba
+  el denominador de ejercicios «sanos» sin historial y diluía la señal de los que seguían en la ventana.
+  Los ejercicios que se dejan siguen contando mientras sean recientes (≤ `FATIGUE.WINDOW_DAYS`): lo que
+  se medía no desaparece, y para cuando deja de contar lo nuevo ya es juzgable. El motor de progresión
+  no cambia: si te pasas de carga en la segunda sesión te dice que bajes, y eso sí se enseña.
 - **Rendimiento global** (`assessPerformance`): misma regla — arrastra lo último de la máquina
   anterior si es reciente (`fromPreviousEquipment`) o excluye con `NEW_EQUIPMENT`.
 - **Historial del ejercicio**: mejor serie, e1RM~ y tendencia solo del tramo vigente; lo anterior se
@@ -355,11 +370,44 @@ punto, y el historial entero sigue intacto. Lógica pura en `src/core/training/e
 rango, descanso y RIR. Única excepción, de seguridad: el RIR sube al mínimo de la variante nueva si
 es mayor (`targetRirOnVariantChange`), y la pantalla lo avisa.
 
+## 1g. RIR objetivo en rango (2026-11)
+
+El motor razona con un solo número, `targetRir`, y su banda (`RIR_BAND` = 1) ya acepta cualquier esfuerzo
+con `rir >= targetRir − 1`. Un objetivo «RIR 1–2» es exactamente eso visto desde quien entrena, así que
+**no hay lógica nueva en el motor**: se guarda el extremo SUPERIOR en `targetRir` y el inferior en
+`targetRirMin`, que solo lee la presentación (`src/core/training/rir-target.ts`).
+
+| Rango | `targetRir` | Se acepta | Frena                    |
+| ----- | ----------- | --------- | ------------------------ |
+| 1–2   | 2           | RIR ≥ 1   | RIR 0                    |
+| 2–3   | 3           | RIR ≥ 2   | RIR ≤ 1                  |
+| 0–1   | 1           | RIR ≥ 0   | nada: el fallo es válido |
+
+Guardar el extremo inferior quitaría el freno: con objetivo 1 el motor no marca nunca «esfuerzo mayor», y
+llegar al fallo en un básico pasaría sin decir nada. Solo se admiten rangos de anchura `RIR_BAND`: uno más
+ancho prometería en pantalla algo que el motor no hace cumplir. `WorkoutExercise` copia el rango en su
+snapshot. Si la seguridad sube el RIR al cambiar de variante, el rango desaparece. `null` = valor único
+(todo lo anterior a esto).
+
+## 1h. Estadísticas de un bloque (2026-11)
+
+`/program/stats/[id]`, para cualquier programa propio, archivado o en curso. Puro en
+`src/core/training/block-stats.ts`; **describe y no decide**: ningún motor lo lee. Se etiqueta el origen de
+cada número: **registrado** (cargas, reps, RIR, valoraciones), **estimado** (carga equivalente a 10 reps,
+e1RM~) o **reconstruido** (la fatiga semana a semana, recalculada con el motor de hoy porque la evaluación
+es efímera y no se guardó).
+
+Reglas: un ejercicio se compara consigo mismo (primeras vs. últimas 3 sesiones, mínimo 2 por extremo) y
+nunca entre variantes ni entre tramos de equipamiento; las sesiones de descarga se enseñan pero no se
+comparan; una semana sin sesiones es un hueco, no un cero; el RIR que falta no se imputa; con peso corporal
+la carga anotada es solo el lastre, así que no se estima nada y se compara lastre × repeticiones.
+Umbrales en `BLOCK_STATS` (`training-config.ts`).
+
 > ## ⚠️ Las secciones 2 a 6 están SUPERSEDED
 >
 > Describen el diseño ORIGINAL de F3, que no es lo que se construyó. Se
 > conservan como registro de por dónde se empezó, no como especificación.
-> **Lo implementado está en §1b–§1e y es lo que manda.**
+> **Lo implementado está en §1b–§1h y es lo que manda.**
 >
 > Contradicciones concretas, para que nadie las reintroduzca por leer la mitad
 > equivocada del documento: §4 prescribe una descarga con **−10 % de carga y

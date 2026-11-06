@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatLocalDate } from "@/core/dates";
+import { formatTargetRir } from "@/core/training/rir-target";
 import { getCurrentProfile } from "@/server/auth/current-user";
 import {
   getTodayOverview,
@@ -124,8 +125,9 @@ export default async function TrainPage() {
                 Semana <span className="tnum">{overview.weekNumber}</span>{" "}
                 completada 💪 — has hecho los{" "}
                 <span className="tnum">{overview.templates.length}</span> días.
-                La semana <span className="tnum">{overview.nextWeekNumber}</span>{" "}
-                empieza el {formatLocalDate(overview.nextWeekStartDate)}. Puedes
+                La semana{" "}
+                <span className="tnum">{overview.nextWeekNumber}</span> empieza
+                el {formatLocalDate(overview.nextWeekStartDate)}. Puedes
                 adelantarla hoy: no repites el entrenamiento anterior, los
                 objetivos de abajo ya están recalculados con lo que hiciste.
               </p>
@@ -162,7 +164,8 @@ export default async function TrainPage() {
                         </span>
                       </span>
                       <span className="text-muted-foreground shrink-0">
-                        {peso} × {reps} @ RIR {e.targetRir}
+                        {peso} × {reps} @ RIR{" "}
+                        {formatTargetRir(e.targetRir, e.targetRirMin)}
                       </span>
                     </li>
                   );

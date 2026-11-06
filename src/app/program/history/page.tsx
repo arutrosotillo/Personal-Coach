@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { ArchivedPrograms } from "@/components/training/archived-programs";
 import { Button } from "@/components/ui/button";
+import { DEFAULT_TIMEZONE, toLocalDate } from "@/core/dates";
+import { formatShortDate } from "@/lib/body-labels";
 import { getCurrentProfile } from "@/server/auth/current-user";
 import { listArchivedPrograms } from "@/server/repositories/program.repo";
 
@@ -32,6 +34,7 @@ export default async function ProgramHistoryPage() {
   if (!profile) redirect("/onboarding");
 
   const archived = await listArchivedPrograms(profile.id);
+  const today = toLocalDate(new Date(), profile.timezone ?? DEFAULT_TIMEZONE);
 
   return (
     <AppShell>
@@ -54,6 +57,11 @@ export default async function ProgramHistoryPage() {
           daysPerWeek: p.daysPerWeek,
           dateLabel: dateLabel(p.createdAt),
           isGenerated: p.isGenerated,
+          sessions: p.sessions,
+          periodLabel:
+            p.startLocalDate && p.endLocalDate
+              ? `${formatShortDate(p.startLocalDate, today)} – ${formatShortDate(p.endLocalDate, today)}`
+              : null,
         }))}
       />
     </AppShell>

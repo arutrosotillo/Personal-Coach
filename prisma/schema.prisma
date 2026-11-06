@@ -512,9 +512,15 @@ model Mesocycle {
   programId    String
   program      TrainingProgram @relation(fields: [programId], references: [id])
   ordinal      Int
-  status       String          @default("PLANNED") // enum MesocycleStatus: PLANNED | ACTIVE | COMPLETED | ABORTED
+  /// enum MesocycleStatus: PLANNED | ACTIVE | COMPLETED | ABORTED. `COMPLETED`
+  /// = archivado habiéndose entrenado (`program-archive.service`). Nada se cierra
+  /// solo por calendario: el bloque termina cuando la persona cambia de programa.
+  status       String          @default("PLANNED")
   weeksPlanned Int             @default(6)
   currentWeek  Int             @default(0) // 0 = no empezado
+  /// Primera y última sesión COMPLETADA (localDate), fijadas al archivar.
+  /// `null` en un bloque activo y en los archivados antes de que se escribieran:
+  /// en ese caso salen de las sesiones, que son el dato de verdad.
   startDate    String?
   endDate      String?
   notes        String?
@@ -554,6 +560,12 @@ model TemplateExercise {
   repRangeMin       Int
   repRangeMax       Int
   targetRir         Int             @default(2)
+  /// Extremo INFERIOR de un objetivo de RIR en rango ("RIR 1–2"); `null` = valor
+  /// único. Solo lo lee la presentación: el motor razona con `targetRir`, que es
+  /// el extremo SUPERIOR, y su banda (`RIR_BAND`) ya tolera hasta `targetRir − 1`.
+  /// Por eso solo se admiten rangos de anchura 1: lo que se enseña es exactamente
+  /// lo que el motor hace cumplir.
+  targetRirMin      Int?
   restSeconds       Int             @default(120)
   notes             String?
 
@@ -614,6 +626,8 @@ model WorkoutExercise {
   repRangeMin       Int
   repRangeMax       Int
   targetRir         Int
+  /// Copia de `TemplateExercise.targetRirMin` al crear la sesión (ver allí).
+  targetRirMin      Int?
   restSeconds       Int
   notes             String?
 

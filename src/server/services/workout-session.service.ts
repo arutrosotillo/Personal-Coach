@@ -167,6 +167,7 @@ async function createSession(
             repRangeMin: te.repRangeMin,
             repRangeMax: te.repRangeMax,
             targetRir: te.targetRir,
+            targetRirMin: te.targetRirMin,
             restSeconds: te.restSeconds,
           })),
         },
@@ -343,19 +344,22 @@ export async function substituteExercise(
       include: { exercise: true },
     });
     await tx.setLog.deleteMany({ where: { workoutExerciseId: we.id } });
+    const targetRir = targetRirOnVariantChange(
+      we.targetRir,
+      defaultTargetRir(
+        variant.exercise.movementPattern,
+        variant.exercise.systemicFatigue,
+        variant.stability,
+        variant.equipment,
+      ),
+    );
     await tx.workoutExercise.update({
       where: { id: we.id },
       data: {
         exerciseVariantId: variant.id,
-        targetRir: targetRirOnVariantChange(
-          we.targetRir,
-          defaultTargetRir(
-            variant.exercise.movementPattern,
-            variant.exercise.systemicFatigue,
-            variant.stability,
-            variant.equipment,
-          ),
-        ),
+        targetRir,
+        // Si la seguridad sube el RIR, el rango que había deja de describirlo.
+        targetRirMin: targetRir === we.targetRir ? we.targetRirMin : null,
       },
     });
   });

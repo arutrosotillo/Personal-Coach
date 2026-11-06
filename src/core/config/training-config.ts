@@ -513,8 +513,34 @@ export const EQUIPMENT_CHANGE = {
   MAX_DAYS_AHEAD: 60,
 } as const;
 
+/**
+ * Estadísticas de un bloque de entrenamiento (`src/core/training/block-stats.ts`).
+ * Describen lo que pasó; no deciden nada ni alimentan a ningún motor.
+ */
+export const BLOCK_STATS = {
+  /** Sesiones por extremo al comparar el inicio con el final de un ejercicio. */
+  COMPARISON_SESSIONS: 3,
+  /**
+   * Mínimo de sesiones por extremo: con una sola se compararían dos días
+   * sueltos, y un dato aislado no es una tendencia. Son 4 sesiones en total.
+   */
+  MIN_COMPARISON_SESSIONS: 2,
+  /** Cambio de rendimiento (%) por debajo del cual se dice "estable". [HEURÍSTICA] */
+  FLAT_BAND_PCT: 2,
+  /**
+   * Repeticiones de referencia de la carga equivalente. Da igual cuál sea para
+   * comparar una variante consigo misma; 10 cae dentro de casi todos los rangos,
+   * así que el número se lee como un peso real.
+   */
+  EQUIVALENT_REFERENCE_REPS: 10,
+  /** Semanas por extremo al comparar el inicio del bloque con su final. */
+  COMPARISON_WEEKS: 3,
+  /** Semanas máximas que se reconstruyen con el motor de fatiga. */
+  MAX_FATIGUE_TIMELINE_WEEKS: 26,
+} as const;
+
 /** Versión del motor de fatiga. */
-export const FATIGUE_ENGINE_VERSION = "1.1.0";
+export const FATIGUE_ENGINE_VERSION = "1.2.0";
 
 /** Versión del motor de progresión. Cambiar comportamiento obliga a subirla. */
 export const PROGRESSION_ENGINE_VERSION = "2.2.0";

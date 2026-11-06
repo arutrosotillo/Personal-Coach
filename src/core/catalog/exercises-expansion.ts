@@ -789,6 +789,15 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
   Dominadas: [
     corporal({ name: "Agarre neutro", reps: [5, 10], rest: 180 }),
     maquina({ name: "Máquina asistida", reps: [6, 12] }),
+    // Prono EXPLÍCITO. "Peso corporal / lastre" no dice el agarre, y quien
+    // entrenó ahí con otro (hay historial real con agarre neutro) no puede
+    // compartir serie de progresión con esta: las cargas no son comparables.
+    corporal({
+      name: "Agarre prono / lastre",
+      reps: [5, 10],
+      rest: 180,
+      contra: ["SHOULDER", "ELBOW"],
+    }),
   ],
   "Jalón al pecho": [
     polea({ name: "Polea agarre ancho" }),
@@ -822,6 +831,15 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     polea({ name: "Polea unilateral inclinado" }),
     banda(),
   ],
+  // Sentado en un banco entre dos poleas: otra estabilidad y otra línea de
+  // tiro que la contractora, así que sus kilos no se comparan con los de allí.
+  Aperturas: [
+    polea({
+      name: "Dos poleas, sentado en banco",
+      reps: [10, 15],
+      contra: ["SHOULDER"],
+    }),
+  ],
   "Aperturas invertidas": [polea({ name: "Polea unilateral" })],
   // "Curl en máquina predicador" se renombra a "Curl predicador": el banco
   // Scott no es solo una máquina, y separarlo obligaba a crear un duplicado.
@@ -830,6 +848,11 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     mancuernas({ name: "Mancuerna unilateral" }),
   ],
   "Curl martillo": [mancuernas({ name: "Cruzado al pecho" })],
+  // Una polea en cada mano, caminando hacia delante: mismo estímulo que el
+  // bayesian con una sola polea, pero otro montaje y otros kilos.
+  "Curl bayesian en polea": [
+    polea({ name: "Dos poleas, brazos retrasados", reps: [8, 12] }),
+  ],
   "Curl inverso": [polea({ name: "Polea con barra" }), mancuernas()],
   // Skull crusher = press francés. Las variantes son de material, no otro
   // ejercicio.
@@ -841,6 +864,8 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
   "Extensión de tríceps en polea": [
     polea({ name: "Polea unilateral supino" }),
     polea({ name: "Polea con barra en V" }),
+    // Cada mano agarra el cable del lado contrario, formando una X.
+    polea({ name: "Dos poleas cruzadas (en X)", reps: [10, 15] }),
   ],
   "Extensión de tríceps sobre la cabeza": [
     polea({ name: "Polea con barra" }),
@@ -855,6 +880,14 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
   "Hip thrust": [
     multipower(),
     mancuernas({ name: "Mancuerna sobre la cadera" }),
+  ],
+  // Boca abajo en un banco, polea baja y tobillera. Para quien no tiene máquina.
+  "Curl femoral tumbado": [
+    polea({
+      name: "Polea con tobillera, unilateral",
+      reps: [10, 15],
+      contra: ["KNEE"],
+    }),
   ],
   "Elevación de talones de pie": [
     maquina({ name: "En prensa de piernas" }),

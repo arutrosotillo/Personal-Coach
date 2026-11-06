@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { SubstitutionExercise } from "@/components/training/session-runner";
+import { PROGRESSION } from "@/core/config/training-config";
+import { formatTargetRir, isWithinTargetRir } from "@/core/training/rir-target";
 import { Button } from "@/components/ui/button";
 import { CustomExerciseForm } from "@/components/training/custom-exercise-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +30,8 @@ export interface EditorExercise {
   repRangeMin: number;
   repRangeMax: number;
   targetRir: number;
+  /** Extremo inferior si el objetivo es un rango ("RIR 1–2"); si no, `null`. */
+  targetRirMin: number | null;
   /**
    * El RIR que el modelo de defaults prescribiría hoy para ESTA variante.
    * Se enseña solo cuando difiere del guardado, y como SUGERENCIA: el programa
@@ -366,7 +370,11 @@ function AddDay({
 }
 
 function ReadRow({ ex }: { ex: EditorExercise }) {
-  const distinto = ex.suggestedTargetRir !== ex.targetRir;
+  const distinto = !isWithinTargetRir(
+    ex.suggestedTargetRir,
+    ex.targetRir,
+    ex.targetRirMin,
+  );
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">
@@ -377,7 +385,8 @@ function ReadRow({ ex }: { ex: EditorExercise }) {
           </p>
         </div>
         <p className="tnum text-muted-foreground shrink-0 text-sm">
-          {ex.baseSets} × {ex.repRangeMin}–{ex.repRangeMax} · RIR {ex.targetRir}
+          {ex.baseSets} × {ex.repRangeMin}–{ex.repRangeMax} · RIR{" "}
+          {formatTargetRir(ex.targetRir, ex.targetRirMin)}
         </p>
       </div>
       {distinto ? (
@@ -410,15 +419,20 @@ function EditableRow({
   const [repMin, setRepMin] = useState(ex.repRangeMin);
   const [repMax, setRepMax] = useState(ex.repRangeMax);
   const [rir, setRir] = useState(ex.targetRir);
+  const [rirRange, setRirRange] = useState(ex.targetRirMin !== null);
   const [rest, setRest] = useState(ex.restSeconds);
   const [showSub, setShowSub] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+
+  // Un rango necesita un punto por debajo: con RIR 0 no cabe ninguno.
+  const rirMin = rirRange && rir > 0 ? rir - PROGRESSION.RIR_BAND : null;
 
   const dirty =
     sets !== ex.baseSets ||
     repMin !== ex.repRangeMin ||
     repMax !== ex.repRangeMax ||
     rir !== ex.targetRir ||
+    rirMin !== ex.targetRirMin ||
     rest !== ex.restSeconds;
 
   const setsChanged = sets !== ex.baseSets;
@@ -501,6 +515,20 @@ function EditableRow({
           step={15}
           onChange={setRest}
         />
+        <label className="flex min-h-11 items-center gap-2 self-end text-sm">
+          <input
+            type="checkbox"
+            className="size-4"
+            checked={rirRange && rir > 0}
+            disabled={rir === 0}
+            onChange={(e) => setRirRange(e.target.checked)}
+          />
+          <span className="tnum">
+            {rirRange && rir > 0
+              ? `Rango: RIR ${formatTargetRir(rir, rirMin)}`
+              : "RIR en rango"}
+          </span>
+        </label>
       </div>
 
       {setsChanged ? (
@@ -527,6 +555,7 @@ function EditableRow({
                 repRangeMin: repMin,
                 repRangeMax: repMax,
                 targetRir: rir,
+                targetRirMin: rirMin,
                 restSeconds: rest,
               }),
             )

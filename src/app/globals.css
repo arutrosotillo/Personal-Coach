@@ -74,6 +74,10 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  /* Series de los gráficos. Pareja validada contra daltonismo sobre el fondo
+     oscuro (ΔE ≥ 23 en protan, deutan y tritan). No son colores de estado. */
+  --viz-1: #c97f05;
+  --viz-2: #3b8fd0;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);

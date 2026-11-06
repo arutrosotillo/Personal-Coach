@@ -45,6 +45,8 @@ Fuente de verdad ejecutable: `prisma/schema.prisma`. Este documento explica las 
 **Programa**
 
 - `TrainingProgram` → `Mesocycle` (estado, semanas, semana actual) → `WorkoutTemplate` (día) → `TemplateExercise` (variante, series base, rango de reps, RIR objetivo, descanso).
+  - **Archivar** un programa (`isActive: false`) cierra su bloque: `Mesocycle.status = COMPLETED` con `startDate`/`endDate` (primera y última sesión completada). Reactivarlo lo reabre. No se borra ni se reescribe nada entrenado, y ningún motor lee ese estado. Los archivados antes de esto no tienen fechas: salen de las sesiones.
+  - **`targetRirMin`** (`TemplateExercise` y `WorkoutExercise`, anulable): extremo inferior de un objetivo en rango («RIR 1–2»). `targetRir` es el superior y es lo único que lee el motor. Ver TRAINING_ENGINE §1g.
 - `WorkoutSession` / `WorkoutExercise` / `SetLog` — definidos en el schema desde F1 (estables y centrales), operativos en F2. `SetLog` denormaliza `exerciseVariantId` + `localDate` con índice compuesto: historial y gráfica e1RM en una query.
   - `WorkoutSession.weekKind` (`ACCUMULATION | DELOAD`) se escribe al FINALIZAR la sesión. Vale `DELOAD` solo si se cumplen las dos cosas: el motor recomendaba descarga en esa fecha (consultado antes de marcarla completada, así que no se cuenta a sí misma) y las series registradas quedan por debajo del 70 % de las que prescribe la plantilla. Lo consumen el motor de fatiga (esas sesiones no cuentan como "acortadas") y el contador de semanas de acumulación (se ancla en la última). Ver TRAINING_ENGINE.md §1e.
   - `WorkoutSession.weekNumber` se DERIVA de las fechas al crear la sesión (semanas ISO desde la primera del mesociclo). `Mesocycle.currentWeek` no lo incrementa nadie y no se lee.

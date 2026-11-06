@@ -1,5 +1,6 @@
 import type { ManualProgramInput } from "@/core/schemas/manual-program";
 import { prisma } from "@/server/db";
+import { archiveActivePrograms } from "@/server/services/program-archive.service";
 
 /**
  * Crea un programa MANUAL (Fase 3.1). Aterriza en EXACTAMENTE las mismas tablas
@@ -7,8 +8,8 @@ import { prisma } from "@/server/db";
  * y NO crea AlgorithmDecision/Recommendation (no hay algoritmo) — por eso "manual
  * vs generado" se deriva de la ausencia de `INITIAL_PROGRAM` (ver program-source).
  *
- * Archiva el programa activo previo (isActive:false, NO se borra: sesiones,
- * snapshots e historial se conservan). Transaccional.
+ * Archiva el programa activo previo y cierra su bloque con sus fechas (NO se
+ * borra: sesiones, snapshots e historial se conservan). Transaccional.
  */
 export async function createManualProgram(
   profileId: string,
@@ -39,22 +40,19 @@ export async function createManualProgram(
       );
     }
 
-    // Archiva el activo anterior (no se borra).
-    await tx.trainingProgram.updateMany({
-      where: { profileId, isActive: true },
-      data: { isActive: false },
-    });
+    await archiveActivePrograms(tx, profileId);
 
     const program = await tx.trainingProgram.create({
       data: {
         profileId,
         name: input.name,
         daysPerWeek: input.days.length,
+        description: input.description ?? null,
         createdAt: now,
         mesocycles: {
           create: {
             ordinal: 1,
-            status: "PLANNED",
+            status: "ACTIVE",
             weeksPlanned: 6,
             templates: {
               create: input.days.map((day, di) => ({
@@ -69,6 +67,7 @@ export async function createManualProgram(
                     repRangeMin: Math.min(e.repRangeMin, e.repRangeMax),
                     repRangeMax: Math.max(e.repRangeMin, e.repRangeMax),
                     targetRir: e.targetRir,
+                    targetRirMin: e.targetRirMin ?? null,
                     restSeconds: e.restSeconds,
                   })),
                 },

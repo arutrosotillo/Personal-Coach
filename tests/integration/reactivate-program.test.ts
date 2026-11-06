@@ -109,10 +109,23 @@ async function immutableProgramState(programIds: string[]) {
   const sessionWhere = { mesocycle: mesocycleWhere };
   const exerciseWhere = { session: sessionWhere };
   return {
-    mesocycles: await prisma.mesocycle.findMany({
-      where: mesocycleWhere,
-      orderBy: { id: "asc" },
-    }),
+    // Sin `status`, `startDate`, `endDate` ni `updatedAt`: eso es el ciclo de
+    // vida del bloque, que archivar y reactivar sí mueven a propósito. Lo que no
+    // puede cambiar es lo entrenado ni lo prescrito.
+    mesocycles: (
+      await prisma.mesocycle.findMany({
+        where: mesocycleWhere,
+        orderBy: { id: "asc" },
+      })
+    ).map((m) => ({
+      id: m.id,
+      programId: m.programId,
+      ordinal: m.ordinal,
+      weeksPlanned: m.weeksPlanned,
+      currentWeek: m.currentWeek,
+      notes: m.notes,
+      createdAt: m.createdAt,
+    })),
     templates: await prisma.workoutTemplate.findMany({
       where: templateWhere,
       orderBy: { id: "asc" },
@@ -228,12 +241,24 @@ describe("reactivateProgram", () => {
     const decisionsBefore = await prisma.algorithmDecision.count();
     const recommendationsBefore = await prisma.recommendation.count();
 
-    // Reactivar B: solo cambian los flags de programa.
+    // Reactivar B: cambian los flags del programa y el ciclo de vida del bloque;
+    // lo entrenado y lo prescrito, nada.
     await reactivateProgram(profileId, B.id);
     const activeB = await activePrograms();
     expect(activeB).toHaveLength(1);
     expect(activeB[0].id).toBe(B.id);
     expect(await immutableProgramState([A.id, B.id])).toEqual(before);
+    const closedA = await prisma.mesocycle.findUniqueOrThrow({
+      where: { id: aMeso.id },
+    });
+    expect(closedA.status).toBe("COMPLETED");
+    expect(closedA.startDate).toBe("2026-07-26");
+    expect(closedA.endDate).toBe("2026-07-26");
+    const reopenedB = await prisma.mesocycle.findUniqueOrThrow({
+      where: { id: B.mesocycles[0].id },
+    });
+    expect(reopenedB.status).toBe("ACTIVE");
+    expect(reopenedB.endDate).toBeNull();
     expect(await prisma.algorithmDecision.count()).toBe(decisionsBefore);
     expect(await prisma.recommendation.count()).toBe(recommendationsBefore);
 

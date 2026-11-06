@@ -99,6 +99,12 @@ export interface VariantAnalysis {
   plateaued: boolean;
   /** Estado del cambio de equipamiento; `null`/ausente si no hay ninguno vigente. */
   equipmentChange?: VariantEquipmentState | null;
+  /**
+   * Ejercicio recién introducido: menos de
+   * `EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES` exposiciones y ningún tramo anterior
+   * con el que compararlo. Ver `toFatigueExercise`.
+   */
+  introducing?: boolean;
 }
 
 export interface VariantEquipmentState {
@@ -314,6 +320,14 @@ function equipmentState(
  * progresión te dice que bajes en esa máquina (y eso sí se enseña), pero la
  * fatiga no lo lee como caída. A partir de la tercera sesión el tramo nuevo
  * se juzga como cualquier otro, con todas sus señales.
+ *
+ * Un ejercicio RECIÉN INTRODUCIDO es el mismo caso sin máquina anterior: buscar
+ * la carga de partida no es rendir menos, y no tener datos no es estar estable.
+ * Antes solo se protegía el cambio de máquina, así que renovar los ejercicios
+ * del programa llenaba el denominador de "sanos" sin historial y diluía la señal
+ * de los que seguían dentro de la ventana. Los ejercicios que se dejan siguen
+ * contando mientras sean recientes, y por eso cambiar de programa no reinicia la
+ * fatiga: lo que se medía sigue en el recuento hasta que lo nuevo es juzgable.
  */
 function toFatigueExercise(v: VariantAnalysis): FatigueExerciseInput {
   const base: FatigueExerciseInput = {
@@ -323,6 +337,9 @@ function toFatigueExercise(v: VariantAnalysis): FatigueExerciseInput {
     plateaued: v.plateaued,
     daysSinceLast: v.daysSinceLast,
   };
+  if (v.introducing) {
+    return { ...base, comparable: false, adapting: true, newExercise: true };
+  }
   const eq = v.equipmentChange;
   if (!eq || !eq.calibrating) return base;
 
@@ -371,8 +388,12 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
     // Con una máquina nueva todavía calibrando, el tramo no dice nada del
     // RENDIMIENTO: bajar la carga ahí es elegir la de partida. La sugerencia
     // ("baja en esta máquina") se conserva; la etiqueta de regresión o meseta,
-    // que leen la fatiga, el rendimiento global y Coach AI, no.
-    const judgeable = !equipment?.calibrating;
+    // que leen la fatiga, el rendimiento global y Coach AI, no. Lo mismo con
+    // un ejercicio recién introducido: aún está buscando su carga de partida.
+    const introducing =
+      change === null &&
+      v.exposures.length < EQUIPMENT_CHANGE.CALIBRATION_EXPOSURES;
+    const judgeable = !equipment?.calibrating && !introducing;
     return {
       variantId: v.variantId,
       exerciseName: v.exerciseName,
@@ -388,6 +409,7 @@ export function analyzeTraining(context: TrainingContext): TrainingAnalysis {
         judgeable &&
         suggestion.signals.some((s) => s.code === "PLATEAU_SIGNAL"),
       equipmentChange: equipment,
+      introducing,
     };
   });
 

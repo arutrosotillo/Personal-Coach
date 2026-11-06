@@ -33,7 +33,10 @@ export default async function ProgramPage() {
           // El "hoy" sale de la zona del perfil, no del reloj del servidor.
           getWeeklyVolume(
             overview.profile.id,
-            toLocalDate(new Date(), overview.profile.timezone ?? DEFAULT_TIMEZONE),
+            toLocalDate(
+              new Date(),
+              overview.profile.timezone ?? DEFAULT_TIMEZONE,
+            ),
           ),
           listGymChanges(overview.profile.id),
         ])
@@ -78,11 +81,10 @@ export default async function ProgramPage() {
   return (
     <AppShell>
       <h1 className="mb-1 text-2xl font-semibold">{program.name}</h1>
-      {/* `Mesocycle` es hoy un contenedor, no una periodización: se crea una
-          vez con `status: "PLANNED"` y `weeksPlanned: 6`, y NADIE lo actualiza
-          jamás. Decía "planificado" para siempre y sugería que en la semana 6
-          pasaba algo. No pasa nada: el bloque no se cierra solo, la semana 7
-          es como la 6, y los ejercicios y series solo los cambias tú. */}
+      {/* `Mesocycle` es un contenedor, no una periodización: `weeksPlanned` es
+          una referencia y en la semana 6 no pasa nada. El bloque no se cierra
+          solo: termina cuando cambias de programa, y los ejercicios y series
+          solo los cambias tú. */}
       <p className="text-muted-foreground mb-4 text-sm">
         <span className="tnum">{program.daysPerWeek}</span> días/semana · Bloque
         de entrenamiento · referencia inicial{" "}
@@ -134,6 +136,15 @@ export default async function ProgramPage() {
         >
           Programas anteriores
         </Button>
+        <Button
+          nativeButton={false}
+          render={<Link href={`/program/stats/${program.id}`} />}
+          variant="secondary"
+          size="sm"
+          className="min-h-11 flex-1 basis-36"
+        >
+          Estadísticas del bloque
+        </Button>
       </div>
 
       <ProgramEditor
@@ -149,6 +160,7 @@ export default async function ProgramPage() {
             repRangeMin: te.repRangeMin,
             repRangeMax: te.repRangeMax,
             targetRir: te.targetRir,
+            targetRirMin: te.targetRirMin,
             // Lo que el modelo prescribiría HOY para esta variante. Solo se
             // usa para sugerir cuando difiere: el programa no se reescribe
             // solo, porque un RIR puede estar puesto a mano a propósito.

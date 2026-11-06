@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -14,6 +15,10 @@ export interface ArchivedProgramView {
   daysPerWeek: number;
   dateLabel: string;
   isGenerated: boolean;
+  /** Sesiones completadas; 0 = no se llegó a entrenar. */
+  sessions: number;
+  /** "31 ago – 6 nov"; `null` si no se llegó a entrenar. */
+  periodLabel: string | null;
 }
 
 /** Listado simple de programas anteriores con reactivación (Fase 3.1b). */
@@ -60,6 +65,11 @@ export function ArchivedPrograms({
                 <span className="tnum">{p.daysPerWeek}</span> días · Archivado ·{" "}
                 {p.isGenerated ? "Generado" : "Manual"} · {p.dateLabel}
               </p>
+              <p className="text-muted-foreground tnum text-sm">
+                {p.periodLabel
+                  ? `${p.periodLabel} · ${p.sessions} ${p.sessions === 1 ? "sesión" : "sesiones"}`
+                  : "Sin sesiones"}
+              </p>
 
               {confirmId === p.id ? (
                 <div className="mt-3 space-y-2">
@@ -91,15 +101,27 @@ export function ArchivedPrograms({
                   </div>
                 </div>
               ) : (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="mt-3 min-h-11"
-                  onClick={() => setConfirmId(p.id)}
-                >
-                  Reactivar
-                </Button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {p.sessions > 0 ? (
+                    <Button
+                      nativeButton={false}
+                      render={<Link href={`/program/stats/${p.id}`} />}
+                      size="sm"
+                      className="min-h-11"
+                    >
+                      Ver estadísticas
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="min-h-11"
+                    onClick={() => setConfirmId(p.id)}
+                  >
+                    Reactivar
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
