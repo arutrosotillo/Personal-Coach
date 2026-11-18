@@ -584,6 +584,7 @@ export function SessionRunner({
           endsAt={restEndsAt}
           onAdd={(ms) => setRestEndsAt((e) => (e ?? nowMs()) + ms)}
           onSkip={() => setRestEndsAt(null)}
+          onDone={() => setRestEndsAt(null)}
         />
       ) : null}
 

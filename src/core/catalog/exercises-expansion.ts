@@ -819,6 +819,10 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
   "Remo con apoyo pectoral": [
     maquina({ name: "Máquina unilateral" }),
     maquina({ name: "Máquina de discos" }),
+    // Boca abajo en un banco algo inclinado, debajo de la barra de la
+    // multipower. El mismo tirón con el pecho apoyado, pero los kilos son los
+    // de una barra guiada: no se comparan con los de la máquina.
+    multipower({ name: "Multipower en banco inclinado" }),
   ],
   "Remo con mancuerna": [maquina({ name: "Máquina unilateral con apoyo" })],
   Encogimientos: [multipower(), maquina(), polea({ name: "Polea baja" })],
@@ -893,6 +897,9 @@ export const EXTRA_VARIANTS: Record<string, VariantDraft[]> = {
     maquina({ name: "En prensa de piernas" }),
     corporal({ name: "Peso corporal unilateral", reps: [12, 25] }),
     maquina({ name: "Burro (donkey)" }),
+    // Una pierna cada vez: con la misma barra cada pierna carga el doble que
+    // en la bilateral, así que su historial no se mezcla con el de aquella.
+    multipower({ name: "Multipower unilateral", contra: ["ANKLE"] }),
   ],
   "Elevación de talones sentado": [multipower()],
   "Elevación de piernas colgado": [

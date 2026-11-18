@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +15,7 @@ function secondsLeft(endsAt: number, now: number): number {
 
 /**
  * Temporizador de descanso basado en timestamp ABSOLUTO: la cuenta sale siempre
- * de `endsAt - Date.now()`, nunca de acumular ticks. +30 s / omitir / detener.
+ * de `endsAt - Date.now()`, nunca de acumular ticks. +30 s / omitir.
  *
  * Antes el reloj era SOLO un `setInterval`, y ahí estaba el fallo: entre serie
  * y serie el usuario suelta el móvil y iOS suspende la página de la PWA. Un
@@ -34,45 +34,64 @@ function secondsLeft(endsAt: number, now: number): number {
  *    rAF y la cuenta tiene que seguir avanzando igual.
  *  · Los eventos de reanudación, para cuando la página se restaura desde la
  *    caché de la vuelta atrás sin repintar de inmediato.
+ *
+ * Al llegar a cero se cierra SOLO (`onDone`). Antes se quedaba pegado abajo un
+ * "¡Descanso!" que ya no contaba nada y había que cerrarlo a mano antes de la
+ * serie siguiente: el aviso que sobra no es un aviso, es un estorbo. La misma
+ * regla que ya aplicaba la sesión a un descanso vencido con la app cerrada.
  */
 export function RestTimer({
   endsAt,
   onAdd,
   onSkip,
+  onDone,
 }: {
   endsAt: number; // epoch ms en que termina el descanso
   onAdd: (ms: number) => void;
   onSkip: () => void;
+  /** El descanso ha terminado: quien lo monta lo retira. */
+  onDone: () => void;
 }) {
   // El estado son los SEGUNDOS que se pintan, no el reloj: así los frames en
   // los que no cambia el número no re-renderizan nada (React descarta el
   // `setState` que repite el valor), y no hay 60 renders por segundo.
   const [remaining, setRemaining] = useState(() => secondsLeft(endsAt, nowMs()));
+  // Evento, no dependencia: el padre pasa una flecha nueva en cada render, y
+  // eso no debe reiniciar el reloj.
+  const finish = useEffectEvent(onDone);
 
   useEffect(() => {
-    const sync = () => setRemaining(secondsLeft(endsAt, nowMs()));
     let frame = 0;
-    const tick = () => {
-      sync();
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    const backstop = window.setInterval(sync, 250);
-    document.addEventListener("visibilitychange", sync);
-    window.addEventListener("pageshow", sync);
-    window.addEventListener("focus", sync);
-    return () => {
+    let backstop = 0;
+    const stop = () => {
       cancelAnimationFrame(frame);
       clearInterval(backstop);
       document.removeEventListener("visibilitychange", sync);
       window.removeEventListener("pageshow", sync);
       window.removeEventListener("focus", sync);
     };
+    function sync() {
+      const left = secondsLeft(endsAt, nowMs());
+      setRemaining(left);
+      if (left <= 0) {
+        stop();
+        finish();
+      }
+    }
+    const tick = () => {
+      sync();
+      if (secondsLeft(endsAt, nowMs()) > 0) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    backstop = window.setInterval(sync, 250);
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("pageshow", sync);
+    window.addEventListener("focus", sync);
+    return stop;
   }, [endsAt]);
 
   const mm = Math.floor(remaining / 60);
   const ss = remaining % 60;
-  const done = remaining <= 0;
 
   return (
     <div
@@ -80,10 +99,8 @@ export function RestTimer({
       role="timer"
       aria-live="polite"
     >
-      <span
-        className={`tnum text-2xl font-semibold tabular-nums ${done ? "text-primary" : ""}`}
-      >
-        {done ? "¡Descanso!" : `${mm}:${ss.toString().padStart(2, "0")}`}
+      <span className="tnum text-2xl font-semibold tabular-nums">
+        {`${mm}:${ss.toString().padStart(2, "0")}`}
       </span>
       <div className="ml-auto flex gap-2">
         <Button
@@ -102,7 +119,7 @@ export function RestTimer({
           className="min-h-11"
           onClick={onSkip}
         >
-          {done ? "Cerrar" : "Omitir"}
+          Omitir
         </Button>
       </div>
     </div>

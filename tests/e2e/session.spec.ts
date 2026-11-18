@@ -63,6 +63,9 @@ async function onboard(page: Page) {
 test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async ({
   page,
 }) => {
+  // Reloj controlable (el tiempo sigue corriendo solo): permite comprobar el
+  // final del descanso sin esperar minutos de verdad.
+  await page.clock.install();
   await onboard(page);
 
   // Ir a Entrenar y empezar la sesión de hoy
@@ -89,6 +92,14 @@ test("ejecutar una sesión: registrar, reanudar tras recarga y finalizar", async
     page.getByRole("button", { name: "✓ Hecha" }).first(),
   ).toBeVisible();
   await expect(page.getByText(/·\s*1\/\d+ series/)).toBeVisible();
+
+  // Completar arranca el descanso y, cuando termina, el aviso se quita SOLO:
+  // antes se quedaba abajo un "¡Descanso!" que ya no contaba nada y había que
+  // cerrarlo a mano antes de la serie siguiente.
+  const descanso = page.getByRole("timer");
+  await expect(descanso).toBeVisible();
+  await page.clock.fastForward("05:00");
+  await expect(descanso).toHaveCount(0);
 
   // Persistencia real EN EL SERVIDOR: se espera al indicador de la cabecera
   // antes de recargar. Desde que la sesión es local-first, "✓ Hecha" solo
